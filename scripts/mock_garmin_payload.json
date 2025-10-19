@@ -1,0 +1,50 @@
+{
+  "userId": "external-garmin-123",
+  "summaryId": "3f0a9478-6b28-4a8d-9e9d-235f1f01babc",
+  "summaryType": "daily",
+  "summary": {
+    "calendarDate": "2024-06-15",
+    "durationInSeconds": 86400,
+    "activeKilocalories": 820,
+    "steps": 11234,
+    "heartRate": {
+      "averageHeartRate": 64,
+      "maxHeartRate": 178,
+      "minHeartRate": 48
+    },
+    "sleep": {
+      "sleepStartTimestampGMT": "2024-06-15T02:12:00Z",
+      "sleepEndTimestampGMT": "2024-06-15T09:10:00Z",
+      "sleepTimeSeconds": 24840,
+      "deepSleepSeconds": 5400,
+      "lightSleepSeconds": 14340,
+      "remSleepSeconds": 3600
+    },
+    "stress": {
+      "avgStressLevel": 24,
+      "maxStressLevel": 51
+    },
+    "training": {
+      "load": 82,
+      "trimp": 75,
+      "tssEstimated": 80
+    }
+  },
+  "activities": [
+    {
+      "activityId": "run-20240615-0700",
+      "activityName": "Long Run",
+      "activityType": "RUNNING",
+      "startTimeGMT": "2024-06-15T07:00:00Z",
+      "durationInSeconds": 5400,
+      "distanceInMeters": 15234,
+      "averageHR": 152,
+      "maxHR": 174,
+      "averagePace": 214,
+      "runningDynamics": {
+        "averageCadence": 174,
+        "averageStrideLength": 1.12
+      }
+    }
+  ]
+}

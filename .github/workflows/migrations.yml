@@ -1,0 +1,47 @@
+name: Supabase Migrations
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'supabase/sql/**'
+  workflow_dispatch:
+
+jobs:
+  apply-migrations:
+    name: Apply SQL migrations
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      SERVICE_ACCOUNT_EMAIL: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        if: env.WORKLOAD_IDENTITY_PROVIDER != '' && env.SERVICE_ACCOUNT_EMAIL != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v2
+        with:
+          version: latest
+
+      - name: Apply schema migration
+        run: supabase db push --file supabase/sql/schema.sql --db-url "$SUPABASE_DB_URL"
+
+      - name: Apply RLS policies
+        run: supabase db push --file supabase/sql/rls_policies.sql --db-url "$SUPABASE_DB_URL"
+
+      - name: Apply views
+        run: supabase db push --file supabase/sql/views.sql --db-url "$SUPABASE_DB_URL"

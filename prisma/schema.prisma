@@ -1,0 +1,328 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Profile {
+  id                     String        @id @db.Uuid
+  email                  String?
+  fullName               String?       @map("full_name")
+  role                   Role          @default(member)
+  sex                    Sex?
+  dateOfBirth            DateTime?     @map("date_of_birth") @db.Date
+  heightCm               Decimal?      @map("height_cm") @db.Decimal(5, 2)
+  baselineActivityLevel  ActivityLevel? @map("baseline_activity_level")
+  defaultUnitSystem      UnitSystem    @map("default_unit_system") @default(metric)
+  timezone               String        @default("America/New_York")
+  maintenanceCaloriesEst Decimal?      @map("maintenance_calories_est") @db.Decimal(6, 1)
+  createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  connections        Connection[]
+  rawEvents          RawEvent[]
+  dailyMetrics       DailyMetric[]
+  activities         Activity[]
+  nutritionEntries   NutritionEntry[]
+  nutritionGoals     NutritionGoal[]
+  insights           Insight[]
+  stripeCustomer     StripeCustomer?
+  subscriptions      Subscription[]
+  usageRecords       UsageRecord[]
+  apiKeys            ApiKey[]         @relation("ApiKeysOwner")
+  actorAuditLogs     AuditLog[]       @relation("ActorAuditLogs")
+  targetAuditLogs    AuditLog[]       @relation("TargetAuditLogs")
+}
+
+model Connection {
+  id              BigInt   @id @default(autoincrement())
+  userId          String   @map("user_id") @db.Uuid
+  externalUserId  String?  @map("external_user_id")
+  provider        Provider
+  status          ConnectionStatus @default(disconnected)
+  scopes          String[]
+  accessToken     Bytes?   @map("access_token_encrypted")
+  refreshToken    Bytes?   @map("refresh_token_encrypted")
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
+  latestSyncAt    DateTime? @map("latest_sync_at") @db.Timestamptz(6)
+  settings        Json?    @db.Json
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [userId], references: [id])
+}
+
+model RawEvent {
+  id            BigInt   @id @default(autoincrement())
+  userId        String   @map("user_id") @db.Uuid
+  provider      Provider
+  eventType     String   @map("event_type")
+  eventTimestamp DateTime? @map("event_timestamp") @db.Timestamptz(6)
+  payload       Json     @db.Json
+  receivedAt    DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [userId], references: [id])
+}
+
+model DailyMetric {
+  id                 BigInt   @id @default(autoincrement())
+  userId             String   @map("user_id") @db.Uuid
+  metricDate         DateTime @map("metric_date") @db.Date
+  energyBurnedKcal   Decimal? @map("energy_burned_kcal") @db.Decimal(8, 2)
+  steps              Int?
+  sleepMinutesTotal  Int?     @map("sleep_minutes_total")
+  sleepEfficiency    Decimal? @map("sleep_efficiency") @db.Decimal(5, 2)
+  restingHr          Decimal? @map("resting_hr") @db.Decimal(5, 2)
+  hrvRmssd           Decimal? @map("hrv_rmssd") @db.Decimal(6, 2)
+  stressScore        Decimal? @map("stress_score") @db.Decimal(5, 2)
+  trainingLoad       Decimal? @map("training_load") @db.Decimal(8, 2)
+  weightKg           Decimal? @map("weight_kg") @db.Decimal(6, 2)
+  bodyFatPct         Decimal? @map("body_fat_pct") @db.Decimal(5, 2)
+  readinessScore     Decimal? @map("readiness_score") @db.Decimal(5, 2)
+  macros             Json?    @db.Json
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [userId], references: [id])
+
+  @@unique([userId, metricDate])
+}
+
+model Activity {
+  id          BigInt   @id @default(autoincrement())
+  userId      String   @map("user_id") @db.Uuid
+  source      Provider
+  sourceId    String?  @map("source_id")
+  name        String?
+  sportType   String?  @map("sport_type")
+  startTime   DateTime @map("start_time") @db.Timestamptz(6)
+  durationS   Int?     @map("duration_s")
+  distanceM   Decimal? @map("distance_m") @db.Decimal(8, 2)
+  avgHr       Decimal? @map("avg_hr") @db.Decimal(5, 2)
+  maxHr       Decimal? @map("max_hr") @db.Decimal(5, 2)
+  trimp       Decimal? @db.Decimal(6, 2)
+  tssEst      Decimal? @map("tss_est") @db.Decimal(6, 2)
+  calories    Decimal? @db.Decimal(7, 2)
+  data        Json?    @db.Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [userId], references: [id])
+
+  @@unique([userId, source, sourceId])
+}
+
+model NutritionEntry {
+  id             BigInt   @id @default(autoincrement())
+  userId         String   @map("user_id") @db.Uuid
+  entryTimestamp DateTime @map("entry_timestamp") @db.Timestamptz(6)
+  foodName       String   @map("food_name")
+  mealType       String?  @map("meal_type")
+  calories       Int?
+  proteinG       Decimal? @map("protein_g") @db.Decimal(6, 2)
+  carbsG         Decimal? @map("carbs_g") @db.Decimal(6, 2)
+  fatG           Decimal? @map("fat_g") @db.Decimal(6, 2)
+  fiberG         Decimal? @map("fiber_g") @db.Decimal(6, 2)
+  sugarG         Decimal? @map("sugar_g") @db.Decimal(6, 2)
+  satFatG        Decimal? @map("sat_fat_g") @db.Decimal(6, 2)
+  sodiumMg       Decimal? @map("sodium_mg") @db.Decimal(8, 2)
+  potassiumMg    Decimal? @map("potassium_mg") @db.Decimal(8, 2)
+  calciumMg      Decimal? @map("calcium_mg") @db.Decimal(8, 2)
+  ironMg         Decimal? @map("iron_mg") @db.Decimal(8, 2)
+  magnesiumMg    Decimal? @map("magnesium_mg") @db.Decimal(8, 2)
+  zincMg         Decimal? @map("zinc_mg") @db.Decimal(8, 2)
+  vitAMcg        Decimal? @map("vit_a_mcg") @db.Decimal(8, 2)
+  vitCMg         Decimal? @map("vit_c_mg") @db.Decimal(8, 2)
+  vitDIu         Decimal? @map("vit_d_iu") @db.Decimal(8, 2)
+  vitEMg         Decimal? @map("vit_e_mg") @db.Decimal(8, 2)
+  vitKMcg        Decimal? @map("vit_k_mcg") @db.Decimal(8, 2)
+  folateMcg      Decimal? @map("folate_mcg") @db.Decimal(8, 2)
+  omega3Mg       Decimal? @map("omega3_mg") @db.Decimal(8, 2)
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [userId], references: [id])
+}
+
+model NutritionGoal {
+  id                BigInt   @id @default(autoincrement())
+  userId            String   @map("user_id") @db.Uuid
+  name              String   @default("default")
+  energyKcalTarget  Int?     @map("energy_kcal_target")
+  proteinGTarget    Decimal? @map("protein_g_target") @db.Decimal(6, 2)
+  carbsGTarget      Decimal? @map("carbs_g_target") @db.Decimal(6, 2)
+  fatGTarget        Decimal? @map("fat_g_target") @db.Decimal(6, 2)
+  fiberGTarget      Decimal? @map("fiber_g_target") @db.Decimal(6, 2)
+  sugarGLimit       Decimal? @map("sugar_g_limit") @db.Decimal(6, 2)
+  satFatGLimit      Decimal? @map("sat_fat_g_limit") @db.Decimal(6, 2)
+  sodiumMgLimit     Decimal? @map("sodium_mg_limit") @db.Decimal(8, 2)
+  potassiumMgTarget Decimal? @map("potassium_mg_target") @db.Decimal(8, 2)
+  calciumMgTarget   Decimal? @map("calcium_mg_target") @db.Decimal(8, 2)
+  ironMgTarget      Decimal? @map("iron_mg_target") @db.Decimal(8, 2)
+  magnesiumMgTarget Decimal? @map("magnesium_mg_target") @db.Decimal(8, 2)
+  zincMgTarget      Decimal? @map("zinc_mg_target") @db.Decimal(8, 2)
+  vitAMcgTarget     Decimal? @map("vit_a_mcg_target") @db.Decimal(8, 2)
+  vitCMgTarget      Decimal? @map("vit_c_mg_target") @db.Decimal(8, 2)
+  vitDIuTarget      Decimal? @map("vit_d_iu_target") @db.Decimal(8, 2)
+  vitEMgTarget      Decimal? @map("vit_e_mg_target") @db.Decimal(8, 2)
+  vitKMcgTarget     Decimal? @map("vit_k_mcg_target") @db.Decimal(8, 2)
+  folateMcgTarget   Decimal? @map("folate_mcg_target") @db.Decimal(8, 2)
+  omega3MgTarget    Decimal? @map("omega3_mg_target") @db.Decimal(8, 2)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [userId], references: [id])
+
+  @@unique([userId, name])
+}
+
+model Insight {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  topic         InsightTopic
+  dateRange     Unsupported("daterange") @map("date_range")
+  summary       String
+  bullets       Json?    @db.Json
+  actions       Json?    @db.Json
+  modelMetadata Json?    @map("model_metadata") @db.Json
+  confidence    Decimal? @db.Decimal(3, 2)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [userId], references: [id])
+}
+
+model StripeCustomer {
+  id         BigInt   @id @default(autoincrement())
+  userId     String   @map("user_id") @db.Uuid @unique
+  customerId String   @map("customer_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [userId], references: [id])
+}
+
+model Subscription {
+  id                   BigInt   @id @default(autoincrement())
+  userId               String   @map("user_id") @db.Uuid
+  stripeSubscriptionId String   @map("stripe_subscription_id")
+  status               SubscriptionStatus
+  currentPeriodStart   DateTime? @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd     DateTime? @map("current_period_end") @db.Timestamptz(6)
+  cancelAt             DateTime? @map("cancel_at") @db.Timestamptz(6)
+  canceledAt           DateTime? @map("canceled_at") @db.Timestamptz(6)
+  priceId              String?   @map("price_id")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [userId], references: [id])
+}
+
+model UsageRecord {
+  id          BigInt   @id @default(autoincrement())
+  userId      String   @map("user_id") @db.Uuid
+  featureCode String   @map("feature_code")
+  periodStart DateTime @map("period_start") @db.Date
+  periodEnd   DateTime @map("period_end") @db.Date
+  usageCount  Int      @map("usage_count")
+  metadata    Json?    @db.Json
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  profile Profile @relation(fields: [userId], references: [id])
+
+  @@unique([userId, featureCode, periodStart, periodEnd])
+}
+
+model ApiKey {
+  id         BigInt   @id @default(autoincrement())
+  name       String
+  keyHash    String   @map("key_hash")
+  ownerId    String?  @map("created_by") @db.Uuid
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz(6)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  constraints Json?    @db.Json
+
+  owner Profile? @relation("ApiKeysOwner", fields: [ownerId], references: [id])
+}
+
+model FeatureFlag {
+  key        String   @id
+  description String?
+  isActive   Boolean  @map("is_active")
+  rollout    Json?    @db.Json
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+}
+
+model AuditLog {
+  id            BigInt   @id @default(autoincrement())
+  actorUserId   String?  @map("actor_user_id") @db.Uuid
+  targetUserId  String?  @map("target_user_id") @db.Uuid
+  action        String
+  resourceType  String?  @map("resource_type")
+  resourceId    String?  @map("resource_id")
+  metadata      Json?    @db.Json
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  actor  Profile? @relation("ActorAuditLogs", fields: [actorUserId], references: [id])
+  target Profile? @relation("TargetAuditLogs", fields: [targetUserId], references: [id])
+}
+
+enum Role {
+  owner
+  member
+}
+
+enum Sex {
+  male
+  female
+  other
+}
+
+enum ActivityLevel {
+  sedentary
+  lightly_active
+  moderately_active
+  very_active
+  athlete
+}
+
+enum UnitSystem {
+  metric
+  imperial
+}
+
+enum Provider {
+  garmin
+  withings
+  manual
+}
+
+enum ConnectionStatus {
+  connected
+  paused
+  revoked
+  disconnected
+  error
+}
+
+enum InsightTopic {
+  daily
+  weekly
+  nutrition
+  training
+  custom
+}
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  canceled
+  incomplete
+  incomplete_expired
+  unpaid
+}

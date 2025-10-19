@@ -1,0 +1,21 @@
+{
+  "userid": 987654321,
+  "action": "measure",
+  "timestamp": 1718434800,
+  "measuregrps": [
+    {
+      "grpid": 4455667788,
+      "attrib": 0,
+      "category": 1,
+      "created": 1718434800,
+      "modified": 1718434820,
+      "deviceid": "abc123def",
+      "measures": [
+        { "value": 77500, "type": 1, "unit": -3 },
+        { "value": 1800, "type": 5, "unit": -3 },
+        { "value": 22000, "type": 6, "unit": -3 },
+        { "value": 13500, "type": 8, "unit": -3 }
+      ]
+    }
+  ]
+}

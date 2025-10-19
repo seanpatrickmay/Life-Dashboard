@@ -1,0 +1,15 @@
+{
+  "eventType": "daily_summary",
+  "createdTime": "2024-07-01T09:00:00Z",
+  "data": {
+    "calendarDate": "2024-06-30",
+    "caloriesBurned": 2550,
+    "steps": 9470,
+    "sleepingSeconds": 26100,
+    "sleepEfficiency": 92,
+    "restingHeartRate": 52,
+    "hrvRmssd": 70,
+    "stressLevel": 24,
+    "trainingLoad": 83
+  }
+}
