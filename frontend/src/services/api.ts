@@ -15,6 +15,37 @@ export type InsightResponse = {
   source_model: string;
   last_updated: string;
   refreshing?: boolean;
+  greeting?: string | null;
+  hrv_value_ms?: number | null;
+  hrv_note?: string | null;
+  hrv_score?: number | null;
+  rhr_value_bpm?: number | null;
+  rhr_note?: string | null;
+  rhr_score?: number | null;
+  sleep_value_hours?: number | null;
+  sleep_note?: string | null;
+  sleep_score?: number | null;
+  training_load_value?: number | null;
+  training_load_note?: string | null;
+  training_load_score?: number | null;
+  morning_note?: string | null;
+};
+
+export type MetricDelta = {
+  value: number | null;
+  value_unit: string;
+  reference_value: number | null;
+  reference_label: string;
+  delta: number | null;
+  delta_unit: string;
+};
+
+export type ReadinessMetricsSummary = {
+  date: string;
+  hrv: MetricDelta;
+  rhr: MetricDelta;
+  sleep: MetricDelta;
+  training_load: MetricDelta;
 };
 
 export type MetricsOverview = {
@@ -36,5 +67,10 @@ export const fetchInsight = async (): Promise<InsightResponse> => {
 
 export const fetchMetricsOverview = async (rangeDays = 7): Promise<MetricsOverview> => {
   const { data } = await api.get('/api/metrics/overview', { params: { range_days: rangeDays } });
+  return data;
+};
+
+export const fetchReadinessSummary = async (): Promise<ReadinessMetricsSummary> => {
+  const { data } = await api.get('/api/metrics/readiness-summary');
   return data;
 };

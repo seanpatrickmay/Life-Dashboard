@@ -1,18 +1,17 @@
 import { useMemo } from 'react';
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import styled from 'styled-components';
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { useTheme } from 'styled-components';
 
 import { useMetricsOverview } from '../../hooks/useMetricsOverview';
-
-const Card = styled.div`
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 24px;
-  padding: 24px;
-  box-shadow: ${({ theme }) => theme.shadows.soft};
-`;
+import { getChartTheme } from '../../theme/rechartsTheme';
+import { Card } from '../common/Card';
+import type { MonetTheme } from '../../theme/monetTheme';
+import { getStrokePattern } from '../../theme/monetTheme';
 
 export function LoadChart() {
   const { data } = useMetricsOverview(14);
+  const appTheme = useTheme() as MonetTheme;
+  const chart = getChartTheme(appTheme.mode ?? 'light');
   const points = useMemo(() => data?.training_load_trend ?? [], [data]);
   const ticks = useMemo(() => {
     if (!points?.length) return [];
@@ -40,11 +39,18 @@ export function LoadChart() {
     };
   }, [ticks]);
 
+  const strokePattern = getStrokePattern('Load');
+  const patternId = `load-stroke-pattern`;
   return (
     <Card>
       <h3>Training Load</h3>
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height={240}>
         <AreaChart data={points}>
+          <defs>
+            <pattern id={patternId} patternUnits="userSpaceOnUse" width={8} height={8}>
+              <image xlinkHref={strokePattern} width={8} height={8} />
+            </pattern>
+          </defs>
           <XAxis
             dataKey="timestamp"
             axisLine={false}
@@ -52,9 +58,10 @@ export function LoadChart() {
             ticks={ticks}
             tickFormatter={labelForTick}
           />
-          <YAxis axisLine={false} tickLine={false} stroke="#9ed0a1" />
-          <Tooltip formatter={(value: number) => value.toFixed(0)} labelFormatter={() => ''} />
-          <Area type="monotone" dataKey="value" stroke="#9ed0a1" fill="#cfead1" fillOpacity={0.8} />
+          <YAxis axisLine={false} tickLine={false} stroke={chart.grid.stroke} />
+          <CartesianGrid stroke={chart.grid.stroke} strokeDasharray="3 3" />
+          <Tooltip contentStyle={{ background: chart.tooltip.background, color: chart.tooltip.color }} formatter={(value: number) => value.toFixed(0)} labelFormatter={() => ''} />
+          <Area type="monotone" dataKey="value" stroke={chart.Load.stroke} fill={`url(#${patternId})`} fillOpacity={1} />
         </AreaChart>
       </ResponsiveContainer>
     </Card>

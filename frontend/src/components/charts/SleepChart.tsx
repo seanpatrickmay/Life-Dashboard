@@ -1,18 +1,17 @@
 import { useMemo } from 'react';
-import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import styled from 'styled-components';
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { useTheme } from 'styled-components';
 
 import { useMetricsOverview } from '../../hooks/useMetricsOverview';
-
-const Card = styled.div`
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 24px;
-  padding: 24px;
-  box-shadow: ${({ theme }) => theme.shadows.soft};
-`;
+import { getChartTheme } from '../../theme/rechartsTheme';
+import { Card } from '../common/Card';
+import type { MonetTheme } from '../../theme/monetTheme';
+import { getStrokePattern } from '../../theme/monetTheme';
 
 export function SleepChart() {
   const { data } = useMetricsOverview(14);
+  const appTheme = useTheme() as MonetTheme;
+  const chart = getChartTheme(appTheme.mode ?? 'light');
   const bars = useMemo(() => data?.sleep_trend_hours ?? [], [data]);
   const ticks = useMemo(() => {
     if (!bars?.length) return [];
@@ -40,11 +39,18 @@ export function SleepChart() {
     };
   }, [ticks]);
 
+  const strokePattern = getStrokePattern('Sleep');
+  const patternId = `sleep-stroke-pattern`;
   return (
     <Card>
       <h3>Sleep Hours</h3>
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height={240}>
         <BarChart data={bars}>
+          <defs>
+            <pattern id={patternId} patternUnits="userSpaceOnUse" width={8} height={8}>
+              <image xlinkHref={strokePattern} width={8} height={8} />
+            </pattern>
+          </defs>
           <XAxis
             dataKey="timestamp"
             axisLine={false}
@@ -52,9 +58,10 @@ export function SleepChart() {
             ticks={ticks}
             tickFormatter={labelForTick}
           />
-          <YAxis axisLine={false} tickLine={false} stroke="#f9d776" />
-          <Tooltip formatter={(value: number) => `${value.toFixed(1)} h`} labelFormatter={() => ''} />
-          <Bar dataKey="value" fill="#f9d776" radius={[8, 8, 0, 0]} />
+          <YAxis axisLine={false} tickLine={false} stroke={chart.grid.stroke} />
+          <CartesianGrid stroke={chart.grid.stroke} strokeDasharray="3 3" />
+          <Tooltip contentStyle={{ background: chart.tooltip.background, color: chart.tooltip.color }} formatter={(value: number) => `${(value as number).toFixed(1)} h`} labelFormatter={() => ''} />
+          <Bar dataKey="value" fill={`url(#${patternId})`} stroke={chart.Sleep.stroke} radius={[8, 8, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </Card>

@@ -5,13 +5,24 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from typing import Any, Mapping, Sequence
 
 from dotenv import load_dotenv
 from loguru import logger
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
+
+LOG_LEVEL = os.getenv("MANUAL_INGEST_LOG_LEVEL", "INFO").upper()
+logger.remove()
+logger.add(sys.stdout, level="WARNING")
+logger.add(
+    sys.stdout,
+    level=LOG_LEVEL,
+    filter=lambda record: record["extra"].get("component") == "manual_ingest",
+)
+log = logger.bind(component="manual_ingest")
 
 host_db_url = os.getenv("DATABASE_URL_HOST")
 if host_db_url:
@@ -34,7 +45,7 @@ async def main() -> None:
     lookback_days = 30
     today = date.today()
     start_date = today - timedelta(days=lookback_days - 1)
-    cutoff_dt = datetime.utcnow() - timedelta(days=lookback_days)
+    cutoff_dt = datetime.now(UTC) - timedelta(days=lookback_days)
 
     activities = garmin.fetch_recent_activities(cutoff_dt)
     hrv_payload = garmin.fetch_daily_hrv(start_date, today)
@@ -42,7 +53,7 @@ async def main() -> None:
     sleep_payload = garmin.fetch_sleep(start_date, today)
     load_payload = garmin.fetch_training_loads(start_date, today)
 
-    logger.info(
+    log.info(
         "Garmin fetch totals — activities: {}, HRV: {}, RHR: {}, sleep: {}, training load: {}",
         len(activities),
         len(hrv_payload),
@@ -51,21 +62,25 @@ async def main() -> None:
         len(load_payload),
     )
 
-    def preview(label: str, payload: object) -> None:
-        if not payload:
-            logger.info("No {} entries fetched.", label)
-            return
-        if isinstance(payload, list):
-            sample = payload[: min(len(payload), 3)]
-        else:
-            sample = payload
-        logger.info("Sample {} payload: {}", label, sample)
+    def has_valid_data(payload: Any) -> bool:
+        if payload is None:
+            return False
+        if isinstance(payload, Mapping):
+            return any(value is not None for value in payload.values())
+        if isinstance(payload, Sequence) and not isinstance(payload, (str, bytes, bytearray)):
+            return any(item is not None for item in payload)
+        return bool(payload)
 
-    preview("activities", activities)
-    preview("hrv", hrv_payload)
-    preview("rhr", rhr_payload)
-    preview("sleep", sleep_payload)
-    preview("training load", load_payload)
+    payloads = {
+        "activities": activities,
+        "hrv": hrv_payload,
+        "rhr": rhr_payload,
+        "sleep": sleep_payload,
+        "training load": load_payload,
+    }
+    missing_sources = [label for label, payload in payloads.items() if not has_valid_data(payload)]
+    if missing_sources:
+        log.debug("Garmin fetch returned no valid data for {}", ", ".join(missing_sources))
 
     async with AsyncSessionLocal() as session:
         await session.execute(text("ALTER TABLE IF EXISTS activity ALTER COLUMN garmin_id TYPE BIGINT"))
@@ -87,7 +102,7 @@ async def main() -> None:
             sleep_payload=sleep_payload,
             load_payload=load_payload,
         )
-        logger.info("Metrics ingest summary: {}", summary)
+        log.info("Metrics ingest summary: {}", summary)
         await insight.refresh_daily_insight(user_id=1)
 
 

@@ -1,18 +1,17 @@
 import { useMemo } from 'react';
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import styled from 'styled-components';
+import { Area, AreaChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
+import styled, { useTheme } from 'styled-components';
 
 import { useMetricsOverview } from '../../hooks/useMetricsOverview';
-
-const Card = styled.div`
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 24px;
-  padding: 24px;
-  box-shadow: ${({ theme }) => theme.shadows.soft};
-`;
+import { getChartTheme } from '../../theme/rechartsTheme';
+import { Card } from '../common/Card';
+import type { MonetTheme } from '../../theme/monetTheme';
+import { getStrokePattern } from '../../theme/monetTheme';
 
 export function HRVChart() {
   const { data } = useMetricsOverview(14);
+  const appTheme = useTheme() as MonetTheme;
+  const chart = getChartTheme(appTheme.mode ?? 'light');
   const points = useMemo(() => data?.hrv_trend_ms ?? [], [data]);
   const ticks = useMemo(() => {
     if (!points?.length) return [];
@@ -40,11 +39,18 @@ export function HRVChart() {
     };
   }, [ticks]);
 
+  const strokePattern = getStrokePattern('HRV');
+  const patternId = `hrv-stroke-pattern`;
   return (
     <Card>
       <h3>HRV (ms)</h3>
-      <ResponsiveContainer width="100%" height={220}>
-        <LineChart data={points}>
+      <ResponsiveContainer width="100%" height={240}>
+        <AreaChart data={points}>
+          <defs>
+            <pattern id={patternId} patternUnits="userSpaceOnUse" width={8} height={8}>
+              <image xlinkHref={strokePattern} width={8} height={8} />
+            </pattern>
+          </defs>
           <XAxis
             dataKey="timestamp"
             axisLine={false}
@@ -52,10 +58,12 @@ export function HRVChart() {
             ticks={ticks}
             tickFormatter={labelForTick}
           />
-          <YAxis domain={['auto', 'auto']} axisLine={false} stroke="#7ec8e3" />
-          <Tooltip formatter={(value: number) => `${value?.toFixed?.(0)} ms`} labelFormatter={() => ''} />
-          <Line type="monotone" dataKey="value" stroke="#7ec8e3" strokeWidth={3} dot={false} />
-        </LineChart>
+          <YAxis domain={['auto', 'auto']} axisLine={false} stroke={chart.grid.stroke} />
+          <CartesianGrid stroke={chart.grid.stroke} strokeDasharray="3 3" />
+          <Tooltip contentStyle={{ background: chart.tooltip.background, color: chart.tooltip.color }} formatter={(value: number) => `${value?.toFixed?.(0)} ms`} labelFormatter={() => ''} />
+          <Area type="monotone" dataKey="value" stroke={chart.HRV.stroke} strokeWidth={3} fill={`url(#${patternId})`} dot={{ r: 3, stroke: chart.HRV.stroke, strokeWidth: 2, fill: chart.HRV.stroke }} />
+          <Line type="monotone" dataKey="value" stroke={chart.HRV.stroke} strokeWidth={3} dot={false} />
+        </AreaChart>
       </ResponsiveContainer>
     </Card>
   );

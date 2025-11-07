@@ -1,24 +1,30 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { ThemeProvider } from 'styled-components';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import App from './pages/App';
-import { GlobalStyle } from './styles/global';
-import { theme } from './theme';
+import { GlobalStyle } from './theme/GlobalStyle';
+import { ThemeProvider as AppThemeProvider } from './theme/ThemeProvider';
 
 const queryClient = new QueryClient();
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
+
+function Root() {
+  return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
+      <AppThemeProvider>
         <GlobalStyle />
         <BrowserRouter>
           <App />
         </BrowserRouter>
-      </ThemeProvider>
+      </AppThemeProvider>
     </QueryClientProvider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+  <React.StrictMode>
+    <Root />
   </React.StrictMode>
 );
