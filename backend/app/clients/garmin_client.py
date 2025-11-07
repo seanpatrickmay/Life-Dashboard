@@ -1,7 +1,7 @@
 """Wrapper around python-garminconnect for easier dependency injection."""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -42,16 +42,33 @@ class GarminClient:
         res1, _ = self.client.login()
         if res1 == "needs_mfa":
             raise RuntimeError("Garmin MFA required. Please seed tokens manually.")
+        self._apply_profile_metadata()
         self.client.garth.dump(self.tokens_dir)
 
     def _load_tokens(self) -> bool:
         try:
-            self.client.garth.load(self.tokens_dir)
+            token_store = str(self.tokens_dir)
+            self.client.login(tokenstore=token_store)
+            self._apply_profile_metadata()
             self.client.get_user_profile()
             return True
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning("Failed to load Garmin tokens: {}", exc)
             return False
+
+    def _apply_profile_metadata(self) -> None:
+        try:
+            profile = self.client.garth.profile  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Unable to read Garmin profile metadata: {}", exc)
+            return
+        if isinstance(profile, dict):
+            display_name = profile.get("displayName")
+            full_name = profile.get("fullName")
+            if display_name:
+                self.client.display_name = display_name
+            if full_name:
+                self.client.full_name = full_name
 
     def fetch_recent_activities(self, cutoff: datetime) -> list[dict[str, Any]]:
         self.authenticate()
@@ -78,8 +95,6 @@ class GarminClient:
             raw: Any | None = None
             if hasattr(self.client, "get_hrv_data"):
                 try:
-                    raw = self.client.get_hrv_data(current.isoformat(), current.isoformat())
-                except TypeError:
                     raw = self.client.get_hrv_data(current.isoformat())
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Garmin HRV fetch failed for {}: {}", current, exc)
@@ -102,27 +117,12 @@ class GarminClient:
             iso = current.isoformat()
             resting_value: float | None = None
 
-            # Attempt known API variants in order of availability
-            try:
-                if hasattr(self.client, "get_daily_summary"):
-                    summary = self.client.get_daily_summary(iso)
-                    resting_value = self._extract_resting_hr(summary)
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("Failed to fetch daily summary for {}: {}", iso, exc)
-
-            if resting_value is None and hasattr(self.client, "get_daily_stats"):
+            if hasattr(self.client, "get_rhr_day"):
                 try:
-                    stats = self.client.get_daily_stats(iso)
-                    resting_value = self._extract_resting_hr(stats)
+                    payload = self.client.get_rhr_day(iso)
+                    resting_value = self._extract_resting_hr(payload)
                 except Exception as exc:  # noqa: BLE001
-                    logger.debug("Failed to fetch daily stats for {}: {}", iso, exc)
-
-            if resting_value is None and hasattr(self.client, "get_wellness_data"):
-                try:
-                    wellness = self.client.get_wellness_data(iso, iso)
-                    resting_value = self._extract_resting_hr(wellness)
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("Failed to fetch wellness data for {}: {}", iso, exc)
+                    logger.debug("Failed to fetch resting HR for {}: {}", iso, exc)
 
             if resting_value is not None:
                 results.append({"date": iso, "value": resting_value})
@@ -131,19 +131,28 @@ class GarminClient:
 
     def fetch_training_loads(self, start_date: date, end_date: date) -> list[dict[str, Any]]:
         self.authenticate()
-        if hasattr(self.client, "get_training_load"):
+        if not hasattr(self.client, "get_training_status"):
+            logger.debug("python-garminconnect does not expose training status endpoint; skipping load fetch.")
+            return []
+
+        results: list[dict[str, Any]] = []
+        current = start_date
+        while current <= end_date:
+            iso = current.isoformat()
             try:
-                load_data = self.client.get_training_load(start_date.isoformat(), end_date.isoformat())
-                if isinstance(load_data, list):
-                    return load_data
-                if isinstance(load_data, dict):
-                    for key in ("trainingLoadData", "trainingLoadDailySummaries"):
-                        if key in load_data and isinstance(load_data[key], list):
-                            return load_data[key]
-                    return [load_data]
+                payload = self.client.get_training_status(iso)
             except Exception as exc:  # noqa: BLE001
-                logger.debug("Failed to fetch training load: {}", exc)
-        return []
+                logger.debug("Failed to fetch training status for {}: {}", iso, exc)
+                current += timedelta(days=1)
+                continue
+
+            normalized = self._normalize_training_status(payload, current)
+            if normalized:
+                results.append(normalized)
+            else:
+                logger.debug("No training load data found for {}", iso)
+            current += timedelta(days=1)
+        return results
 
     def fetch_sleep(self, start_date: date, end_date: date) -> list[dict[str, Any]]:
         self.authenticate()
@@ -152,8 +161,9 @@ class GarminClient:
         while current <= end_date:
             try:
                 day_data = self.client.get_sleep_data(current.isoformat())
-            except TypeError:
-                day_data = self.client.get_sleep_data(current.isoformat(), current.isoformat())
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Failed to fetch sleep for %s: %s", current, exc)
+                day_data = None
             if day_data:
                 results.append(day_data)
             current += timedelta(days=1)
@@ -166,7 +176,10 @@ class GarminClient:
         from dateutil import parser
 
         try:
-            return parser.isoparse(value)
+            parsed = parser.isoparse(value)
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=UTC)
+            return parsed.astimezone(UTC)
         except ValueError:
             return None
 
@@ -244,3 +257,60 @@ class GarminClient:
                     if resting is not None:
                         return resting
         return None
+
+    @staticmethod
+    def _normalize_training_status(payload: Any, fallback_date: date) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+
+        status = payload.get("mostRecentTrainingStatus")
+        if not isinstance(status, dict):
+            return None
+
+        device_map = status.get("latestTrainingStatusData")
+        if not isinstance(device_map, dict):
+            return None
+
+        selected: dict[str, Any] | None = None
+        for entry in device_map.values():
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("primaryTrainingDevice"):
+                selected = entry
+                break
+            if selected is None:
+                selected = entry
+
+        if not selected:
+            return None
+
+        metric_day = GarminClient._parse_iso_date(selected.get("calendarDate")) or fallback_date
+        acute = selected.get("acuteTrainingLoadDTO") or {}
+        value = acute.get("dailyTrainingLoadAcute") or acute.get("dailyTrainingLoadChronic")
+        if value is None:
+            value = selected.get("weeklyTrainingLoad")
+        if value is None:
+            return None
+
+        try:
+            load_value = float(value)
+        except (TypeError, ValueError):
+            return None
+
+        return {
+            "calendarDate": metric_day.isoformat(),
+            "trainingLoad": load_value,
+            "source": "training_status",
+        }
+
+    @staticmethod
+    def _parse_iso_date(value: str | None) -> date | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+        except ValueError:
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").date()
+            except ValueError:
+                return None

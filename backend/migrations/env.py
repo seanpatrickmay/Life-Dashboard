@@ -3,6 +3,7 @@ from __future__ import annotations
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
+import sqlalchemy as sa
 from alembic import context
 
 import os
@@ -34,6 +35,27 @@ config.set_main_option("sqlalchemy.url", db_url)
 
 target_metadata = Base.metadata
 
+def _ensure_version_table_supports_long_ids(connection) -> None:
+    """Bump alembic_version.version_num length so long revision IDs do not fail."""
+    if connection.dialect.name != "postgresql":
+        return
+    result = connection.execute(
+        sa.text(
+            """
+            SELECT character_maximum_length
+            FROM information_schema.columns
+            WHERE table_name = :table_name
+              AND column_name = 'version_num'
+              AND table_schema = current_schema()
+            """
+        ),
+        {"table_name": "alembic_version"},
+    ).scalar()
+    if result is not None and result < 64:
+        connection.execute(
+            sa.text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)")
+        )
+
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(url=url, target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"})
@@ -50,6 +72,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        _ensure_version_table_supports_long_ids(connection)
         context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():

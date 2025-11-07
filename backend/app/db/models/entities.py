@@ -44,6 +44,20 @@ class DailyMetric(Base):
     readiness_score: Mapped[int | None]
     readiness_label: Mapped[str | None]
     readiness_narrative: Mapped[str | None] = mapped_column(Text)
+    insight_greeting: Mapped[str | None] = mapped_column(Text)
+    insight_hrv_value: Mapped[float | None]
+    insight_hrv_note: Mapped[str | None] = mapped_column(Text)
+    insight_hrv_score: Mapped[float | None]
+    insight_rhr_value: Mapped[float | None]
+    insight_rhr_note: Mapped[str | None] = mapped_column(Text)
+    insight_rhr_score: Mapped[float | None]
+    insight_sleep_value_hours: Mapped[float | None]
+    insight_sleep_note: Mapped[str | None] = mapped_column(Text)
+    insight_sleep_score: Mapped[float | None]
+    insight_training_load_value: Mapped[float | None]
+    insight_training_load_note: Mapped[str | None] = mapped_column(Text)
+    insight_training_load_score: Mapped[float | None]
+    insight_morning_note: Mapped[str | None] = mapped_column(Text)
     vertex_insight_id: Mapped[int | None] = mapped_column(ForeignKey("vertexinsight.id"))
 
     user: Mapped[User] = relationship(back_populates="daily_metrics")

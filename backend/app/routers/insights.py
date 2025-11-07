@@ -4,26 +4,19 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends
 from loguru import logger
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.entities import DailyMetric, VertexInsight
 from app.db.session import get_session
 from app.schemas.insights import InsightResponse
+from app.services.insight_service import InsightService
 
 router = APIRouter(prefix="/insights", tags=["insights"])
 
 
 @router.get("/daily", response_model=InsightResponse)
 async def latest_insight(session: AsyncSession = Depends(get_session)) -> InsightResponse:
-    metric_stmt = (
-        select(DailyMetric)
-        .where(DailyMetric.readiness_narrative.is_not(None))
-        .order_by(DailyMetric.metric_date.desc())
-        .limit(1)
-    )
-    metric_result = await session.execute(metric_stmt)
-    metric = metric_result.scalar_one_or_none()
+    service = InsightService(session)
+    metric = await service.fetch_latest_completed_metric()
     if metric is None:
         return InsightResponse(
             metric_date=datetime.utcnow(),
@@ -35,7 +28,7 @@ async def latest_insight(session: AsyncSession = Depends(get_session)) -> Insigh
             refreshing=True,
         )
 
-    insight: VertexInsight | None = metric.vertex_insight
+    insight = metric.vertex_insight
     source_model = insight.model_name if insight else "vertex"
     last_updated = insight.updated_at if insight else datetime.combine(metric.metric_date, datetime.min.time())
     narrative = metric.readiness_narrative or "Insight not yet generated."
@@ -52,4 +45,18 @@ async def latest_insight(session: AsyncSession = Depends(get_session)) -> Insigh
         narrative=narrative,
         source_model=source_model,
         last_updated=last_updated,
+        greeting=metric.insight_greeting,
+        hrv_value_ms=metric.insight_hrv_value,
+        hrv_note=metric.insight_hrv_note,
+        hrv_score=metric.insight_hrv_score,
+        rhr_value_bpm=metric.insight_rhr_value,
+        rhr_note=metric.insight_rhr_note,
+        rhr_score=metric.insight_rhr_score,
+        sleep_value_hours=metric.insight_sleep_value_hours,
+        sleep_note=metric.insight_sleep_note,
+        sleep_score=metric.insight_sleep_score,
+        training_load_value=metric.insight_training_load_value,
+        training_load_note=metric.insight_training_load_note,
+        training_load_score=metric.insight_training_load_score,
+        morning_note=metric.insight_morning_note,
     )

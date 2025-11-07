@@ -41,3 +41,20 @@ class MetricsOverviewResponse(BaseModel):
     hrv_trend_ms: list[TimeSeriesPoint]
     rhr_trend_bpm: list[TimeSeriesPoint]
     sleep_trend_hours: list[TimeSeriesPoint]
+
+
+class MetricDelta(BaseModel):
+    value: float | None
+    value_unit: str
+    reference_value: float | None
+    reference_label: str
+    delta: float | None
+    delta_unit: str
+
+
+class ReadinessMetricsSummary(BaseModel):
+    date: date
+    hrv: MetricDelta
+    rhr: MetricDelta
+    sleep: MetricDelta
+    training_load: MetricDelta

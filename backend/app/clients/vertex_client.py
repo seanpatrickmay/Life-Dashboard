@@ -15,15 +15,31 @@ from app.core.config import settings
 
 
 def _resolve_sa_path() -> Path:
-    host_path = os.environ.get("VERTEX_SERVICE_ACCOUNT_JSON_HOST") or settings.vertex_service_account_json_host
-    if not host_path:
-        raise FileNotFoundError(
-            "VERTEX_SERVICE_ACCOUNT_JSON_HOST is not set. Provide the absolute path to your Vertex service account JSON."
-        )
-    path = Path(host_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Vertex service account file missing: {path}")
-    return path
+    """
+    Resolve a usable service-account JSON path.
+    Prefers the in-container mount (VERTEX_SERVICE_ACCOUNT_JSON) and falls back to host paths for local runs.
+    """
+    candidates: list[str] = []
+    for value in (
+        os.environ.get("VERTEX_SERVICE_ACCOUNT_JSON"),
+        settings.vertex_sa_path,
+        os.environ.get("VERTEX_SERVICE_ACCOUNT_JSON_HOST"),
+        settings.vertex_service_account_json_host,
+    ):
+        if value and value not in candidates:
+            candidates.append(value)
+
+    for raw_path in candidates:
+        path = Path(raw_path).expanduser()
+        if path.exists():
+            return path
+
+    raise FileNotFoundError(
+        "Vertex service account file not found. Set VERTEX_SERVICE_ACCOUNT_JSON "
+        "to the container mount (/secrets/vertex-service-account.json) or "
+        "VERTEX_SERVICE_ACCOUNT_JSON_HOST to the host file path. Checked paths: "
+        f"{', '.join(candidates) if candidates else 'none provided'}"
+    )
 
 
 def init_vertex() -> GenerativeModel:

@@ -82,10 +82,13 @@ class MetricsService:
             base_load = float(base_load) if base_load is not None else 0.0
             daily_loads[metric_day] = base_load
             window_start = metric_day - timedelta(days=rolling_window_days - 1)
-            rolling_load = sum(
+            window_values = [
                 load for day, load in daily_loads.items() if window_start <= day <= metric_day
+            ]
+            rolling_avg = (
+                sum(window_values) / len(window_values) if window_values else 0.0
             )
-            training_load = rolling_load if rolling_load > 0 else None
+            training_load = rolling_avg if rolling_avg > 0 else None
             duration_total = activity_stats.get("duration")
             training_volume_seconds = duration_total if duration_total else None
             sleep_value = sleep_map.get(metric_day)

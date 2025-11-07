@@ -45,3 +45,26 @@ class MetricsRepository:
         if metric.readiness_label is None:
             metric.readiness_label = insight.response_text.split("\n", 1)[0]
         metric.readiness_narrative = insight.response_text
+
+    async def list_metrics_since(self, start_date: date) -> list[DailyMetric]:
+        stmt = (
+            select(DailyMetric)
+            .where(DailyMetric.metric_date >= start_date)
+            .order_by(DailyMetric.metric_date)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_latest_metric(self) -> DailyMetric | None:
+        stmt = select(DailyMetric).order_by(DailyMetric.metric_date.desc()).limit(1)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_metrics_between(self, start_date: date, end_date: date) -> list[DailyMetric]:
+        stmt = (
+            select(DailyMetric)
+            .where(DailyMetric.metric_date >= start_date, DailyMetric.metric_date <= end_date)
+            .order_by(DailyMetric.metric_date)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
