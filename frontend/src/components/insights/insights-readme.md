@@ -8,3 +8,4 @@ UI components dedicated to displaying readiness insights and related messaging.
 | File | Description |
 | --- | --- |
 | `ReadinessCard.tsx` | Monet-styled readiness summary rendering stored insight columns. |
+| `InsightHistory.tsx` | Historical insight entry with metric rows, notes, and charts. |

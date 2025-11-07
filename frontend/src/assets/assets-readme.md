@@ -3,8 +3,9 @@
 ## Purpose
 Hosts static assets required by the frontend, such as Monet-inspired textures and future media files.
 
-## Contents
+## File Overview
 
 | Path | Description |
 | --- | --- |
-| `textures/` | Texture PNGs used by Monet-themed backgrounds and cards. |
+| `textures/` | Hand-painted texture PNGs (see `textures/textures-readme.md` for inventory) applied to cards, shells, and scenes. |
+| `pixels/` | Procedurally generated Monet sprites (lilies, blossoms, water bases, strokes, overlays). Documented in `pixels/pixels-readme.md`. |

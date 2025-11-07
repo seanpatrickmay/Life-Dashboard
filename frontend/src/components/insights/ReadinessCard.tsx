@@ -96,6 +96,12 @@ const MetricsStack = styled.div`
   display: flex;
   flex-direction: column;
   gap: clamp(18px, 2.8vw, 32px);
+  /* Push all non-hero cards below the bridge span (height ≈ width / AR). */
+  /* Push below arc + reflection heights (computed from viewport width and AR vars). */
+  margin-top: calc(
+    (100vw - (2 * var(--willow-offset, 6vw))) * (1 / var(--bridge-ar, 6) + 1 / var(--bridge-ref-ar, 6))
+    + 24px
+  );
 `;
 
 const MetricRow = styled.div`
@@ -241,7 +247,7 @@ export function ReadinessCard() {
 
   return (
     <Section>
-      <HeroCard>
+      <HeroCard data-hero-readiness="true">
         <Header>
           <span>Morning Readiness</span>
           <ScoreRow>

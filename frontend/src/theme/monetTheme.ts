@@ -50,7 +50,8 @@ import water_stroke_large_dark from '../assets/pixels/water_stroke_large_dark.pn
 import water_stroke_medium_dark from '../assets/pixels/water_stroke_medium_dark.png';
 import water_stroke_small_dark from '../assets/pixels/water_stroke_small_dark.png';
 import sun_glow_light from '../assets/pixels/sun_glow_light.png';
-import sun_glow_dark from '../assets/pixels/sun_glow_dark.png';
+// Use light asset for all moments for consistency per request
+import moon_glow_light from '../assets/pixels/moon_glow_light.png';
 import cloud_reflect_light from '../assets/pixels/cloud_reflect_light.png';
 import cloud_reflect_dark from '../assets/pixels/cloud_reflect_dark.png';
 import reeds_light from '../assets/pixels/reeds_light.png';
@@ -84,6 +85,10 @@ import bridge_arc_reflection_light from '../assets/pixels/bridge_arc_reflection_
 import bridge_arc_reflection_dark from '../assets/pixels/bridge_arc_reflection_dark.png';
 import koi_silhouette from '../assets/pixels/koi_silhouette.png';
 import boat_silhouette from '../assets/pixels/boat_silhouette.png';
+import boat_light from '../assets/pixels/boat_light.png';
+import boat_dark from '../assets/pixels/boat_dark.png';
+import boat_reflection_light from '../assets/pixels/boat_reflection_light.png';
+import boat_reflection_dark from '../assets/pixels/boat_reflection_dark.png';
 
 export const palette = {
   sky: { '100': '#E9F1FF', '200': '#C2D5FF', '300': '#6F8BCB', '900': '#0F1424' },
@@ -114,6 +119,50 @@ const scenePalettes: Record<Mode, ScenePalette> = {
   dark: {
     waterDeep: '#10224B',
     waterMid: '#2E4F9A',
+    waterLight: '#5E78C7',
+    warmGlow: '#FFA66E',
+    bloomHighlight: '#E7A2D4',
+    willowLight: '#3F7D62',
+    willowShadow: '#20533E'
+  }
+};
+
+// Moment-specific palettes: morning/noon use light family with slight variance;
+// twilight/night use dark family with distinct tones to make each feel unique.
+export const scenePalettesByMoment: Record<Moment, ScenePalette> = {
+  morning: {
+    // Sunrise: more intense warm reds/peach/magenta
+    waterDeep: '#74306E',   // deep magenta-violet
+    waterMid: '#FF7C61',    // vivid sunrise salmon
+    waterLight: '#FFD0AE',  // bright peach highlight
+    warmGlow: '#FF5E3F',    // stronger sun warmth
+    bloomHighlight: '#FFB2E2',
+    willowLight: '#4A8C6E',
+    willowShadow: '#2E6F57'
+  },
+  noon: {
+    // Afternoon: more intense light blue / tealish
+    waterDeep: '#117A9E',   // saturated teal-blue
+    waterMid: '#41C9D3',    // bright aqua mid
+    waterLight: '#C9F3F6',  // pale aqua highlight
+    warmGlow: '#FFBE8C',
+    bloomHighlight: '#B8F0DF',
+    willowLight: '#4A8C6E',
+    willowShadow: '#2E6F57'
+  },
+  twilight: {
+    // Twilight: slightly lighter than dark with lilac/purple lift
+    waterDeep: '#24326A',
+    waterMid: '#5E63B0',
+    waterLight: '#B1A7FF',
+    warmGlow: '#FFA66E',
+    bloomHighlight: '#E7A2D4',
+    willowLight: '#3F7D62',
+    willowShadow: '#20533E'
+  },
+  night: {
+    waterDeep: '#0F1E45',   // darkest variant
+    waterMid: '#294A90',
     waterLight: '#5E78C7',
     warmGlow: '#FFA66E',
     bloomHighlight: '#E7A2D4',
@@ -192,6 +241,7 @@ type PixelRegistry = {
   cloudReflection: SpriteSingle;
   waterStrokes: WaterStrokeSprite;
   sunGlow: SpriteSingle;
+  moonGlow: SpriteSingle;
   reeds: SpriteSingle;
   reedsEdge: SpriteSingle;
   willow: SpriteSingle;
@@ -207,6 +257,8 @@ type PixelRegistry = {
   bridgeArcReflection: SpriteSingle;
   koi: string;
   boat: string;
+  boatFull: SpriteSingle;
+  boatReflection: SpriteSingle;
 };
 
 export const pixelSprites: PixelRegistry = {
@@ -289,7 +341,11 @@ export const pixelSprites: PixelRegistry = {
   },
   sunGlow: {
     light: sun_glow_light,
-    dark: sun_glow_dark
+    dark: sun_glow_light
+  },
+  moonGlow: {
+    light: moon_glow_light,
+    dark: moon_glow_light
   },
   cloudReflection: {
     light: cloud_reflect_light,
@@ -328,7 +384,15 @@ export const pixelSprites: PixelRegistry = {
     dark: bridge_arc_reflection_dark
   },
   koi: koi_silhouette,
-  boat: boat_silhouette
+  boat: boat_silhouette,
+  boatFull: {
+    light: boat_light,
+    dark: boat_dark
+  },
+  boatReflection: {
+    light: boat_reflection_light,
+    dark: boat_reflection_dark
+  }
 };
 
 export const composeLayers = (layers: Layer[]) => {
@@ -522,6 +586,9 @@ export type MonetTheme = typeof lightTheme & {
   sceneDensity?: SceneDensity;
   sceneHorizon?: number;
   horizonMode?: HorizonSetting;
+  // Scene testing controls (for sun/moon orbit overrides)
+  timeTestEnabled?: boolean;
+  sceneHour?: number; // 0–24 float
   scene?: {
     palette: ScenePalette;
     horizonByMoment: Record<Moment, number>;

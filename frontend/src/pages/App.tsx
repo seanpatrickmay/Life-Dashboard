@@ -3,13 +3,15 @@ import { Route, Routes } from 'react-router-dom';
 import { DashboardPage } from './Dashboard';
 import { InsightsPage } from './Insights';
 import { SettingsPage } from './Settings';
+import { GardenPage } from './Garden';
 import { PageShell } from '../components/layout/PageShell';
 import { PageBackground } from '../components/layout/PageBackground';
 
 const routes = [
   { path: '/', element: <DashboardPage /> },
   { path: '/insights', element: <InsightsPage /> },
-  { path: '/settings', element: <SettingsPage /> }
+  { path: '/settings', element: <SettingsPage /> },
+  { path: '/garden', element: <GardenPage /> }
 ];
 
 function App() {

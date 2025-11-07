@@ -1,6 +1,6 @@
 import React from 'react';
 import { ThemeProvider as StyledThemeProvider } from 'styled-components';
-import { lightTheme, darkTheme, type FeatureSceneSetting, type SceneDensity, type HorizonSetting } from './monetTheme';
+import { lightTheme, darkTheme, scenePalettesByMoment, type FeatureSceneSetting, type SceneDensity, type HorizonSetting } from './monetTheme';
 
 type Moment = 'morning' | 'noon' | 'twilight' | 'night';
 type ArtIntensity = 'rich' | 'minimal' | 'flat';
@@ -29,6 +29,11 @@ type ThemeModeContextType = {
   horizonMode: HorizonSetting;
   setHorizonMode: (value: HorizonSetting) => void;
   sceneHorizon: number;
+  // Scene test controls
+  timeTestEnabled: boolean;
+  setTimeTestEnabled: (v: boolean) => void;
+  sceneHour: number; // 0–24 float
+  setSceneHour: (h: number) => void;
 };
 
 export const ThemeModeContext = React.createContext<ThemeModeContextType | undefined>(undefined);
@@ -93,9 +98,14 @@ const readStoredHorizonMode = (): HorizonSetting => {
 
 function computeMoment(now = new Date()): Moment {
   const h = now.getHours();
-  if (h >= 5 && h < 11) return 'morning';
-  if (h >= 11 && h < 16) return 'noon';
-  if (h >= 16 && h < 21) return 'twilight';
+  return computeMomentFromHour(h);
+}
+
+function computeMomentFromHour(h: number): Moment {
+  // Morning: 06:00–10:59, Noon: 11:00–16:59, Twilight: 17:00–20:59, Night: 21:00–05:59
+  if (h >= 6 && h < 11) return 'morning';
+  if (h >= 11 && h < 17) return 'noon';
+  if (h >= 17 && h < 21) return 'twilight';
   return 'night';
 }
 
@@ -113,6 +123,16 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [sceneDensity, setSceneDensity] = React.useState<SceneDensity>(readStoredSceneDensity);
   const [horizonMode, setHorizonMode] = React.useState<HorizonSetting>(readStoredHorizonMode);
   const [clock, setClock] = React.useState<Date>(new Date());
+  const [timeTestEnabled, setTimeTestEnabled] = React.useState<boolean>(() => {
+    try { return window.localStorage.getItem('timeTestEnabled') === 'true'; } catch { return false; }
+  });
+  const [sceneHour, setSceneHour] = React.useState<number>(() => {
+    try {
+      const raw = window.localStorage.getItem('sceneHour');
+      const n = raw ? parseFloat(raw) : NaN;
+      return Number.isFinite(n) ? Math.min(24, Math.max(0, n)) : 12;
+    } catch { return 12; }
+  });
 
   React.useEffect(() => {
     if (timeOfDayMode !== 'auto') return;
@@ -120,10 +140,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return () => window.clearInterval(id);
   }, [timeOfDayMode]);
 
-  const effective = mode === 'system' ? system : mode;
-  const moment: Moment = timeOfDayMode === 'auto' ? computeMoment(clock) : timeOfDayMode;
-  const base = effective === 'dark' ? darkTheme : lightTheme;
-  const horizonBase = base.scene?.horizonByMoment?.[moment] ?? 0.7;
+  const userEffective = mode === 'system' ? system : mode; // retained only for UI display
+  const resolvedMoment: Moment = timeTestEnabled
+    ? computeMomentFromHour(sceneHour)
+    : (timeOfDayMode === 'auto' ? computeMoment(clock) : timeOfDayMode);
+  // Moment-driven theme selection: morning/noon -> light, twilight/night -> dark
+  const appliedMode: 'light' | 'dark' = (resolvedMoment === 'morning' || resolvedMoment === 'noon') ? 'light' : 'dark';
+  const base = appliedMode === 'dark' ? darkTheme : lightTheme;
+  const horizonBase = base.scene?.horizonByMoment?.[resolvedMoment] ?? 0.7;
   const horizonOffset =
     horizonMode === 'low' ? -0.05 : horizonMode === 'high' ? 0.05 : horizonMode === 'mid' ? 0.02 : 0;
   const resolvedHorizon = Math.min(0.82, Math.max(0.6, horizonBase + horizonOffset));
@@ -131,18 +155,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     ...base,
     intensity,
     motion,
-    moment,
+    moment: resolvedMoment,
     featureScene,
     willowEnabled,
     sceneDensity,
     sceneHorizon: resolvedHorizon,
-    horizonMode
+    horizonMode,
+    timeTestEnabled,
+    sceneHour
   } as const;
 
   const api = React.useMemo<ThemeModeContextType>(
     () => ({
       mode,
-      effective,
+      effective: appliedMode,
       intensity,
       setIntensity: (i) => {
         setIntensity(i);
@@ -158,7 +184,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setTimeOfDayMode(m);
         try { window.localStorage.setItem('timeOfDayMode', m); } catch {}
       },
-      moment,
+      moment: resolvedMoment,
       featureScene,
       setFeatureScene: (scene) => {
         setFeatureScene(scene);
@@ -180,6 +206,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         try { window.localStorage.setItem('horizonMode', value); } catch {}
       },
       sceneHorizon: resolvedHorizon,
+      timeTestEnabled,
+      setTimeTestEnabled: (v: boolean) => {
+        setTimeTestEnabled(v);
+        try { window.localStorage.setItem('timeTestEnabled', v ? 'true' : 'false'); } catch {}
+      },
+      sceneHour,
+      setSceneHour: (h: number) => {
+        const clamped = Math.min(24, Math.max(0, h));
+        setSceneHour(clamped);
+        try { window.localStorage.setItem('sceneHour', String(clamped)); } catch {}
+      },
       setMode: (m) => {
         setMode(m);
         if (typeof window !== 'undefined') {
@@ -192,7 +229,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         } catch {}
       },
       toggle: () => {
-        const next = effective === 'dark' ? 'light' : 'dark';
+        const next = appliedMode === 'dark' ? 'light' : 'dark';
         setMode(next);
         if (typeof window !== 'undefined') {
           window.localStorage.setItem('themeMode', next);
@@ -203,15 +240,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         } catch {}
       },
     }),
-    [mode, effective, intensity, motion, timeOfDayMode, moment, featureScene, willowEnabled, sceneDensity, horizonMode, resolvedHorizon]
+    [mode, appliedMode, intensity, motion, timeOfDayMode, resolvedMoment, featureScene, willowEnabled, sceneDensity, horizonMode, resolvedHorizon, timeTestEnabled, sceneHour]
   );
 
   // Ensure body reflects current effective mode on first mount and when system changes
   React.useEffect(() => {
     try {
-      document.body.classList.toggle('dark-mode', effective === 'dark');
-      document.body.setAttribute('data-theme', effective);
-      document.body.setAttribute('data-moment', moment);
+      document.body.classList.toggle('dark-mode', appliedMode === 'dark');
+      document.body.setAttribute('data-theme', appliedMode);
+      document.body.setAttribute('data-moment', resolvedMoment);
       document.body.setAttribute('data-intensity', intensity);
       document.body.setAttribute('data-motion', motion ? 'on' : 'off');
       document.body.setAttribute('data-feature-scene', featureScene);
@@ -219,11 +256,37 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       document.body.setAttribute('data-scene-density', sceneDensity);
       document.body.setAttribute('data-horizon', resolvedHorizon.toFixed(2));
     } catch {}
-  }, [effective, moment, intensity, motion, featureScene, willowEnabled, sceneDensity, resolvedHorizon]);
+  }, [appliedMode, resolvedMoment, intensity, motion, featureScene, willowEnabled, sceneDensity, resolvedHorizon]);
+
+  // Override scene palette per moment so background colors differ for all four times.
+  const themedScenePalette = scenePalettesByMoment[resolvedMoment];
+  // Moment-driven accents (subtle hue shift through the day)
+  const momentAccent = (() => {
+    switch (resolvedMoment) {
+      case 'morning': return { accent: '#FFC075', accentSoft: 'rgba(255,192,117,0.28)' }; // ember 200
+      case 'noon': return { accent: '#7ED7C4', accentSoft: 'rgba(126,215,196,0.28)' };   // pond 200
+      case 'twilight': return { accent: '#BF6BAB', accentSoft: 'rgba(191,107,171,0.28)' }; // bloom 300
+      case 'night': return { accent: '#C2D5FF', accentSoft: 'rgba(194,213,255,0.28)' };   // sky 200
+      default: return { accent: '#E6A9D3', accentSoft: 'rgba(230,169,211,0.28)' };
+    }
+  })();
+
+  const themed = React.useMemo(() => ({
+    ...theme,
+    colors: {
+      ...theme.colors,
+      accent: momentAccent.accent,
+      accentSoft: momentAccent.accentSoft
+    },
+    scene: {
+      ...(theme.scene ?? { horizonByMoment: {} as Record<Moment, number> }),
+      palette: themedScenePalette
+    }
+  }), [theme, themedScenePalette, momentAccent]);
 
   return (
     <ThemeModeContext.Provider value={api}>
-      <StyledThemeProvider theme={theme}>{children}</StyledThemeProvider>
+      <StyledThemeProvider theme={themed}>{children}</StyledThemeProvider>
     </ThemeModeContext.Provider>
   );
 }

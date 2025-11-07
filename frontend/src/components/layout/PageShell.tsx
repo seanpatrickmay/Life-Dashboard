@@ -3,8 +3,8 @@ import styled, { css } from 'styled-components';
 import { Link, useLocation } from 'react-router-dom';
 import { composeLayers, getCardLayers, palette } from '../../theme/monetTheme';
 
-const paletteAccent = (mode: 'light' | 'dark') =>
-  mode === 'dark' ? palette.bloom['300'] : palette.bloom['200'];
+const paletteAccent = (mode: 'light' | 'dark', theme?: any) =>
+  theme?.colors?.accent ?? (mode === 'dark' ? palette.bloom['300'] : palette.bloom['200']);
 
 const Frame = styled.div`
   padding: clamp(20px, 3vw, 36px);
@@ -53,7 +53,7 @@ const Nav = styled.nav`
       opacity: 1;
       color: ${({ theme }) => theme.colors.textPrimary};
       text-shadow: 0 0 6px rgba(215, 127, 179, 0.4);
-      border-bottom: 2px solid ${({ theme }) => paletteAccent(theme.mode ?? 'light')};
+      border-bottom: 2px solid ${({ theme }) => paletteAccent(theme.mode ?? 'light', theme)};
     }
   }
 `;
@@ -76,6 +76,9 @@ export function PageShell({ children }: PropsWithChildren) {
         </Link>
         <Link className={pathname.startsWith('/insights') ? 'active' : ''} to="/insights">
           Insights
+        </Link>
+        <Link className={pathname.startsWith('/garden') ? 'active' : ''} to="/garden">
+          Garden
         </Link>
         <Link className={pathname.startsWith('/settings') ? 'active' : ''} to="/settings">
           Settings

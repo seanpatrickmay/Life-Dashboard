@@ -32,13 +32,7 @@ const Segment = styled.div`
   }
 `;
 
-const featureSceneOptions = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'bridge', label: 'Bridge' },
-  { value: 'koi', label: 'Koi' },
-  { value: 'boat', label: 'Boat' },
-  { value: 'none', label: 'None' }
-] as const;
+// Scene focus removed: bridge and boat are always present
 
 const densityOptions = [
   { value: 'sparse', label: 'Sparse' },
@@ -64,10 +58,13 @@ export function SettingsPage() {
     willowEnabled, setWillowEnabled,
     sceneDensity, setSceneDensity,
     horizonMode, setHorizonMode,
-    sceneHorizon
+    sceneHorizon,
+    timeTestEnabled, setTimeTestEnabled,
+    sceneHour, setSceneHour
   } = useThemeMode();
   const setSeg = (val: 'light' | 'dark' | 'system') => () => setMode(val);
-  const setFeature = (val: (typeof featureSceneOptions)[number]['value']) => () => setFeatureScene(val);
+  // Scene focus toggles removed; state retained internally for compatibility
+  const setFeature = (_val: any) => () => {};
   const setDensity = (val: (typeof densityOptions)[number]['value']) => () => setSceneDensity(val);
   const setHorizon = (val: (typeof horizonOptions)[number]['value']) => () => setHorizonMode(val);
   return (
@@ -75,17 +72,29 @@ export function SettingsPage() {
       <h2>Settings</h2>
       <p>Customize update cadence and display preferences.</p>
 
-      <h3>Appearance</h3>
-      <Row>
-        <span style={{ fontFamily: '"Press Start 2P", cursive', fontSize: '0.8rem' }}>Theme:</span>
+      {/* Theme selection hidden: theme now driven by time-of-day */}
+      <Row style={{ marginTop: 12 }}>
+        <span style={{ fontFamily: '"Press Start 2P", cursive', fontSize: '0.8rem' }}>Time Test:</span>
         <Segment>
-          <button onClick={setSeg('light')} className={mode === 'light' ? 'active' : ''}>Light</button>
-          <button onClick={setSeg('dark')} className={mode === 'dark' ? 'active' : ''}>Dark</button>
-          <button onClick={setSeg('system')} className={mode === 'system' ? 'active' : ''}>System</button>
+          <button onClick={() => setTimeTestEnabled(true)} className={timeTestEnabled ? 'active' : ''}>On</button>
+          <button onClick={() => setTimeTestEnabled(false)} className={!timeTestEnabled ? 'active' : ''}>Off</button>
         </Segment>
-        <button onClick={toggle} style={{ marginLeft: 'auto' }}>Toggle</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto' }}>
+          <input
+            type="range"
+            min={0}
+            max={24}
+            step={0.25}
+            value={sceneHour}
+            onChange={(e) => setSceneHour(parseFloat(e.target.value))}
+            disabled={!timeTestEnabled}
+          />
+          <span style={{ width: 72, textAlign: 'right', opacity: timeTestEnabled ? 0.9 : 0.4 }}>
+            {sceneHour.toFixed(2)}h
+          </span>
+        </div>
       </Row>
-      <p style={{ opacity: 0.7, marginTop: 8 }}>Applied: {effective}</p>
+      <p style={{ opacity: 0.7, marginTop: 8 }}>Applied theme: {effective} via moment: {moment}</p>
 
       <h3 style={{ marginTop: 24 }}>Monet Pixel Art</h3>
       <Row>
@@ -114,21 +123,7 @@ export function SettingsPage() {
         </Segment>
         <span style={{ marginLeft: 'auto', opacity: 0.7 }}>Current: {moment}</span>
       </Row>
-      <Row style={{ marginTop: 12 }}>
-        <span style={{ fontFamily: '"Press Start 2P", cursive', fontSize: '0.8rem' }}>Scene focus:</span>
-        <Segment>
-          {featureSceneOptions.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={setFeature(opt.value)}
-              className={featureScene === opt.value ? 'active' : ''}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </Segment>
-        <span style={{ opacity: 0.6 }}>Auto follows the current time of day.</span>
-      </Row>
+      {/* Scene focus removed: bridge and boat always present */}
       <Row style={{ marginTop: 12 }}>
         <span style={{ fontFamily: '"Press Start 2P", cursive', fontSize: '0.8rem' }}>Willow drape:</span>
         <Segment>

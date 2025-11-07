@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import styled, { keyframes, css } from 'styled-components';
 import { useTheme } from 'styled-components';
-import { MonetTheme, resolveFeatureScene } from '../../theme/monetTheme';
+import { MonetTheme } from '../../theme/monetTheme';
 
 type ScatterPoint = {
   id: string;
@@ -41,13 +41,21 @@ const ForegroundOverlay = styled.div`
   image-rendering: pixelated;
 `;
 
+const MidgroundOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4; /* below cards (z:5) and willows (z:6) */
+`;
+
+
 const BlossomSprite = styled.div`
   position: absolute;
   transform: translate(-50%, -50%);
   background-repeat: no-repeat;
   background-size: contain;
   image-rendering: pixelated;
-  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.4));
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.16));
   z-index: 2;
 `;
 
@@ -174,6 +182,173 @@ const FeatureSprite = styled.div`
   pointer-events: none;
 `;
 
+const FullWidthSprite = styled.div`
+  position: absolute;
+  left: var(--willow-offset, 6vw);
+  width: calc(100vw - (2 * var(--willow-offset, 6vw)));
+  /* Use a sane default AR for reflection (e.g., 1200x200 => 6.0). */
+  height: calc((100vw - (2 * var(--willow-offset, 6vw))) / var(--bridge-ar, 6));
+  background-repeat: no-repeat;
+  /* Fill width, preserve intrinsic aspect ratio (no vertical squashing). */
+  background-size: 100% auto;
+  background-position: center top;
+  image-rendering: pixelated;
+  pointer-events: none;
+`;
+
+const FullWidthImage = styled.img`
+  position: absolute;
+  left: var(--willow-offset, 6vw);
+  top: var(--bridge-top, 22vh);
+  width: calc(100vw - (2 * var(--willow-offset, 6vw)));
+  height: auto;
+  image-rendering: pixelated;
+  pointer-events: none;
+  z-index: 4;
+`;
+
+const BoatImage = styled.img`
+  position: absolute;
+  right: var(--willow-offset, 6vw);
+  bottom: 16vh;
+  width: min(36vw, 720px);
+  height: auto;
+  image-rendering: pixelated;
+  pointer-events: none;
+  opacity: 0.95;
+`;
+
+const BoatReflectionImage = styled.img`
+  position: absolute;
+  right: var(--willow-offset, 6vw);
+  /* Bring reflection closer to the hull to avoid floating look */
+  bottom: 13vh;
+  width: min(36vw, 720px);
+  height: auto;
+  image-rendering: pixelated;
+  pointer-events: none;
+  opacity: 0.45;
+  mix-blend-mode: soft-light;
+`;
+
+// Boat drift keyframes and wrappers
+const boatDriftLeft = keyframes`
+  0% { transform: translateX(110vw); }
+  100% { transform: translateX(-30vw); }
+`;
+
+const boatDriftRight = keyframes`
+  0% { transform: translateX(-30vw); }
+  100% { transform: translateX(110vw); }
+`;
+
+const AnimatedTrack = styled.div<{ $dir: 'left' | 'right'; $duration: number; $bottomVh: number }>`
+  position: absolute;
+  left: 0;
+  bottom: ${(p) => p.$bottomVh}vh;
+  width: 100vw;
+  height: 0;
+  pointer-events: none;
+  image-rendering: pixelated;
+  will-change: transform;
+  z-index: 5; /* above bridge images within midground */
+  animation: ${(p) =>
+    p.$dir === 'left'
+      ? css`${boatDriftLeft} ${p.$duration}s ease-in-out 1`
+      : css`${boatDriftRight} ${p.$duration}s ease-in-out 1`};
+`;
+
+const BoatSprite = styled.img<{ $scale?: number; $flip?: boolean }>`
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: min(36vw, 720px);
+  height: auto;
+  image-rendering: pixelated;
+  pointer-events: none;
+  opacity: 0.95;
+  transform-origin: center bottom;
+  ${(p) => css`
+    transform: ${p.$flip ? 'scaleX(-1) ' : ''}scale(${p.$scale ?? 1});
+  `}
+`;
+
+const BoatReflectionSprite = styled.img<{ $scale?: number; $flip?: boolean }>`
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: min(36vw, 720px);
+  height: auto;
+  image-rendering: pixelated;
+  pointer-events: none;
+  opacity: 0.45;
+  mix-blend-mode: soft-light;
+  transform-origin: center top;
+  ${(p) => css`
+    transform: ${p.$flip ? 'scaleX(-1) ' : ''}scale(${p.$scale ?? 1});
+  `}
+`;
+
+// Gentle bob/yaw wrappers
+const boatBob = keyframes`
+  0% { transform: translateY(0px) rotate(0deg); }
+  25% { transform: translateY(-12px) rotate(-2.2deg); }
+  50% { transform: translateY(0px) rotate(1.8deg); }
+  75% { transform: translateY(12px) rotate(0deg); }
+  100% { transform: translateY(0px) rotate(-1.6deg); }
+`;
+
+const boatBobReflection = keyframes`
+  0% { transform: translateY(0px) rotate(0deg); }
+  25% { transform: translateY(-6px) rotate(-1.1deg); }
+  50% { transform: translateY(0px) rotate(0.8deg); }
+  75% { transform: translateY(6px) rotate(0deg); }
+  100% { transform: translateY(0px) rotate(-0.7deg); }
+`;
+
+const BoatBob = styled.div`
+  position: relative;
+  will-change: transform;
+  animation: ${boatBob} 33s ease-in-out infinite;
+  transform-origin: center bottom;
+`;
+
+const BoatBobReflection = styled.div`
+  position: relative;
+  will-change: transform;
+  animation: ${boatBobReflection} 30s ease-in-out infinite;
+  transform-origin: center top;
+`;
+
+// Ripple shimmer under reflection
+const shimmerFlow = keyframes`
+  0% { background-position: 0 0; opacity: 0.2; }
+  50% { background-position: -180px 0; opacity: 0.28; }
+  100% { background-position: -360px 0; opacity: 0.2; }
+`;
+
+const RippleShimmer = styled.div<{ $img: string; $scale?: number; $flip?: boolean }>`
+  position: absolute;
+  left: 0;
+  /* push further below the reflection base */
+  bottom: -10px;
+  width: min(36vw, 720px);
+  height: 22px;
+  background-image: url(${(p) => p.$img});
+  background-repeat: repeat-x;
+  background-size: 120px 22px;
+  image-rendering: pixelated;
+  mix-blend-mode: screen;
+  filter: blur(0.4px);
+  pointer-events: none;
+  z-index: 0;
+  animation: ${shimmerFlow} 12s linear infinite;
+  transform-origin: center top;
+  ${(p) => css`
+    transform: ${p.$flip ? 'scaleX(-1) ' : ''}scale(${p.$scale ?? 1});
+  `}
+`;
+
 function hashSeed(input: string) {
   let h = 1779033703 ^ input.length;
   for (let i = 0; i < input.length; i += 1) {
@@ -225,12 +400,17 @@ function scatterPoints(config: ScatterConfig, region: { x: number; y: number; wi
 
 export function SceneComposer() {
   const theme = useTheme() as MonetTheme;
+  const overlayRef = useRef<HTMLDivElement>(null);
   const mode = (theme.mode ?? 'light') as 'light' | 'dark';
   const moment = theme.moment ?? 'morning';
   const density = theme.sceneDensity ?? (theme.intensity === 'rich' ? 'balanced' : theme.intensity === 'minimal' ? 'sparse' : 'lush');
   const config = densityConfig[density] ?? densityConfig.sparse;
   const horizon = theme.sceneHorizon ?? theme.scene?.horizonByMoment?.[moment] ?? 0.7;
   const waterPalette = theme.scene?.palette ?? (mode === 'dark' ? { waterDeep: '#10224B', waterMid: '#2E4F9A', waterLight: '#5E78C7', warmGlow: '#FFA66E', bloomHighlight: '#E7A2D4', willowLight: '#3F7D62', willowShadow: '#20533E' } : { waterDeep: '#4A69B5', waterMid: '#6E8FD1', waterLight: '#A5BEEB', warmGlow: '#FFBE8C', bloomHighlight: '#F9C7E1', willowLight: '#4A8C6E', willowShadow: '#2E6F57' });
+
+  // Boat drift state
+  const [boatDir, setBoatDir] = useState<'left' | 'right'>('left');
+  const [boatKey, setBoatKey] = useState(0);
 
   const padSprites = theme.pixels.padSmall[mode];
   const padRing = theme.pixels.padRing[mode];
@@ -269,7 +449,6 @@ export function SceneComposer() {
     }));
   }, [pads, config.blossoms, mode, moment, density, blossomSprites]);
 
-  const featureScene = resolveFeatureScene(moment, theme.featureScene ?? 'auto');
   const showFeature = theme.intensity !== 'flat';
   const willowSprites = theme.pixels.willowStrands[mode];
 
@@ -315,9 +494,28 @@ export function SceneComposer() {
           style={{ backgroundSize: '160px 80px' }}
           $animation={css`${gentleDrift} 16s linear infinite`}
         />
-        {(moment === 'morning' || moment === 'twilight') && (
-          <BaseLayer image={theme.pixels.cloudReflection[mode]} blend="screen" opacity={0.35} />
-        )}
+        {(() => {
+          // Subtle sky reflection varies by moment
+          let opacity = 0.28;
+          let blend: string = 'screen';
+          switch (moment) {
+            case 'morning':
+              opacity = 0.32; blend = 'screen'; break;
+            case 'noon':
+              opacity = 0.22; blend = 'overlay'; break;
+            case 'twilight':
+              opacity = 0.36; blend = 'screen'; break;
+            case 'night':
+              opacity = 0.26; blend = 'screen'; break;
+          }
+          return (
+            <BaseLayer
+              image={theme.pixels.cloudReflection[mode]}
+              blend={blend}
+              opacity={opacity}
+            />
+          );
+        })()}
         <BaseLayer
           image={theme.pixels.causticRipple[mode]}
           blend="screen"
@@ -325,16 +523,7 @@ export function SceneComposer() {
           style={{ backgroundSize: '200px 200px' }}
           $animation={css`${gentleDrift} 32s linear infinite`}
         />
-        <BaseLayer
-          image={theme.pixels.sunGlow[mode]}
-          blend="screen"
-          opacity={0.8}
-          style={{
-            backgroundRepeat: 'no-repeat',
-            backgroundPosition: '55% 28%',
-            backgroundSize: 'min(400px, 45vw)'
-          }}
-        />
+        {/* Sun moved to foreground (behind bridge) below */}
         <PadsLayer>
           {pads.map((pad) => (
             <PadSprite
@@ -371,48 +560,7 @@ export function SceneComposer() {
             opacity: 0.45
           }}
         />
-        {showFeature && featureScene === 'bridge' && (
-          <>
-            <FeatureSprite
-              style={{
-                top: `${Math.max(12, horizon * 100 - 36)}%`,
-                width: 'min(900px, 85vw)',
-                height: '200px',
-                backgroundImage: `url(${theme.pixels.bridgeArc[mode]})`
-              }}
-            />
-            <FeatureSprite
-              style={{
-                top: `${Math.min(95, horizon * 100 - 6)}%`,
-                width: 'min(900px, 85vw)',
-                height: '200px',
-                backgroundImage: `url(${theme.pixels.bridgeArcReflection[mode]})`,
-                opacity: 0.6,
-                mixBlendMode: 'soft-light'
-              }}
-            />
-          </>
-        )}
-        {showFeature && featureScene === 'koi' && (
-          <FeatureSprite
-            style={{
-              top: `${Math.min(95, horizon * 100 + 4)}%`,
-              width: '200px',
-              height: '120px',
-              backgroundImage: `url(${theme.pixels.koi})`
-            }}
-          />
-        )}
-        {showFeature && featureScene === 'boat' && (
-          <FeatureSprite
-            style={{
-              top: `${Math.min(90, horizon * 100 - 2)}%`,
-              width: '260px',
-              height: '180px',
-              backgroundImage: `url(${theme.pixels.boat})`
-            }}
-          />
-        )}
+        {/* Feature sprites (koi/boat) removed per design: bridge + boat always on midground overlay */}
         <BaseLayer
           image={mode === 'dark' ? theme.pixels.speckles.dark : theme.pixels.speckles.light}
           blend={mode === 'dark' ? 'screen' : 'soft-light'}
@@ -426,6 +574,190 @@ export function SceneComposer() {
           style={{ backgroundRepeat: 'no-repeat', backgroundSize: 'cover' }}
         />
       </SceneRoot>
+      <MidgroundOverlay aria-hidden ref={overlayRef}>
+        {/* Sun/Moon orbital path behind the bridge */}
+        {(() => {
+          if (typeof window === 'undefined') return null;
+          const vw = window.innerWidth || 1200;
+          const willowOffset = 0.06 * vw; // matches 6vw fallback used in CSS
+          const leftRootX = willowOffset;
+          const rightRootX = vw - willowOffset;
+          const widthPx = rightRootX - leftRootX;
+          // bridge top and arc height
+          const surfaceEl = overlayRef.current?.parentElement as HTMLElement | null;
+          const styles = surfaceEl ? getComputedStyle(surfaceEl) : null;
+          const bridgeTopPx = styles ? parseFloat(styles.getPropertyValue('--bridge-top') || '0') : 0;
+          const arStr = overlayRef.current?.style.getPropertyValue('--bridge-ar') || '6';
+          const bridgeAR = Number.parseFloat(arStr) || 6;
+          const arcHeight = widthPx / bridgeAR;
+          const baselineY = bridgeTopPx + arcHeight; // approximate root line
+
+          // ellipse radii
+          const rx = widthPx / 2;
+          const ry = rx * 0.52; // vertical reach
+          const cx = leftRootX + rx;
+          let cy = baselineY; // center baseline, adjust shortly
+
+          // determine hour from test slider or moment
+          const hourFromMoment = (m: string): number => {
+            switch (m) {
+              case 'morning': return 8;
+              case 'noon': return 12;
+              case 'twilight': return 18;
+              case 'night': return 0;
+              default: return 12;
+            }
+          };
+          const hour = theme.timeTestEnabled ? (theme.sceneHour ?? 12) : hourFromMoment(theme.moment ?? 'noon');
+
+          // Clockwise mapping: as hour increases, angle decreases
+          // 06:00 -> π (left), 12:00 -> π/2 (apex), 18:00 -> 0 (right)
+          const sunAngle = (18 - hour) * (Math.PI / 12);
+          const moonAngle = (18 - (hour + 12)) * (Math.PI / 12);
+
+          const size = Math.min(420, vw * 0.4);
+          // Raise orbit by ~80px relative to current position
+          cy += size * 0.06 - 92;
+
+          const sunX = cx + rx * Math.cos(sunAngle);
+          const sunY = cy - ry * Math.sin(sunAngle);
+          const moonX = cx + rx * Math.cos(moonAngle);
+          const moonY = cy - ry * Math.sin(moonAngle);
+
+          // visibility windows
+          const showSun = !(hour >= 19 || hour < 5);
+          const showMoon = !(hour >= 7 && hour < 17);
+
+          const isSunAbove = Math.sin(sunAngle) > -0.2;
+          const isMoonAbove = Math.sin(moonAngle) > -0.2;
+          const sunOpacity = isSunAbove ? 0.92 : 0.35;
+          const moonOpacity = isMoonAbove ? 0.6 : 0.25;
+
+          const variant: 'light' | 'dark' = 'light';
+          return (
+            <>
+              {showSun && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${sunX - size / 2}px`,
+                    top: `${sunY - size / 2}px`,
+                    width: `${size}px`,
+                    height: `${size}px`,
+                    backgroundImage: `url(${theme.pixels.sunGlow[variant]})`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'center',
+                    backgroundSize: 'contain',
+                    opacity: sunOpacity,
+                    mixBlendMode: 'screen',
+                    zIndex: 3
+                  }}
+                />
+              )}
+              {showMoon && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${moonX - size / 2}px`,
+                    top: `${moonY - size / 2}px`,
+                    width: `${size * 0.86}px`,
+                    height: `${size * 0.86}px`,
+                    backgroundImage: `url(${theme.pixels.moonGlow[variant]})`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'center',
+                    backgroundSize: 'contain',
+                    opacity: moonOpacity,
+                    mixBlendMode: 'screen',
+                    zIndex: 3
+                  }}
+                />
+              )}
+            </>
+          );
+        })()}
+
+        {/* Bridge always present spanning between willows */}
+        <FullWidthImage
+          src={theme.pixels.bridgeArc[mode]}
+          alt="Bridge"
+          onLoad={(e) => {
+            const img = e.currentTarget;
+            const ar = img.naturalWidth / Math.max(1, img.naturalHeight);
+            overlayRef.current?.style.setProperty('--bridge-ar', `${ar}`);
+          }}
+        />
+        <FullWidthImage
+          src={theme.pixels.bridgeArcReflection[mode]}
+          alt="Bridge Reflection"
+          style={{
+            top: `calc(var(--bridge-top, 22vh) + (calc(100vw - (2 * var(--willow-offset, 6vw))) / var(--bridge-ar, 6)))`,
+            opacity: 0.45
+          }}
+          onLoad={(e) => {
+            const img = e.currentTarget;
+            const ar = img.naturalWidth / Math.max(1, img.naturalHeight);
+            overlayRef.current?.style.setProperty('--bridge-ref-ar', `${ar}`);
+          }}
+        />
+        {/* Animated Boat drift across water */}
+        {(() => {
+          const maxBottomVh = Math.max(6, (100 - (horizon * 100)) - 8);
+          const low = 12; // bottom track for right->left (near viewer)
+          // much higher pass for left->right; approach horizon safely (leave ~2vh margin)
+          const ceiling = Math.max(0, maxBottomVh - 2);
+          const high = Math.min(ceiling, low + 30);
+          const bottomVh = boatDir === 'left' ? low : high;
+          // much smaller on left->right pass
+          const scale = boatDir === 'left' ? 1.0 : 0.60;
+          const flip = boatDir === 'left'; // assume asset faces right by default; flip when moving left
+          const duration = 30; // seconds side-to-side
+          const handleEnd = () => {
+            const nextDir = boatDir === 'left' ? 'right' : 'left';
+            setBoatDir(nextDir);
+            setBoatKey((k) => k + 1);
+          };
+          return (
+            <>
+              <AnimatedTrack
+                key={`boat-${boatKey}`}
+                $dir={boatDir}
+                $duration={duration}
+                $bottomVh={bottomVh}
+                onAnimationEnd={handleEnd}
+              >
+                <BoatBob>
+                  <BoatSprite
+                    src={theme.pixels.boatFull[mode]}
+                    alt="Boat"
+                    $scale={scale}
+                    $flip={flip}
+                  />
+                </BoatBob>
+              </AnimatedTrack>
+              <AnimatedTrack
+                key={`boat-ref-${boatKey}`}
+                $dir={boatDir}
+                $duration={duration}
+                $bottomVh={Math.max(0, bottomVh - 8)}
+              >
+                <BoatBobReflection>
+                  <BoatReflectionSprite
+                    src={theme.pixels.boatReflection[mode]}
+                    alt="Boat Reflection"
+                    $scale={scale}
+                    $flip={flip}
+                  />
+                  <RippleShimmer
+                    $img={theme.pixels.causticRipple[mode]}
+                    $scale={scale}
+                    $flip={flip}
+                  />
+                </BoatBobReflection>
+              </AnimatedTrack>
+            </>
+          );
+        })()}
+      </MidgroundOverlay>
       <ForegroundOverlay aria-hidden>
         {theme.willowEnabled !== false && (
           <>
@@ -433,6 +765,7 @@ export function SceneComposer() {
             <WillowOverhang side="right" sprite={willowSprites.right} />
           </>
         )}
+        {/* Restore corner blossoms */}
         <FloatingBlossom
           sprite={blossomSprites[0]}
           glow={blossomGlow}

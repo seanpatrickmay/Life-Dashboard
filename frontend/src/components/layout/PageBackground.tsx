@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import React, { ReactNode, useLayoutEffect, useRef } from 'react';
 import styled, { keyframes, css } from 'styled-components';
 import { getRippleLayer } from '../../theme/monetTheme';
 import { SceneComposer } from '../scene/SceneComposer';
@@ -61,7 +61,7 @@ const Surface = styled.div`
 
 const ContentLayer = styled.div`
   position: relative;
-  z-index: 4;
+  z-index: 5;
   width: 100%;
   height: 100%;
 
@@ -77,8 +77,42 @@ type Props = {
 };
 
 export function PageBackground({ children, className }: Props) {
+  const surfaceRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const update = () => {
+      const root = surfaceRef.current;
+      if (!root) return;
+      const hero = root.querySelector('[data-hero-readiness="true"]') as HTMLElement | null;
+      if (!hero) return;
+      const heroRect = hero.getBoundingClientRect();
+      const rootRect = root.getBoundingClientRect();
+      const gap = 12; // px gap under hero
+      const topPx = Math.max(0, heroRect.bottom - rootRect.top + gap);
+      root.style.setProperty('--bridge-top', `${topPx}px`);
+      // Expose hero top/right for precise sun placement
+      const heroTop = Math.max(0, heroRect.top - rootRect.top);
+      const heroRight = Math.max(0, heroRect.right - rootRect.left);
+      const heroLeft = Math.max(0, heroRect.left - rootRect.left);
+      root.style.setProperty('--hero-top', `${heroTop}px`);
+      root.style.setProperty('--hero-right', `${heroRight}px`);
+      root.style.setProperty('--hero-left', `${heroLeft}px`);
+    };
+    update();
+    const obs = new ResizeObserver(update);
+    if (surfaceRef.current) obs.observe(surfaceRef.current);
+    const hero = surfaceRef.current?.querySelector('[data-hero-readiness="true"]') as HTMLElement | null;
+    if (hero) obs.observe(hero);
+    const onResize = () => update();
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      obs.disconnect();
+    };
+  }, []);
+
   return (
-    <Surface className={className}>
+    <Surface className={className} ref={surfaceRef}>
       <SceneComposer />
       <ContentLayer>{children}</ContentLayer>
     </Surface>

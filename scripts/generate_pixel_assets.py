@@ -95,8 +95,28 @@ BLUE_NOISE_16 = [
 PREVIEWS: list[tuple[str, list[list[tuple[int, int, int, int]]], bool]] = []
 
 
+SKIP_SAFE = {
+    # Do not overwrite hand-authored bridge assets unless explicitly allowed.
+    "bridge_arc_light.png",
+    "bridge_arc_dark.png",
+    "bridge_arc_reflection_light.png",
+    "bridge_arc_reflection_dark.png",
+    # Boat assets (user-provided)
+    "boat_silhouette.png",
+    "boat_light.png",
+    "boat_dark.png",
+    "boat_reflection_light.png",
+    "boat_reflection_dark.png",
+}
+
+
 def save_asset(filename: str, px: list[list[tuple[int, int, int, int]]], tile_preview: bool = False) -> None:
-    write_png_rgba(OUT / filename, px)
+    path = OUT / filename
+    allow = os.environ.get("ALLOW_OVERWRITE_PIXELS", "0") == "1"
+    if path.exists() and filename in SKIP_SAFE and not allow:
+        # Skip overwriting user-supplied sprites.
+        return
+    write_png_rgba(path, px)
     PREVIEWS.append((filename, px, tile_preview))
 
 
@@ -595,6 +615,52 @@ def draw_willow_strands(name: str, palette, side: str) -> None:
     save_asset(f"{name}.png", px)
 
 
+def draw_bank_fauna(name: str, palette, side: str) -> None:
+    """Generate bank-side foliage silhouettes to sit behind the bridge.
+    Wide, short clusters with stems and leaves.
+    """
+    w, h = 512, 220
+    px = blank(w, h)
+    base = palette["leaf_deep"]
+    leaf = palette["leaf"]
+
+    # ground band
+    for x in range(w):
+        for y in range(h - 24, h):
+            put(px, x, y, mix(base, leaf, 0.15))
+
+    # clumps
+    rng.local = rng.randrange(10**6)
+    clusters = 10
+    for i in range(clusters):
+        cx = int((i + 0.5) * (w / clusters) + rng.randint(-12, 12))
+        top = rng.randint(h - 120, h - 60)
+        width = rng.randint(40, 80)
+        height = h - top
+        for yy in range(top, h - 20):
+            span = int(width * (1 - (yy - top) / max(1, height)))
+            for xx in range(cx - span, cx + span):
+                if 0 <= xx < w:
+                    if rng.random() < 0.6:
+                        put(px, xx, yy, leaf)
+        # stems
+        for s in range(rng.randint(3, 6)):
+            sx = cx + rng.randint(-width // 2, width // 2)
+            for yy in range(top - rng.randint(6, 16), h - 24):
+                jitter = rng.randint(-1, 1)
+                put(px, max(0, min(w - 1, sx + jitter)), yy, base)
+
+    # mirror for right side if needed
+    if side == "right":
+        mirrored = blank(w, h)
+        for y in range(h):
+            for x in range(w):
+                mirrored[y][w - 1 - x] = px[y][x]
+        px = mirrored
+
+    save_asset(f"{name}.png", px)
+
+
 def draw_blossom_cluster(name: str, base, count: int) -> None:
     w = h = 48
     px = blank(w, h)
@@ -847,6 +913,10 @@ def main() -> None:
     draw_willow_strands("willow_strands_right_light", LIGHT, "right")
     draw_willow_strands("willow_strands_left_dark", DARK, "left")
     draw_willow_strands("willow_strands_right_dark", DARK, "right")
+    draw_bank_fauna("bank_fauna_left_light", LIGHT, "left")
+    draw_bank_fauna("bank_fauna_right_light", LIGHT, "right")
+    draw_bank_fauna("bank_fauna_left_dark", DARK, "left")
+    draw_bank_fauna("bank_fauna_right_dark", DARK, "right")
     draw_blossom_cluster("blossom_cluster_light_1", LIGHT, 4)
     draw_blossom_cluster("blossom_cluster_light_2", LIGHT, 3)
     draw_blossom_cluster("blossom_cluster_light_3", LIGHT, 5)

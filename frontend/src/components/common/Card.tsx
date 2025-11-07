@@ -19,7 +19,7 @@ export const Card = styled.div`
   }};
   border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
   border: none;
-  box-shadow: 0 18px 38px rgba(4, 8, 14, 0.18);
+  box-shadow: 0 18px 38px rgba(4, 8, 14, 0.12);
   color: ${({ theme }) => theme.colors.textPrimary};
   *, *::before, *::after {
     text-shadow: ${({ theme }) =>
@@ -41,7 +41,7 @@ export const Card = styled.div`
     bottom: -28px;
     height: 52px;
     background: radial-gradient(circle, rgba(0, 0, 0, 0.35) 0%, transparent 70%);
-    opacity: 0.55;
+    opacity: 0.25;
     filter: blur(20px);
     z-index: -1;
   }
