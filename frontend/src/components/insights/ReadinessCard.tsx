@@ -1,130 +1,127 @@
-import styled from 'styled-components';
+import styled, { useTheme } from 'styled-components';
+import { useLayoutEffect, useState } from 'react';
 
 import { useInsight } from '../../hooks/useInsight';
 import { useMetricSummary } from '../../hooks/useMetricSummary';
 import type { MetricDelta } from '../../services/api';
 import { Card as BaseCard } from '../common/Card';
-import { getBlossomSprite } from '../../theme/monetTheme';
+import type { MonetTheme, Moment } from '../../theme/monetTheme';
 
+type MetricKey = 'hrv' | 'rhr' | 'sleep' | 'training_load';
 const Section = styled.div`
   display: flex;
   flex-direction: column;
-  gap: clamp(18px, 2.5vw, 28px);
+  gap: clamp(18px, 2.5vw, 32px);
 `;
 
-const HeroCard = styled(BaseCard)`
-  padding: clamp(28px, 4vw, 40px);
-  overflow: hidden;
-  min-height: 240px;
-
-  &::after {
-    content: '';
-    position: absolute;
-    width: clamp(100px, 20vw, 220px);
-    height: clamp(100px, 20vw, 220px);
-    top: clamp(-10px, -4vw, 10px);
-    right: clamp(-20px, 5vw, 60px);
-    background-image: ${({ theme }) => `url(${getBlossomSprite(theme.mode ?? 'light')})`};
-    background-size: contain;
-    background-repeat: no-repeat;
-    opacity: 0.6;
-    image-rendering: pixelated;
-    pointer-events: none;
-  }
+const HeroCluster = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: clamp(14px, 2vw, 22px);
 `;
 
-const MiniCard = styled(BaseCard)`
-  padding: clamp(16px, 2.2vw, 26px);
-  min-height: 120px;
-`;
-
-const Header = styled.div`
+const HeroTile = styled(BaseCard)`
+  flex: 1 1 min(320px, 48vw);
+  min-width: min(260px, 48vw);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-
-  span {
-    font-family: ${({ theme }) => theme.fonts.heading};
-    font-size: 0.8rem;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: ${({ theme }) => theme.colors.textSecondary};
-  }
+  gap: 8px;
 `;
 
-const ScoreRow = styled.div`
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
+const HeroLabel = styled.span`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.85rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
-const ScoreValue = styled.div`
-  font-size: clamp(3.2rem, 5vw, 4.2rem);
+const HeroScore = styled.div`
+  font-size: clamp(3.6rem, 6vw, 4.6rem);
   font-family: ${({ theme }) => theme.fonts.heading};
   line-height: 1;
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
-const ScoreMeta = styled.div`
+const HeroScale = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 `;
 
-const ScoreOutOf = styled.span`
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: ${({ theme }) => theme.colors.textSecondary};
+const ScaleRow = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 `;
 
-const ScoreLabel = styled.strong`
+const ScaleValue = styled.strong`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 1rem;
+  letter-spacing: 0.18em;
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
-const ReadinessNote = styled.p`
+const ScoreLabel = styled.span`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.95rem;
+  letter-spacing: 0.12em;
+  color: ${({ theme }) => theme.colors.textPrimary};
+`;
+
+const ScaleStamp = styled.small`
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: ${({ theme }) => theme.colors.textSecondary};
+`;
+
+const HeroNarrative = styled.p`
   margin: 0;
   font-size: 1rem;
-  line-height: 1.7;
+  line-height: 1.6;
   color: ${({ theme }) => theme.colors.textSecondary};
-  white-space: pre-line;
 `;
 
-const MetricsStack = styled.div`
+const MetricMatrix = styled.div`
   display: flex;
   flex-direction: column;
-  gap: clamp(18px, 2.8vw, 32px);
-  /* Push all non-hero cards below the bridge span (height ≈ width / AR). */
-  /* Push below arc + reflection heights (computed from viewport width and AR vars). */
-  margin-top: calc(
-    (100vw - (2 * var(--willow-offset, 6vw))) * (1 / var(--bridge-ar, 6) + 1 / var(--bridge-ref-ar, 6))
-    + 24px
-  );
+  gap: clamp(18px, 2.8vw, 34px);
 `;
 
-const MetricRow = styled.div`
+const MetricGroup = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: clamp(16px, 2vw, 28px);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: clamp(12px, 1.5vw, 20px);
+  align-items: flex-start;
 `;
 
-const MetricLeft = styled.div`
+const MetricChip = styled(BaseCard)`
+  min-height: 110px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+`;
+
+const InsightChip = styled(BaseCard)`
+  min-height: 110px;
+`;
+
+const SparklineCard = styled(BaseCard)`
+  min-height: 70px;
+  padding: clamp(10px, 1.4vw, 16px);
 `;
 
 const MetricTitleLine = styled.div`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 1rem;
+  font-size: 0.95rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: ${({ theme }) => theme.colors.textSecondary};
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 
   strong {
     font-size: 1.1rem;
@@ -135,7 +132,7 @@ const MetricTitleLine = styled.div`
 
 const MetricScoreText = styled.span`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   letter-spacing: 0.2em;
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
@@ -155,9 +152,31 @@ const MetricDeltaText = styled.span<{ $variant: DeltaVariant }>`
 
 const MetricInsight = styled.p`
   margin: 0;
-  font-size: 1rem;
-  line-height: 1.7;
+  font-size: 0.95rem;
+  line-height: 1.6;
   color: ${({ theme }) => theme.colors.textSecondary};
+`;
+
+const SparklineSvg = styled.svg`
+  width: 100%;
+  height: 48px;
+  display: block;
+`;
+
+const SparklinePath = styled.path`
+  fill: none;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  shape-rendering: crispEdges;
+`;
+
+const SparklineBaseline = styled.line`
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  vector-effect: non-scaling-stroke;
+  shape-rendering: crispEdges;
 `;
 
 const Notice = styled.p`
@@ -168,9 +187,118 @@ const Notice = styled.p`
   font-family: ${({ theme }) => theme.fonts.body};
 `;
 
+type SparklinePoint = { x: number; y: number };
+
+const createSeededRandom = (seed: string) => {
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    h = Math.imul(31, h) + seed.charCodeAt(i);
+    h |= 0;
+  }
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), h | 1);
+    h ^= h + Math.imul(h ^ (h >>> 7), h | 61);
+    return ((h ^ (h >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+type MetricRange = { min: number; max: number };
+
+const metricRanges: Record<MetricKey, MetricRange> = {
+  hrv: { min: 20, max: 120 },
+  rhr: { min: 40, max: 80 },
+  sleep: { min: 4, max: 10 },
+  training_load: { min: 0, max: 160 }
+};
+
+const normalizeValue = (value?: number | null, range?: MetricRange) => {
+  if (value == null) return 50;
+  if (!range) return Math.max(0, Math.min(100, value));
+  const clamped = Math.max(range.min, Math.min(range.max, value));
+  return ((clamped - range.min) / (range.max - range.min)) * 100;
+};
+
+const buildSparkline = (key: string, metricKey: string, metric?: MetricDelta): SparklinePoint[] => {
+  const points = 7;
+  const rng = createSeededRandom(`${key}-${metricKey}`);
+  const range = metricRanges[metricKey];
+  const base = normalizeValue(metric?.value, range);
+  const width = range ? range.max - range.min : 100;
+  const deltaNorm = width ? ((metric?.delta ?? 0) / width) * 100 : 0;
+  return Array.from({ length: points }, (_, idx) => {
+    const progress = idx / (points - 1);
+    const trend = base + deltaNorm * progress;
+    const noise = (rng() - 0.5) * 10;
+    const value = Math.max(0, Math.min(100, trend + noise));
+    return {
+      x: progress * 100,
+      y: 40 - (value / 100) * 40
+    };
+  });
+};
+
+const fallbackHeroNarrative: Record<Moment, string> = {
+  morning: 'Poised for a bright start.',
+  noon: 'Steady energy through the day.',
+  twilight: 'Ease into the calm.',
+  night: 'Restore and settle.'
+};
+
+const fallbackMetricInsights: Record<MetricKey, string> = {
+  hrv: 'Recovery signals trending strong.',
+  rhr: 'Resting rate holds steady.',
+  sleep: 'Deep sleep carried the night.',
+  training_load: 'Training load within sweet spot.'
+};
+
+const chartKeyMap: Record<MetricKey, keyof MonetTheme['chart']> = {
+  hrv: 'HRV',
+  rhr: 'RHR',
+  sleep: 'Sleep',
+  training_load: 'Load'
+};
+
+const unitLabelMap: Record<MetricKey, string> = {
+  hrv: 'ms',
+  rhr: 'bpm',
+  sleep: 'hrs',
+  training_load: 'pts'
+};
+
+const momentLabelMap: Record<Moment, string> = {
+  morning: 'Morning',
+  noon: 'Noon',
+  twilight: 'Twilight',
+  night: 'Night'
+};
+
 export function ReadinessCard() {
   const { data: insight, isLoading: insightLoading } = useInsight();
   const { data: summary } = useMetricSummary();
+  const theme = useTheme() as MonetTheme;
+  const activeMoment = (theme.moment ?? 'morning') as Moment;
+  const [safeOffsets, setSafeOffsets] = useState({ metricsTop: 0, bottomPad: 64 });
+
+  useLayoutEffect(() => {
+    const surface = document.querySelector('[data-scene-surface]') as HTMLElement | null;
+    if (!surface) return;
+
+    const compute = () => {
+      const styles = getComputedStyle(surface);
+      const metricsTop = parseFloat(styles.getPropertyValue('--safe-metrics-top') || '0');
+      const bottomPad = parseFloat(styles.getPropertyValue('--boat-padding') || '64') || 64;
+      setSafeOffsets({ metricsTop, bottomPad });
+    };
+
+    compute();
+    const resizeObs = new ResizeObserver(compute);
+    resizeObs.observe(surface);
+    window.addEventListener('resize', compute);
+    return () => {
+      resizeObs.disconnect();
+      window.removeEventListener('resize', compute);
+    };
+  }, [activeMoment]);
 
   const hasStructured =
     insight?.greeting != null ||
@@ -182,8 +310,6 @@ export function ReadinessCard() {
 
   const formatValue = (value?: number | null, decimals = 0) =>
     typeof value === 'number' ? value.toFixed(decimals) : '—';
-
-  type MetricKey = 'hrv' | 'rhr' | 'sleep' | 'training_load';
 
   const deltaVariant = (key: MetricKey, delta?: number | null): DeltaVariant => {
     if (delta == null || delta === 0) return 'neutral';
@@ -239,59 +365,85 @@ export function ReadinessCard() {
     { key: 'hrv', title: 'HRV', note: insight?.hrv_note, decimals: 0 },
     { key: 'rhr', title: 'Resting HR', note: insight?.rhr_note, decimals: 0 },
     { key: 'sleep', title: 'Sleep', note: insight?.sleep_note, decimals: 2 },
-    { key: 'training_load', title: 'Training Load (14d)', note: insight?.training_load_note, decimals: 0 }
+    { key: 'training_load', title: 'Load (14d)', note: insight?.training_load_note, decimals: 0 }
   ];
 
-  const formatScore = (value?: number | null, scale = 10) =>
+  const formatScore = (value?: number | null) =>
     typeof value === 'number' ? value.toFixed(1) : '—';
+
+  const heroScore = insightLoading ? '…' : formatValue(insight?.readiness_score);
+  const heroLabel = insight?.readiness_label ?? 'Awaiting insight';
+  const heroNarrative = insight?.morning_note ?? fallbackHeroNarrative[activeMoment];
+  const heroTitle = `${momentLabelMap[activeMoment]} Readiness`;
+  const heroStamp = insight?.metric_date ?? '—';
 
   return (
     <Section>
-      <HeroCard data-hero-readiness="true">
-        <Header>
-          <span>Morning Readiness</span>
-          <ScoreRow>
-            <ScoreValue>{insightLoading ? '…' : formatValue(insight?.readiness_score)}</ScoreValue>
-            <ScoreMeta>
-              <ScoreOutOf>/ 100</ScoreOutOf>
-              <ScoreLabel>{insight?.readiness_label ?? 'Awaiting insight'}</ScoreLabel>
-            </ScoreMeta>
-          </ScoreRow>
-          <ReadinessNote>{insight?.morning_note ?? 'Structured insight missing.'}</ReadinessNote>
-        </Header>
-        {!insightLoading && !hasStructured && (
-          <Notice>
-            Structured Monet insight missing. Investigate Vertex generation and parsing pipeline.
-          </Notice>
-        )}
-      </HeroCard>
-      <MetricsStack>
+      <HeroCluster data-hero-readiness="true">
+        <HeroTile>
+          <HeroLabel data-halo="heading">{heroTitle}</HeroLabel>
+          <HeroScore data-halo="heading">{heroScore}</HeroScore>
+        </HeroTile>
+        <HeroTile>
+          <HeroLabel data-halo="heading">Status</HeroLabel>
+          <HeroScale>
+            <ScaleRow>
+              <ScaleValue data-halo="heading">/ 100</ScaleValue>
+              <ScoreLabel>{heroLabel}</ScoreLabel>
+            </ScaleRow>
+            <ScaleStamp>{heroStamp}</ScaleStamp>
+          </HeroScale>
+        </HeroTile>
+        <HeroTile>
+          <HeroLabel data-halo="heading">Today</HeroLabel>
+          <HeroNarrative>{heroNarrative}</HeroNarrative>
+          {!insightLoading && !hasStructured && (
+            <Notice>Structured insight missing. Investigate Vertex generation.</Notice>
+          )}
+        </HeroTile>
+      </HeroCluster>
+      <MetricMatrix style={{ marginTop: safeOffsets.metricsTop, paddingBottom: safeOffsets.bottomPad }}>
         {metricSections.map(({ key, title, note, decimals }) => {
           const metric = metricSummary[key];
-          const unit = key === 'sleep' ? 'hrs' : key === 'rhr' ? 'bpm' : key === 'hrv' ? 'ms' : 'pts';
-          const measurement = metric ? `${formatMeasurement(metric, decimals ?? 0)} ${metricUnit(metric, unit)}` : '—';
+          const measurement = metric
+            ? `${formatMeasurement(metric, decimals ?? 0)} ${metricUnit(metric, unitLabelMap[key])}`
+            : '—';
           const scoreText = `${formatScore(metricScores[key])} / 10`;
+          const sparkPoints = buildSparkline(title, key, metric);
+          const sparkPath = sparkPoints
+            .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+            .join(' ');
+          const baselineVal = normalizeValue(metric?.reference_value ?? metric?.value, metricRanges[key]);
+          const baselineY = 40 - (baselineVal / 100) * 40;
+          const chartKey = chartKeyMap[key];
+          const strokeColor = theme.chart?.[chartKey]?.stroke ?? theme.colors.accent;
+          const baselineColor = theme.colors.accentSoft ?? 'rgba(255,255,255,0.25)';
+          const insightCopy = note ?? fallbackMetricInsights[key];
           return (
-            <MetricRow key={key}>
-              <MiniCard>
-                <MetricLeft>
-                  <MetricTitleLine>
-                    {title}:
-                    <strong>{measurement}</strong>
-                  </MetricTitleLine>
-                  <MetricScoreText>{scoreText}</MetricScoreText>
-                  <MetricDeltaText $variant={deltaVariant(key, metric?.delta)}>
-                    {formatDeltaText(metric)}
-                  </MetricDeltaText>
-                </MetricLeft>
-              </MiniCard>
-              <MiniCard>
-                <MetricInsight>{note ?? 'Structured insight missing.'}</MetricInsight>
-              </MiniCard>
-            </MetricRow>
+            <MetricGroup key={key}>
+              <MetricChip>
+                <MetricTitleLine data-halo="heading">
+                  {title}:
+                  <strong>{measurement}</strong>
+                </MetricTitleLine>
+                <MetricScoreText data-halo="heading">{scoreText}</MetricScoreText>
+                <MetricDeltaText $variant={deltaVariant(key, metric?.delta)}>
+                  {formatDeltaText(metric)}
+                </MetricDeltaText>
+              </MetricChip>
+              <InsightChip>
+                <MetricInsight>{insightCopy}</MetricInsight>
+              </InsightChip>
+              <SparklineCard aria-hidden>
+                <SparklineSvg viewBox="0 0 100 40" preserveAspectRatio="none">
+                  <SparklineBaseline x1="0" y1={baselineY} x2="100" y2={baselineY} stroke={baselineColor} />
+                  <SparklinePath d={sparkPath} stroke={strokeColor} />
+                </SparklineSvg>
+              </SparklineCard>
+            </MetricGroup>
           );
         })}
-      </MetricsStack>
+      </MetricMatrix>
     </Section>
   );
 }

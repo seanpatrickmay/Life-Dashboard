@@ -11,3 +11,4 @@ Defines Pydantic models used for request validation and response serialization a
 | `admin.py` | Schemas for admin endpoints (health/readiness). |
 | `insights.py` | Schemas for insight responses. |
 | `metrics.py` | Schemas for metrics overview/daily responses. |
+| `nutrition.py` | Schemas for nutrition foods, goals, intake summaries, and Claude chat. |

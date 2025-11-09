@@ -171,6 +171,25 @@ export const scenePalettesByMoment: Record<Moment, ScenePalette> = {
   }
 };
 
+export const haloTokens: Record<Moment, { heading: string; body: string }> = {
+  morning: {
+    heading: '0 0 2px rgba(255,94,63,0.80), 0 0 8px rgba(255,124,97,0.45), 0 10px 24px rgba(116,48,110,0.20)',
+    body: '0 0 2px rgba(255,208,174,0.75), 0 0 6px rgba(255,124,97,0.30)'
+  },
+  noon: {
+    heading: '0 0 2px rgba(65,201,211,0.80), 0 0 8px rgba(125,215,196,0.45), 0 10px 24px rgba(17,122,158,0.20)',
+    body: '0 0 2px rgba(201,243,246,0.75), 0 0 6px rgba(126,215,196,0.28)'
+  },
+  twilight: {
+    heading: '0 0 2px rgba(177,167,255,0.82), 0 0 8px rgba(191,107,171,0.45), 0 10px 24px rgba(36,50,106,0.22)',
+    body: '0 0 2px rgba(177,167,255,0.70), 0 0 6px rgba(94,99,176,0.28)'
+  },
+  night: {
+    heading: '0 0 2px rgba(194,213,255,0.82), 0 0 8px rgba(94,120,199,0.45), 0 10px 24px rgba(15,30,69,0.24)',
+    body: '0 0 2px rgba(194,213,255,0.70), 0 0 6px rgba(41,74,144,0.28)'
+  }
+};
+
 export type Mode = 'light' | 'dark';
 export type Moment = 'morning' | 'noon' | 'twilight' | 'night';
 export type ArtIntensity = 'rich' | 'minimal' | 'flat';
@@ -524,6 +543,9 @@ const base = {
   shadows: {
     soft: '0 18px 34px rgba(28, 41, 64, 0.18)',
     pixel: '0 0 0 2px rgba(23, 20, 33, 0.08), 6px 6px 0 rgba(23, 20, 33, 0.2)'
+  },
+  tokens: {
+    halo: haloTokens.noon
   }
 };
 
@@ -592,5 +614,11 @@ export type MonetTheme = typeof lightTheme & {
   scene?: {
     palette: ScenePalette;
     horizonByMoment: Record<Moment, number>;
+  };
+  tokens?: {
+    halo: {
+      heading: string;
+      body: string;
+    };
   };
 };

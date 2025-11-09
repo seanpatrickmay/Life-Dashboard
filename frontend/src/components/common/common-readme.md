@@ -7,4 +7,4 @@ Provides shared UI primitives consumed by multiple features.
 
 | File | Description |
 | --- | --- |
-| `Card.tsx` | Textured Monet-themed card surface used across pages. |
+| `Card.tsx` | Transparent HUD tile with Monet halos; notifies `SceneForegroundContext` to dim overlapping scene sprites on hover. |

@@ -80,6 +80,9 @@ export function PageShell({ children }: PropsWithChildren) {
         <Link className={pathname.startsWith('/garden') ? 'active' : ''} to="/garden">
           Garden
         </Link>
+        <Link className={pathname.startsWith('/nutrition') ? 'active' : ''} to="/nutrition">
+          Nutrition
+        </Link>
         <Link className={pathname.startsWith('/settings') ? 'active' : ''} to="/settings">
           Settings
         </Link>

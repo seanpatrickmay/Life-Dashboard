@@ -1,6 +1,7 @@
 import React from 'react';
 import { ThemeProvider as StyledThemeProvider } from 'styled-components';
-import { lightTheme, darkTheme, scenePalettesByMoment, type FeatureSceneSetting, type SceneDensity, type HorizonSetting } from './monetTheme';
+import { lightTheme, darkTheme, scenePalettesByMoment, haloTokens, type FeatureSceneSetting, type SceneDensity, type HorizonSetting, type Moment } from './monetTheme';
+import { fetchSceneTime } from '../services/api';
 
 type Moment = 'morning' | 'noon' | 'twilight' | 'night';
 type ArtIntensity = 'rich' | 'minimal' | 'flat';
@@ -96,12 +97,41 @@ const readStoredHorizonMode = (): HorizonSetting => {
   return valid.includes(raw ?? 'auto') ? (raw as HorizonSetting) : 'auto';
 };
 
-function computeMoment(now = new Date()): Moment {
-  const h = now.getHours();
-  return computeMomentFromHour(h);
+export const DEFAULT_TIME_ZONE = 'America/New_York';
+
+const manualMomentHours: Record<Moment, number> = {
+  morning: 8,
+  noon: 12,
+  twilight: 18,
+  night: 0
+};
+
+export function getHourInTimeZone(date = new Date(), timeZone: string = DEFAULT_TIME_ZONE) {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZone
+    });
+    const parts = formatter.formatToParts(date);
+    const pick = (type: Intl.DateTimeFormatPartTypes) =>
+      Number(parts.find((p) => p.type === type)?.value ?? '0');
+    const hour = pick('hour');
+    const minute = pick('minute');
+    const second = pick('second');
+    return hour + minute / 60 + second / 3600;
+  } catch {
+    return (
+      date.getUTCHours() +
+      date.getUTCMinutes() / 60 +
+      date.getUTCSeconds() / 3600
+    );
+  }
 }
 
-function computeMomentFromHour(h: number): Moment {
+export function computeMomentFromHour(h: number): Moment {
   // Morning: 06:00–10:59, Noon: 11:00–16:59, Twilight: 17:00–20:59, Night: 21:00–05:59
   if (h >= 6 && h < 11) return 'morning';
   if (h >= 11 && h < 17) return 'noon';
@@ -122,28 +152,26 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [willowEnabled, setWillowEnabled] = React.useState<boolean>(readStoredWillow);
   const [sceneDensity, setSceneDensity] = React.useState<SceneDensity>(readStoredSceneDensity);
   const [horizonMode, setHorizonMode] = React.useState<HorizonSetting>(readStoredHorizonMode);
-  const [clock, setClock] = React.useState<Date>(new Date());
-  const [timeTestEnabled, setTimeTestEnabled] = React.useState<boolean>(() => {
-    try { return window.localStorage.getItem('timeTestEnabled') === 'true'; } catch { return false; }
-  });
-  const [sceneHour, setSceneHour] = React.useState<number>(() => {
-    try {
-      const raw = window.localStorage.getItem('sceneHour');
-      const n = raw ? parseFloat(raw) : NaN;
-      return Number.isFinite(n) ? Math.min(24, Math.max(0, n)) : 12;
-    } catch { return 12; }
-  });
-
-  React.useEffect(() => {
-    if (timeOfDayMode !== 'auto') return;
-    const id = window.setInterval(() => setClock(new Date()), 60_000);
-    return () => window.clearInterval(id);
-  }, [timeOfDayMode]);
+  const [timeTestEnabled, setTimeTestEnabled] = React.useState<boolean>(false);
+  const [autoSceneHour, setAutoSceneHour] = React.useState<number>(() =>
+    getHourInTimeZone(new Date(), DEFAULT_TIME_ZONE)
+  );
+  const [sceneHour, setSceneHour] = React.useState<number>(() =>
+    getHourInTimeZone(new Date(), DEFAULT_TIME_ZONE)
+  );
 
   const userEffective = mode === 'system' ? system : mode; // retained only for UI display
+  const autoHour = autoSceneHour;
   const resolvedMoment: Moment = timeTestEnabled
     ? computeMomentFromHour(sceneHour)
-    : (timeOfDayMode === 'auto' ? computeMoment(clock) : timeOfDayMode);
+    : timeOfDayMode === 'auto'
+        ? computeMomentFromHour(autoHour)
+        : timeOfDayMode;
+  const controlHour = timeTestEnabled
+    ? sceneHour
+    : timeOfDayMode === 'auto'
+        ? autoHour
+        : manualMomentHours[timeOfDayMode];
   // Moment-driven theme selection: morning/noon -> light, twilight/night -> dark
   const appliedMode: 'light' | 'dark' = (resolvedMoment === 'morning' || resolvedMoment === 'noon') ? 'light' : 'dark';
   const base = appliedMode === 'dark' ? darkTheme : lightTheme;
@@ -162,7 +190,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     sceneHorizon: resolvedHorizon,
     horizonMode,
     timeTestEnabled,
-    sceneHour
+    sceneHour: controlHour
   } as const;
 
   const api = React.useMemo<ThemeModeContextType>(
@@ -209,13 +237,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       timeTestEnabled,
       setTimeTestEnabled: (v: boolean) => {
         setTimeTestEnabled(v);
-        try { window.localStorage.setItem('timeTestEnabled', v ? 'true' : 'false'); } catch {}
       },
       sceneHour,
       setSceneHour: (h: number) => {
         const clamped = Math.min(24, Math.max(0, h));
         setSceneHour(clamped);
-        try { window.localStorage.setItem('sceneHour', String(clamped)); } catch {}
       },
       setMode: (m) => {
         setMode(m);
@@ -270,6 +296,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       default: return { accent: '#E6A9D3', accentSoft: 'rgba(230,169,211,0.28)' };
     }
   })();
+  const halo = haloTokens[resolvedMoment];
 
   const themed = React.useMemo(() => ({
     ...theme,
@@ -281,8 +308,61 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     scene: {
       ...(theme.scene ?? { horizonByMoment: {} as Record<Moment, number> }),
       palette: themedScenePalette
+    },
+    tokens: {
+      ...(theme.tokens ?? {}),
+      halo
     }
-  }), [theme, themedScenePalette, momentAccent]);
+  }), [theme, themedScenePalette, momentAccent, halo]);
+
+  React.useEffect(() => {
+    if (timeOfDayMode !== 'auto') return;
+
+    let cancelled = false;
+
+    const syncFromServer = async () => {
+      try {
+        const response = await fetchSceneTime();
+        if (!cancelled) {
+          setAutoSceneHour(response.hour_decimal);
+        }
+      } catch {
+        if (!cancelled) {
+          setAutoSceneHour(getHourInTimeZone(new Date(), DEFAULT_TIME_ZONE));
+        }
+      }
+    };
+
+    syncFromServer();
+
+    const tickId = window.setInterval(() => {
+      if (!cancelled) {
+        setAutoSceneHour(getHourInTimeZone(new Date(), DEFAULT_TIME_ZONE));
+      }
+    }, 30_000);
+
+    const refreshId = window.setInterval(syncFromServer, 10 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(tickId);
+      window.clearInterval(refreshId);
+    };
+  }, [timeOfDayMode]);
+
+  React.useEffect(() => {
+    if (timeTestEnabled) return;
+    if (timeOfDayMode === 'auto') {
+      setSceneHour(autoSceneHour);
+    }
+  }, [autoSceneHour, timeOfDayMode, timeTestEnabled]);
+
+  React.useEffect(() => {
+    if (timeTestEnabled) return;
+    if (timeOfDayMode !== 'auto') {
+      setSceneHour(manualMomentHours[timeOfDayMode]);
+    }
+  }, [timeOfDayMode, timeTestEnabled]);
 
   return (
     <ThemeModeContext.Provider value={api}>

@@ -7,4 +7,4 @@ Client-side API helpers and data transformation utilities used by hooks and comp
 
 | File | Description |
 | --- | --- |
-| `api.ts` | Axios instance and typed fetch helpers for insights and metrics. |
+| `api.ts` | Axios instance and typed fetch helpers for insights, metrics, time sync, and nutrition APIs. |

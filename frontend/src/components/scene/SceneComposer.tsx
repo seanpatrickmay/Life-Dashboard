@@ -1,7 +1,8 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useCallback, useLayoutEffect } from 'react';
 import styled, { keyframes, css } from 'styled-components';
 import { useTheme } from 'styled-components';
 import { MonetTheme } from '../../theme/monetTheme';
+import { useSceneForeground } from './SceneForegroundContext';
 
 type ScatterPoint = {
   id: string;
@@ -10,6 +11,14 @@ type ScatterPoint = {
   size: number;
   sprite: string;
   depth: number;
+};
+
+type OrbitMetrics = {
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+  size: number;
 };
 
 type ScatterConfig = {
@@ -22,6 +31,69 @@ const densityConfig: Record<string, ScatterConfig> = {
   sparse: { pads: 12, blossoms: 5, minDist: 7.5 },
   balanced: { pads: 18, blossoms: 7, minDist: 6 },
   lush: { pads: 24, blossoms: 9, minDist: 5 }
+};
+
+const MOMENT_HOURS: Record<string, number> = {
+  morning: 8,
+  noon: 12,
+  twilight: 18,
+  night: 0
+};
+
+const hourFromMoment = (moment?: string): number =>
+  MOMENT_HOURS[moment ?? 'noon'] ?? 12;
+
+const computeOrbitGeometry = (overlayEl: HTMLDivElement | null): OrbitMetrics | null => {
+  if (typeof window === 'undefined' || !overlayEl) return null;
+  const surfaceEl = overlayEl.parentElement as HTMLElement | null;
+  if (!surfaceEl) return null;
+  const surfaceStyles = getComputedStyle(surfaceEl);
+  const docStyles = getComputedStyle(document.documentElement);
+  const widthPx = surfaceEl.clientWidth || window.innerWidth || 0;
+  if (widthPx <= 0) return null;
+  const willowRaw = surfaceStyles.getPropertyValue('--willow-offset');
+  const willowOffset = willowRaw ? parseFloat(willowRaw) || 0 : Math.max(32, widthPx * 0.06);
+  const leftRootX = willowOffset;
+  const rightRootX = widthPx - willowOffset;
+  const arcWidth = Math.max(0, rightRootX - leftRootX);
+  const bridgeTopRaw = surfaceStyles.getPropertyValue('--bridge-top');
+  const bridgeTopPx = parseFloat(bridgeTopRaw || '0') || 0;
+  const arRaw =
+    overlayEl.style.getPropertyValue('--bridge-ar') ||
+    docStyles.getPropertyValue('--bridge-ar') ||
+    '6';
+  const bridgeAR = Number.parseFloat(arRaw) || 6;
+  const arcHeight = arcWidth / Math.max(bridgeAR, 0.1);
+  const rx = (arcWidth / 2) * 0.85;
+  const ellipseHeight = Math.max(arcHeight * 0.55, 140);
+  const ry = ellipseHeight / 2;
+  const cx = leftRootX + rx + arcWidth * 0.05;
+  let cy = bridgeTopPx + ry;
+  cy -= Math.min(ry * 0.15, 40);
+  const size = Math.min(400, widthPx * 0.3);
+  return { cx, cy, rx, ry, size };
+};
+
+const useOrbitMetrics = (overlayRef: React.RefObject<HTMLDivElement>) => {
+  const [orbit, setOrbit] = useState<OrbitMetrics | null>(null);
+
+  const recompute = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const metrics = computeOrbitGeometry(overlayRef.current);
+    if (metrics) {
+      setOrbit(metrics);
+    }
+  }, [overlayRef]);
+
+  useLayoutEffect(() => {
+    recompute();
+    window.addEventListener('resize', recompute);
+    return () => {
+      window.removeEventListener('resize', recompute);
+    };
+  }, [recompute]);
+
+  return { orbit, recompute };
 };
 
 const SceneRoot = styled.div`
@@ -59,20 +131,24 @@ const BlossomSprite = styled.div`
   z-index: 2;
 `;
 
-const WillowOverhang = styled.div<{ side: 'left' | 'right'; sprite: string }>`
+const WillowOverhang = styled.div<{ $side: 'left' | 'right'; $sprite: string }>`
   position: absolute;
   top: -10vh;
-  ${(p) => (p.side === 'left' ? 'left: -6vw;' : 'right: -6vw;')}
+  ${(p) => (p.$side === 'left' ? 'left: -6vw;' : 'right: -6vw;')}
   width: clamp(140px, 20vw, 320px);
   height: 135%;
-  background-image: url(${(p) => p.sprite});
+  background-image: url(${(p) => p.$sprite});
   background-repeat: no-repeat;
   background-size: contain;
   opacity: 0.75;
+  transition: opacity 0.3s ease;
+  &[data-dimmed='true'] {
+    opacity: 0.45;
+  }
   z-index: 5;
 `;
 
-const FloatingBlossom = styled.div<{ sprite: string; glow: string }>`
+const FloatingBlossom = styled.div<{ $sprite: string; $glow: string }>`
   position: absolute;
   width: 54px;
   height: 54px;
@@ -81,11 +157,15 @@ const FloatingBlossom = styled.div<{ sprite: string; glow: string }>`
   background-size: contain;
   image-rendering: pixelated;
   z-index: 5;
+  transition: opacity 0.3s ease;
+  &[data-dimmed='true'] {
+    opacity: 0.45;
+  }
   &:before {
     content: '';
     position: absolute;
     inset: -12px;
-    background-image: url(${(p) => p.glow});
+    background-image: url(${(p) => p.$glow});
     background-repeat: no-repeat;
     background-size: contain;
     opacity: 0.6;
@@ -95,7 +175,7 @@ const FloatingBlossom = styled.div<{ sprite: string; glow: string }>`
     content: '';
     position: absolute;
     inset: 0;
-    background-image: url(${(p) => p.sprite});
+    background-image: url(${(p) => p.$sprite});
     background-repeat: no-repeat;
     background-size: contain;
   }
@@ -128,9 +208,9 @@ const normalizeImageValue = (val?: string) => {
 };
 
 const BaseLayer = styled.div<{
-  image?: string;
-  blend?: string;
-  opacity?: number;
+  $image?: string;
+  $blend?: string;
+  $opacity?: number;
   $animation?: ReturnType<typeof css>;
   $z?: number;
   $repeat?: string;
@@ -138,11 +218,11 @@ const BaseLayer = styled.div<{
 }>`
   position: absolute;
   inset: 0;
-  background-image: ${(p) => normalizeImageValue(p.image)};
+  background-image: ${(p) => normalizeImageValue(p.$image)};
   background-repeat: ${(p) => p.$repeat ?? 'repeat'};
   background-size: ${(p) => p.$size ?? 'cover'};
-  mix-blend-mode: ${(p) => p.blend ?? 'normal'};
-  opacity: ${(p) => p.opacity ?? 1};
+  mix-blend-mode: ${(p) => p.$blend ?? 'normal'};
+  opacity: ${(p) => p.$opacity ?? 1};
   pointer-events: none;
   z-index: ${(p) => p.$z ?? 0};
   ${(p) =>
@@ -159,16 +239,16 @@ const PadsLayer = styled.div`
   z-index: 0;
 `;
 
-const PadSprite = styled.div<{ size: number; depth: number; sprite: string }>`
+const PadSprite = styled.div<{ $size: number; $depth: number; $sprite: string }>`
   position: absolute;
-  width: ${(p) => p.size}px;
-  height: ${(p) => p.size}px;
+  width: ${(p) => p.$size}px;
+  height: ${(p) => p.$size}px;
   transform: translate(-50%, -50%);
-  background-image: url(${(p) => p.sprite});
+  background-image: url(${(p) => p.$sprite});
   background-repeat: no-repeat;
   background-size: contain;
   image-rendering: pixelated;
-  z-index: ${(p) => Math.round(p.depth)};
+  z-index: ${(p) => Math.round(p.$depth)};
   animation: ${slowParallax} 14s ease-in-out infinite;
 `;
 
@@ -401,6 +481,14 @@ function scatterPoints(config: ScatterConfig, region: { x: number; y: number; wi
 export function SceneComposer() {
   const theme = useTheme() as MonetTheme;
   const overlayRef = useRef<HTMLDivElement>(null);
+  const { orbit, recompute: recomputeOrbit } = useOrbitMetrics(overlayRef);
+  const foreground = useSceneForeground();
+  const registerSprite = useCallback(
+    (id: string) => (el: HTMLElement | null) => {
+      foreground?.registerSprite(id, el);
+    },
+    [foreground]
+  );
   const mode = (theme.mode ?? 'light') as 'light' | 'dark';
   const moment = theme.moment ?? 'morning';
   const density = theme.sceneDensity ?? (theme.intensity === 'rich' ? 'balanced' : theme.intensity === 'minimal' ? 'sparse' : 'lush');
@@ -456,41 +544,41 @@ export function SceneComposer() {
     <>
       <SceneRoot aria-hidden>
         <BaseLayer
-          image={`linear-gradient(180deg, ${waterPalette.waterLight} 0%, ${waterPalette.waterMid} 55%, ${waterPalette.waterDeep} 100%)`}
-          opacity={1}
+          $image={`linear-gradient(180deg, ${waterPalette.waterLight} 0%, ${waterPalette.waterMid} 55%, ${waterPalette.waterDeep} 100%)`}
+          $opacity={1}
           $z={-3}
         />
         <BaseLayer
-          image={theme.pixels.waterBase[mode]}
-          opacity={0.45}
+          $image={theme.pixels.waterBase[mode]}
+          $opacity={0.45}
           $size="16px 16px"
           $repeat="repeat"
           $z={-2}
         />
         <BaseLayer
-          image={theme.pixels.waterReflection[mode]}
-          blend="soft-light"
-          opacity={mode === 'dark' ? 0.4 : 0.3}
+          $image={theme.pixels.waterReflection[mode]}
+          $blend="soft-light"
+          $opacity={mode === 'dark' ? 0.4 : 0.3}
           $z={-1}
         />
         <BaseLayer
-          image={theme.pixels.waterStrokes[mode].large}
-          blend="screen"
-          opacity={0.25}
+          $image={theme.pixels.waterStrokes[mode].large}
+          $blend="screen"
+          $opacity={0.25}
           style={{ backgroundSize: '320px 160px' }}
           $animation={css`${gentleDrift} 28s linear infinite`}
         />
         <BaseLayer
-          image={theme.pixels.waterStrokes[mode].medium}
-          blend="screen"
-          opacity={0.25}
+          $image={theme.pixels.waterStrokes[mode].medium}
+          $blend="screen"
+          $opacity={0.25}
           style={{ backgroundSize: '220px 120px' }}
           $animation={css`${gentleDrift} 20s linear infinite reverse`}
         />
         <BaseLayer
-          image={theme.pixels.waterStrokes[mode].small}
-          blend="soft-light"
-          opacity={0.25}
+          $image={theme.pixels.waterStrokes[mode].small}
+          $blend="soft-light"
+          $opacity={0.25}
           style={{ backgroundSize: '160px 80px' }}
           $animation={css`${gentleDrift} 16s linear infinite`}
         />
@@ -510,16 +598,16 @@ export function SceneComposer() {
           }
           return (
             <BaseLayer
-              image={theme.pixels.cloudReflection[mode]}
-              blend={blend}
-              opacity={opacity}
+              $image={theme.pixels.cloudReflection[mode]}
+              $blend={blend}
+              $opacity={opacity}
             />
           );
         })()}
         <BaseLayer
-          image={theme.pixels.causticRipple[mode]}
-          blend="screen"
-          opacity={mode === 'dark' ? 0.25 : 0.3}
+          $image={theme.pixels.causticRipple[mode]}
+          $blend="screen"
+          $opacity={mode === 'dark' ? 0.25 : 0.3}
           style={{ backgroundSize: '200px 200px' }}
           $animation={css`${gentleDrift} 32s linear infinite`}
         />
@@ -528,9 +616,9 @@ export function SceneComposer() {
           {pads.map((pad) => (
             <PadSprite
               key={pad.id}
-              sprite={pad.sprite}
-              size={pad.size}
-              depth={pad.depth}
+              $sprite={pad.sprite}
+              $size={pad.size}
+              $depth={pad.depth}
               style={{ left: `${pad.x}%`, top: `${pad.y}%` }}
             />
           ))}
@@ -562,88 +650,47 @@ export function SceneComposer() {
         />
         {/* Feature sprites (koi/boat) removed per design: bridge + boat always on midground overlay */}
         <BaseLayer
-          image={mode === 'dark' ? theme.pixels.speckles.dark : theme.pixels.speckles.light}
-          blend={mode === 'dark' ? 'screen' : 'soft-light'}
-          opacity={mode === 'dark' ? 0.35 : 0.2}
+          $image={mode === 'dark' ? theme.pixels.speckles.dark : theme.pixels.speckles.light}
+          $blend={mode === 'dark' ? 'screen' : 'soft-light'}
+          $opacity={mode === 'dark' ? 0.35 : 0.2}
           style={{ backgroundSize: '160px 160px' }}
         />
         <BaseLayer
-          image={theme.pixels.vignetteHaze[mode]}
-          blend="multiply"
-          opacity={mode === 'dark' ? 0.8 : 0.5}
+          $image={theme.pixels.vignetteHaze[mode]}
+          $blend="multiply"
+          $opacity={mode === 'dark' ? 0.8 : 0.5}
           style={{ backgroundRepeat: 'no-repeat', backgroundSize: 'cover' }}
         />
       </SceneRoot>
       <MidgroundOverlay aria-hidden ref={overlayRef}>
         {/* Sun/Moon orbital path behind the bridge */}
-        {(() => {
-          if (typeof window === 'undefined') return null;
-          const vw = window.innerWidth || 1200;
-          const willowOffset = 0.06 * vw; // matches 6vw fallback used in CSS
-          const leftRootX = willowOffset;
-          const rightRootX = vw - willowOffset;
-          const widthPx = rightRootX - leftRootX;
-          // bridge top and arc height
-          const surfaceEl = overlayRef.current?.parentElement as HTMLElement | null;
-          const styles = surfaceEl ? getComputedStyle(surfaceEl) : null;
-          const bridgeTopPx = styles ? parseFloat(styles.getPropertyValue('--bridge-top') || '0') : 0;
-          const arStr = overlayRef.current?.style.getPropertyValue('--bridge-ar') || '6';
-          const bridgeAR = Number.parseFloat(arStr) || 6;
-          const arcHeight = widthPx / bridgeAR;
-          const baselineY = bridgeTopPx + arcHeight; // approximate root line
-
-          // ellipse radii
-          const rx = widthPx / 2;
-          const ry = rx * 0.52; // vertical reach
-          const cx = leftRootX + rx;
-          let cy = baselineY; // center baseline, adjust shortly
-
-          // determine hour from test slider or moment
-          const hourFromMoment = (m: string): number => {
-            switch (m) {
-              case 'morning': return 8;
-              case 'noon': return 12;
-              case 'twilight': return 18;
-              case 'night': return 0;
-              default: return 12;
-            }
-          };
-          const hour = theme.timeTestEnabled ? (theme.sceneHour ?? 12) : hourFromMoment(theme.moment ?? 'noon');
-
-          // Clockwise mapping: as hour increases, angle decreases
-          // 06:00 -> π (left), 12:00 -> π/2 (apex), 18:00 -> 0 (right)
+        {orbit && (() => {
+          const hour = theme.sceneHour ?? hourFromMoment(theme.moment ?? 'noon');
           const sunAngle = (18 - hour) * (Math.PI / 12);
           const moonAngle = (18 - (hour + 12)) * (Math.PI / 12);
+          const sunX = orbit.cx + orbit.rx * Math.cos(sunAngle);
+          const sunY = orbit.cy - orbit.ry * Math.sin(sunAngle);
+          const moonX = orbit.cx + orbit.rx * Math.cos(moonAngle);
+          const moonY = orbit.cy - orbit.ry * Math.sin(moonAngle);
 
-          const size = Math.min(420, vw * 0.4);
-          // Raise orbit by ~80px relative to current position
-          cy += size * 0.06 - 92;
-
-          const sunX = cx + rx * Math.cos(sunAngle);
-          const sunY = cy - ry * Math.sin(sunAngle);
-          const moonX = cx + rx * Math.cos(moonAngle);
-          const moonY = cy - ry * Math.sin(moonAngle);
-
-          // visibility windows
           const showSun = !(hour >= 19 || hour < 5);
           const showMoon = !(hour >= 7 && hour < 17);
-
           const isSunAbove = Math.sin(sunAngle) > -0.2;
           const isMoonAbove = Math.sin(moonAngle) > -0.2;
           const sunOpacity = isSunAbove ? 0.92 : 0.35;
           const moonOpacity = isMoonAbove ? 0.6 : 0.25;
-
           const variant: 'light' | 'dark' = 'light';
+
           return (
             <>
               {showSun && (
                 <div
                   style={{
                     position: 'absolute',
-                    left: `${sunX - size / 2}px`,
-                    top: `${sunY - size / 2}px`,
-                    width: `${size}px`,
-                    height: `${size}px`,
+                    left: `${sunX - orbit.size / 2}px`,
+                    top: `${sunY - orbit.size / 2}px`,
+                    width: `${orbit.size}px`,
+                    height: `${orbit.size}px`,
                     backgroundImage: `url(${theme.pixels.sunGlow[variant]})`,
                     backgroundRepeat: 'no-repeat',
                     backgroundPosition: 'center',
@@ -658,10 +705,10 @@ export function SceneComposer() {
                 <div
                   style={{
                     position: 'absolute',
-                    left: `${moonX - size / 2}px`,
-                    top: `${moonY - size / 2}px`,
-                    width: `${size * 0.86}px`,
-                    height: `${size * 0.86}px`,
+                    left: `${moonX - orbit.size / 2}px`,
+                    top: `${moonY - orbit.size / 2}px`,
+                    width: `${orbit.size * 0.86}px`,
+                    height: `${orbit.size * 0.86}px`,
                     backgroundImage: `url(${theme.pixels.moonGlow[variant]})`,
                     backgroundRepeat: 'no-repeat',
                     backgroundPosition: 'center',
@@ -677,28 +724,32 @@ export function SceneComposer() {
         })()}
 
         {/* Bridge always present spanning between willows */}
-        <FullWidthImage
-          src={theme.pixels.bridgeArc[mode]}
-          alt="Bridge"
-          onLoad={(e) => {
-            const img = e.currentTarget;
-            const ar = img.naturalWidth / Math.max(1, img.naturalHeight);
-            overlayRef.current?.style.setProperty('--bridge-ar', `${ar}`);
-          }}
-        />
-        <FullWidthImage
-          src={theme.pixels.bridgeArcReflection[mode]}
-          alt="Bridge Reflection"
+            <FullWidthImage
+              src={theme.pixels.bridgeArc[mode]}
+              alt="Bridge"
+              onLoad={(e) => {
+                const img = e.currentTarget;
+                const ar = img.naturalWidth / Math.max(1, img.naturalHeight);
+                overlayRef.current?.style.setProperty('--bridge-ar', `${ar}`);
+                document.documentElement.style.setProperty('--bridge-ar', `${ar}`);
+                recomputeOrbit();
+              }}
+            />
+            <FullWidthImage
+              src={theme.pixels.bridgeArcReflection[mode]}
+              alt="Bridge Reflection"
           style={{
             top: `calc(var(--bridge-top, 22vh) + (calc(100vw - (2 * var(--willow-offset, 6vw))) / var(--bridge-ar, 6)))`,
             opacity: 0.45
           }}
-          onLoad={(e) => {
-            const img = e.currentTarget;
-            const ar = img.naturalWidth / Math.max(1, img.naturalHeight);
-            overlayRef.current?.style.setProperty('--bridge-ref-ar', `${ar}`);
-          }}
-        />
+              onLoad={(e) => {
+                const img = e.currentTarget;
+                const ar = img.naturalWidth / Math.max(1, img.naturalHeight);
+                overlayRef.current?.style.setProperty('--bridge-ref-ar', `${ar}`);
+                document.documentElement.style.setProperty('--bridge-ref-ar', `${ar}`);
+                recomputeOrbit();
+              }}
+            />
         {/* Animated Boat drift across water */}
         {(() => {
           const maxBottomVh = Math.max(6, (100 - (horizon * 100)) - 8);
@@ -711,6 +762,15 @@ export function SceneComposer() {
           const scale = boatDir === 'left' ? 1.0 : 0.60;
           const flip = boatDir === 'left'; // assume asset faces right by default; flip when moving left
           const duration = 30; // seconds side-to-side
+          const doc = document.documentElement;
+          if (typeof window !== 'undefined') {
+            const vhPx = window.innerHeight / 100;
+            const laneBottomPx = bottomVh * vhPx;
+            const spriteHeightPx = 140 * scale;
+            const laneTopPx = Math.max(0, window.innerHeight - laneBottomPx - spriteHeightPx);
+            doc.style.setProperty('--boat-lane-top', `${laneTopPx}`);
+            doc.style.setProperty('--boat-lane-bottom', `${laneTopPx + spriteHeightPx}`);
+          }
           const handleEnd = () => {
             const nextDir = boatDir === 'left' ? 'right' : 'left';
             setBoatDir(nextDir);
@@ -761,29 +821,33 @@ export function SceneComposer() {
       <ForegroundOverlay aria-hidden>
         {theme.willowEnabled !== false && (
           <>
-            <WillowOverhang side="left" sprite={willowSprites.left} />
-            <WillowOverhang side="right" sprite={willowSprites.right} />
+            <WillowOverhang ref={registerSprite('willow-left')} $side="left" $sprite={willowSprites.left} />
+            <WillowOverhang ref={registerSprite('willow-right')} $side="right" $sprite={willowSprites.right} />
           </>
         )}
         {/* Restore corner blossoms */}
         <FloatingBlossom
-          sprite={blossomSprites[0]}
-          glow={blossomGlow}
+          ref={registerSprite('corner-blossom-1')}
+          $sprite={blossomSprites[0]}
+          $glow={blossomGlow}
           style={{ left: '6%', top: '18%' }}
         />
         <FloatingBlossom
-          sprite={blossomSprites[1]}
-          glow={blossomGlow}
+          ref={registerSprite('corner-blossom-2')}
+          $sprite={blossomSprites[1]}
+          $glow={blossomGlow}
           style={{ right: '6%', top: '24%' }}
         />
         <FloatingBlossom
-          sprite={blossomSprites[2]}
-          glow={blossomGlow}
+          ref={registerSprite('corner-blossom-3')}
+          $sprite={blossomSprites[2]}
+          $glow={blossomGlow}
           style={{ left: '8%', bottom: '14%' }}
         />
         <FloatingBlossom
-          sprite={blossomSprites[0]}
-          glow={blossomGlow}
+          ref={registerSprite('corner-blossom-4')}
+          $sprite={blossomSprites[0]}
+          $glow={blossomGlow}
           style={{ right: '8%', bottom: '12%' }}
         />
       </ForegroundOverlay>

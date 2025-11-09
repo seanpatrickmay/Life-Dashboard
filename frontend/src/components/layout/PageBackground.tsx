@@ -2,6 +2,7 @@ import React, { ReactNode, useLayoutEffect, useRef } from 'react';
 import styled, { keyframes, css } from 'styled-components';
 import { getRippleLayer } from '../../theme/monetTheme';
 import { SceneComposer } from '../scene/SceneComposer';
+import { SceneForegroundProvider } from '../scene/SceneForegroundContext';
 
 const drift = keyframes`
   0% { background-position: 0 0; }
@@ -9,7 +10,7 @@ const drift = keyframes`
   100% { background-position: 0 0; }
 `;
 
-const Surface = styled.div`
+const Surface = styled.div.attrs({ 'data-scene-surface': 'true' })`
   position: relative;
   min-height: 100vh;
   width: 100%;
@@ -83,10 +84,12 @@ export function PageBackground({ children, className }: Props) {
     const update = () => {
       const root = surfaceRef.current;
       if (!root) return;
+      const rootRect = root.getBoundingClientRect();
+      const willowOffsetPx = Math.max(32, rootRect.width * 0.06);
+      root.style.setProperty('--willow-offset', `${willowOffsetPx}px`);
       const hero = root.querySelector('[data-hero-readiness="true"]') as HTMLElement | null;
       if (!hero) return;
       const heroRect = hero.getBoundingClientRect();
-      const rootRect = root.getBoundingClientRect();
       const gap = 12; // px gap under hero
       const topPx = Math.max(0, heroRect.bottom - rootRect.top + gap);
       root.style.setProperty('--bridge-top', `${topPx}px`);
@@ -97,6 +100,29 @@ export function PageBackground({ children, className }: Props) {
       root.style.setProperty('--hero-top', `${heroTop}px`);
       root.style.setProperty('--hero-right', `${heroRight}px`);
       root.style.setProperty('--hero-left', `${heroLeft}px`);
+
+      const doc = document.documentElement;
+      const docStyles = getComputedStyle(doc);
+      const bridgeAR = parseFloat(docStyles.getPropertyValue('--bridge-ar') || '6');
+      const bridgeRefAR = parseFloat(docStyles.getPropertyValue('--bridge-ref-ar') || '6');
+      const arcWidth = Math.max(0, rootRect.width - 2 * willowOffsetPx);
+      const arcHeight = arcWidth / Math.max(bridgeAR, 0.1);
+      const bridgeBottom = topPx + arcHeight;
+      root.style.setProperty('--bridge-band-bottom', `${bridgeBottom}px`);
+      const reflectionHeight = arcWidth / Math.max(bridgeRefAR, 6);
+      const reflectionBottom = bridgeBottom + reflectionHeight;
+      root.style.setProperty('--reflection-band-bottom', `${reflectionBottom}px`);
+      root.style.setProperty('--safe-metrics-top', `${reflectionBottom + 24}px`);
+
+      const boatTop = parseFloat(docStyles.getPropertyValue('--boat-lane-top') || '0');
+      const boatBottom = parseFloat(docStyles.getPropertyValue('--boat-lane-bottom') || '0');
+      if (!Number.isNaN(boatTop) && !Number.isNaN(boatBottom)) {
+        root.style.setProperty('--boat-lane-top', `${boatTop}px`);
+        root.style.setProperty('--boat-lane-bottom', `${boatBottom}px`);
+        root.style.setProperty('--boat-padding', `${Math.max(0, rootRect.bottom - boatTop)}px`);
+      } else {
+        root.style.setProperty('--boat-padding', '64px');
+      }
     };
     update();
     const obs = new ResizeObserver(update);
@@ -113,8 +139,10 @@ export function PageBackground({ children, className }: Props) {
 
   return (
     <Surface className={className} ref={surfaceRef}>
-      <SceneComposer />
-      <ContentLayer>{children}</ContentLayer>
+      <SceneForegroundProvider>
+        <SceneComposer />
+        <ContentLayer>{children}</ContentLayer>
+      </SceneForegroundProvider>
     </Surface>
   );
 }

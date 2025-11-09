@@ -1,52 +1,75 @@
-import styled, { css } from 'styled-components';
-import { composeLayers, getCardLayers } from '../../theme/monetTheme';
+import React, { forwardRef, useCallback, useRef } from 'react';
+import styled from 'styled-components';
+import { useSceneForeground } from '../scene/SceneForegroundContext';
 
-export const Card = styled.div`
+const defaultHeadingHalo = '0 0 2px rgba(65,201,211,0.80), 0 0 8px rgba(125,215,196,0.45), 0 10px 24px rgba(17,122,158,0.20)';
+const defaultBodyHalo = '0 0 2px rgba(201,243,246,0.75), 0 0 6px rgba(126,215,196,0.28)';
+
+const CardShell = styled.div`
   position: relative;
-  z-index: 1;
-  background-color: transparent;
-  ${({ theme }) => {
-    const layers = composeLayers(
-      getCardLayers(theme.mode ?? 'light', theme.intensity ?? 'rich')
-    );
-    return css`
-      background-image: ${layers.image};
-      background-size: ${layers.size};
-      background-repeat: ${layers.repeat};
-      background-position: ${layers.position};
-      ${layers.blend ? `background-blend-mode: ${layers.blend};` : ''}
-    `;
-  }};
-  border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
-  border: none;
-  box-shadow: 0 18px 38px rgba(4, 8, 14, 0.12);
+  z-index: 5;
+  background: transparent;
   color: ${({ theme }) => theme.colors.textPrimary};
-  *, *::before, *::after {
-    text-shadow: ${({ theme }) =>
-      theme.mode === 'dark'
-        ? '0 0 2px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.5)'
-        : '0 0 2px rgba(255,255,255,0.9), 0 0 6px rgba(255,255,255,0.5)'};
-  }
-  padding: clamp(20px, 2.4vw, 28px);
+  padding: clamp(18px, 2vw, 26px);
   image-rendering: pixelated;
-  backdrop-filter: blur(16px) saturate(120%);
-  overflow: visible;
-  transition: box-shadow 0.3s ease, transform 0.3s ease;
+  border: none;
+  border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
+  pointer-events: auto;
+
+  &, p, span, label, small, li, strong, em, div {
+    text-shadow: ${({ theme }) => theme.tokens?.halo?.body ?? defaultBodyHalo};
+  }
+
+  h1, h2, h3, h4, h5, h6, [data-halo='heading'] {
+    text-shadow: ${({ theme }) => theme.tokens?.halo?.heading ?? defaultHeadingHalo};
+  }
+
+  [data-halo='body'] {
+    text-shadow: ${({ theme }) => theme.tokens?.halo?.body ?? defaultBodyHalo};
+  }
 
   &::before {
     content: '';
     position: absolute;
-    left: 15%;
-    right: 15%;
-    bottom: -28px;
-    height: 52px;
-    background: radial-gradient(circle, rgba(0, 0, 0, 0.35) 0%, transparent 70%);
-    opacity: 0.25;
-    filter: blur(20px);
+    left: 10%;
+    right: 10%;
+    bottom: -26px;
+    height: 56px;
+    background: radial-gradient(circle, rgba(15, 30, 69, 0.25) 0%, transparent 70%);
+    filter: blur(18px);
+    opacity: 0.35;
     z-index: -1;
   }
-
-  &::after {
-    display: none;
-  }
 `;
+
+type CardProps = React.ComponentPropsWithoutRef<'div'>;
+
+export const Card = forwardRef<HTMLDivElement, CardProps>(({ onPointerEnter, onPointerLeave, ...rest }, ref) => {
+  const fg = useSceneForeground();
+  const localRef = useRef<HTMLDivElement | null>(null);
+
+  const combinedRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      localRef.current = node;
+      if (typeof ref === 'function') ref(node);
+      else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+    },
+    [ref]
+  );
+
+  const handleEnter = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (localRef.current && fg) {
+      fg.dimSprites(localRef.current.getBoundingClientRect());
+    }
+    onPointerEnter?.(event);
+  };
+
+  const handleLeave = (event: React.PointerEvent<HTMLDivElement>) => {
+    fg?.clearDims();
+    onPointerLeave?.(event);
+  };
+
+  return <CardShell ref={combinedRef} onPointerEnter={handleEnter} onPointerLeave={handleLeave} {...rest} />;
+});
+
+Card.displayName = 'Card';

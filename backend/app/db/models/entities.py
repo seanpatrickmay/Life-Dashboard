@@ -15,6 +15,8 @@ class User(Base):
 
     activities: Mapped[list["Activity"]] = relationship(back_populates="user")
     daily_metrics: Mapped[list["DailyMetric"]] = relationship(back_populates="user")
+    nutrition_intakes: Mapped[list["NutritionIntake"]] = relationship(back_populates="user")
+    nutrition_goals: Mapped[list["NutritionUserGoal"]] = relationship(back_populates="user")
 
 
 class Activity(Base):
