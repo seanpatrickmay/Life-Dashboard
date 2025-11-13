@@ -1,6 +1,6 @@
 import styled from 'styled-components';
 
-import { ReadinessCard } from '../components/insights/ReadinessCard';
+import { LilyPadsDashboard } from '../components/lilypad/LilyPadsDashboard';
 
 const Grid = styled.div`
   display: grid;
@@ -11,7 +11,7 @@ const Grid = styled.div`
 export function DashboardPage() {
   return (
     <Grid>
-      <ReadinessCard />
+      <LilyPadsDashboard />
     </Grid>
   );
 }

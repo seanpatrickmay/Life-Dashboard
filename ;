@@ -1,15 +1,18 @@
 import React, { ReactNode, useLayoutEffect, useRef } from 'react';
 import styled, { keyframes, css, useTheme } from 'styled-components';
-import { getRippleLayer, MonetTheme } from '../../theme/monetTheme';
+import { getRippleLayer, getCloudSpritesForMoment, MonetTheme } from '../../theme/monetTheme';
 import { SceneComposer } from '../scene/SceneComposer';
 import { SceneForegroundProvider } from '../scene/SceneForegroundContext';
-import { DynamicCloudField } from './DynamicCloudField';
-import { Z_LAYERS } from '../../styles/zLayers';
 
 const drift = keyframes`
   0% { background-position: 0 0; }
   50% { background-position: 24px 10px; }
   100% { background-position: 0 0; }
+`;
+
+const cloudGlide = keyframes`
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-20%); }
 `;
 
 const Surface = styled.div.attrs({ 'data-scene-surface': 'true' })`
@@ -39,7 +42,7 @@ const Surface = styled.div.attrs({ 'data-scene-surface': 'true' })`
       `;
     }}
     pointer-events: none;
-    z-index: ${Z_LAYERS.gradient};
+    z-index: -2;
   }
 
   &::after {
@@ -58,14 +61,45 @@ const Surface = styled.div.attrs({ 'data-scene-surface': 'true' })`
     }}
     mix-blend-mode: soft-light;
     pointer-events: none;
-    z-index: ${Z_LAYERS.waterRipple};
+    z-index: -1;
     animation: ${({ theme }) => (theme.motion ? css`${drift} 18s ease-in-out infinite alternate` : 'none')};
   }
 `;
 
+const CloudField = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: clamp(200px, 34vh, 420px);
+  pointer-events: none;
+  z-index: 1;
+`;
+
+const CloudStratum = styled.div<{
+  $img: string;
+  $top: string;
+  $speed: number;
+  $opacity: number;
+  $z: number;
+}>`
+  position: absolute;
+  left: -20vw;
+  width: 140vw;
+  height: clamp(120px, 24vh, 300);
+  top: ${(p) => p.$top};
+  background-image: url(${(p) => p.$img});
+  background-repeat: repeat-x;
+  background-size: auto 200%;
+  opacity: ${(p) => p.$opacity};
+  animation: ${cloudGlide} ${(p) => p.$speed}s linear infinite;
+  z-index: ${(p) => p.$z};
+  filter: drop-shadow(0 8px 24px rgba(15, 30, 69, 0.22));
+`;
+
 const ContentLayer = styled.div`
   position: relative;
-  z-index: ${Z_LAYERS.uiCards};
+  z-index: 5;
   width: 100%;
   height: 100%;
 
@@ -84,6 +118,8 @@ export function PageBackground({ children, className }: Props) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const theme = useTheme() as MonetTheme;
   const moment = theme.moment ?? 'morning';
+  const cloudStack = getCloudSpritesForMoment(moment);
+
   useLayoutEffect(() => {
     const update = () => {
       const root = surfaceRef.current;
@@ -92,23 +128,18 @@ export function PageBackground({ children, className }: Props) {
       const willowOffsetPx = Math.max(32, rootRect.width * 0.06);
       root.style.setProperty('--willow-offset', `${willowOffsetPx}px`);
       const hero = root.querySelector('[data-hero-readiness="true"]') as HTMLElement | null;
-      let topPx = Math.max(0, window.innerHeight * 0.28);
-      if (hero) {
-        const heroRect = hero.getBoundingClientRect();
-        const gap = 0; // lift bridge closer to nav clouds when hero present
-        topPx = Math.max(0, heroRect.bottom - rootRect.top + gap);
-        const heroTop = Math.max(0, heroRect.top - rootRect.top);
-        const heroRight = Math.max(0, heroRect.right - rootRect.left);
-        const heroLeft = Math.max(0, heroRect.left - rootRect.left);
-        root.style.setProperty('--hero-top', `${heroTop}px`);
-        root.style.setProperty('--hero-right', `${heroRight}px`);
-        root.style.setProperty('--hero-left', `${heroLeft}px`);
-      } else {
-        root.style.setProperty('--hero-top', '0px');
-        root.style.setProperty('--hero-right', '0px');
-        root.style.setProperty('--hero-left', '0px');
-      }
+      if (!hero) return;
+      const heroRect = hero.getBoundingClientRect();
+      const gap = 12; // px gap under hero
+      const topPx = Math.max(0, heroRect.bottom - rootRect.top + gap);
       root.style.setProperty('--bridge-top', `${topPx}px`);
+      // Expose hero top/right for precise sun placement
+      const heroTop = Math.max(0, heroRect.top - rootRect.top);
+      const heroRight = Math.max(0, heroRect.right - rootRect.left);
+      const heroLeft = Math.max(0, heroRect.left - rootRect.left);
+      root.style.setProperty('--hero-top', `${heroTop}px`);
+      root.style.setProperty('--hero-right', `${heroRight}px`);
+      root.style.setProperty('--hero-left', `${heroLeft}px`);
 
       const doc = document.documentElement;
       const docStyles = getComputedStyle(doc);
@@ -148,7 +179,28 @@ export function PageBackground({ children, className }: Props) {
 
   return (
     <Surface className={className} ref={surfaceRef}>
-      <DynamicCloudField moment={moment} />
+      <CloudField aria-hidden>
+        {cloudStack.back.map((img, index) => (
+          <CloudStratum
+            key={`cloud-back-${index}`}
+            $img={img}
+            $top={`${index * 4}vh`}
+            $speed={80 + index * 20}
+            $opacity={0.35 - index * 0.05}
+            $z={1}
+          />
+        ))}
+        {cloudStack.mid.map((img, index) => (
+          <CloudStratum
+            key={`cloud-mid-${index}`}
+            $img={img}
+            $top={`${8 + index * 5}vh`}
+            $speed={50 + index * 12}
+            $opacity={0.55 - index * 0.08}
+            $z={2}
+          />
+        ))}
+      </CloudField>
       <SceneForegroundProvider>
         <SceneComposer />
         <ContentLayer>{children}</ContentLayer>

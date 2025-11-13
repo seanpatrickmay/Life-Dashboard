@@ -68,6 +68,20 @@ import microgrid_light from '../assets/pixels/microgrid_light.png';
 import microgrid_dark from '../assets/pixels/microgrid_dark.png';
 import dither_light from '../assets/pixels/dither_light.png';
 import dither_dark from '../assets/pixels/dither_dark.png';
+import cloud_back_1_day from '../assets/pixels/cloud_back_1_day.png';
+import cloud_back_1_night from '../assets/pixels/cloud_back_1_night.png';
+import cloud_back_2_day from '../assets/pixels/cloud_back_2_day.png';
+import cloud_back_2_night from '../assets/pixels/cloud_back_2_night.png';
+import cloud_mid_1_day from '../assets/pixels/cloud_mid_1_day.png';
+import cloud_mid_1_night from '../assets/pixels/cloud_mid_1_night.png';
+import cloud_mid_2_day from '../assets/pixels/cloud_mid_2_day.png';
+import cloud_mid_2_night from '../assets/pixels/cloud_mid_2_night.png';
+import cloud_front_1_day from '../assets/pixels/cloud_front_1_day.png';
+import cloud_front_1_night from '../assets/pixels/cloud_front_1_night.png';
+// Time-based lily pad sprites (text pads)
+import pad_text_day from '../assets/pixels/lily_pad_text_day.png';
+import pad_text_twilight from '../assets/pixels/lily_pad_text_twilight.png';
+import pad_text_night from '../assets/pixels/lily_pad_text_night.png';
 import stroke_stipple from '../assets/pixels/stroke_stipple.png';
 import stroke_crosshatch from '../assets/pixels/stroke_crosshatch.png';
 import stroke_zigzag from '../assets/pixels/stroke_zigzag.png';
@@ -245,6 +259,12 @@ type WaterStrokeSprite = {
   dark: { large: string; medium: string; small: string };
 };
 
+export type CloudStack = {
+  back: string[];
+  mid: string[];
+  front?: string[];
+};
+
 type PixelRegistry = {
   lilies: SpriteSet;
   blossoms: SpriteSet;
@@ -278,6 +298,12 @@ type PixelRegistry = {
   boat: string;
   boatFull: SpriteSingle;
   boatReflection: SpriteSingle;
+  // Time-based pad (text pad) by moment; 'day' applied to morning and noon
+  padTextByMoment: Record<Moment, string>;
+  cloudStacks: {
+    day: CloudStack;
+    night: CloudStack;
+  };
 };
 
 export const pixelSprites: PixelRegistry = {
@@ -411,6 +437,24 @@ export const pixelSprites: PixelRegistry = {
   boatReflection: {
     light: boat_reflection_light,
     dark: boat_reflection_dark
+  },
+  padTextByMoment: {
+    morning: pad_text_day,
+    noon: pad_text_day,
+    twilight: pad_text_twilight,
+    night: pad_text_night
+  },
+  cloudStacks: {
+    day: {
+      back: [cloud_back_1_day, cloud_back_2_day],
+      mid: [cloud_mid_1_day, cloud_mid_2_day],
+      front: [cloud_front_1_day]
+    },
+    night: {
+      back: [cloud_back_1_night, cloud_back_2_night],
+      mid: [cloud_mid_1_night, cloud_mid_2_night],
+      front: [cloud_front_1_night]
+    }
   }
 };
 
@@ -527,6 +571,17 @@ export const getStrokePattern = (series: 'HRV' | 'RHR' | 'Load' | 'Sleep'): stri
     default:
       return pixelSprites.stroke.stipple;
   }
+};
+
+export const getPadTextSpriteForMoment = (moment: Moment): string => {
+  return pixelSprites.padTextByMoment[moment] ?? pad_text_day;
+};
+
+export const getCloudSpritesForMoment = (moment: Moment): CloudStack => {
+  if (moment === 'morning' || moment === 'noon') {
+    return pixelSprites.cloudStacks.day;
+  }
+  return pixelSprites.cloudStacks.night;
 };
 
 const base = {

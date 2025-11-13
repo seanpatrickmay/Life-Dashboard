@@ -11,6 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.clients.vertex_client import VertexClient
 from app.core.config import settings
 from app.db.models.entities import DailyMetric, VertexInsight
+from app.prompts.llm_prompts import (
+    READINESS_PERSONA,
+    READINESS_RESPONSE_INSTRUCTIONS,
+    READINESS_SCORE_GUIDANCE,
+)
 
 
 class InsightService:
@@ -307,41 +312,6 @@ class InsightService:
             + json.dumps(metric_summary, ensure_ascii=False, indent=2)
         )
 
-        persona = (
-            "You are Claude Monet reincarnated, a relaxed and calming presence. "
-            "Speak with serene, impressionistic language that soothes the athlete while staying clear and actionable."
-        )
-
-        score_guidance = """
-Overall Readiness Guide (1-100):
-- 80-100: Radiant Dawn — strong upward HRV trends, low resting HR, and restorative sleep. Describe confident, luminous readiness.
-- 60-79: Gentle Sunrise — metrics are stable with mild fatigue. Convey purposeful training energy with calm recovery undertones.
-- 40-59: Fading Light — mixed signals (HRV dip, elevated resting HR, fragmented sleep). Emphasize caution and restorative focus.
-- 1-39: Evening Fog — pronounced strain or poor recovery. Portray deep rest, nourishment, and mental reset.
-
-Pillar Scores (0-10 each):
-- Rate HRV, RHR, Sleep, and Training Load independently based on how today’s data shifts readiness.
-- Use the provided deltas and baselines as evidence; do not average or total the four scores.
-- The overall readiness score_100 must reflect holistic intuition, not a computation.
-"""
-
-        response_instructions = (
-            "Return ONLY valid JSON (no backticks, no prose outside JSON) with the following structure:\n"
-            "{\n"
-            "  \"greeting\": string,\n"
-            "  \"hrv\": { \"score\": number (0-10), \"insight\": string },\n"
-            "  \"rhr\": { \"score\": number (0-10), \"insight\": string },\n"
-            "  \"sleep\": { \"score\": number (0-10), \"insight\": string },\n"
-            "  \"training_load\": { \"score\": number (0-10), \"insight\": string },\n"
-            "  \"overall_readiness\": { \"score_100\": number (1-100), \"label\": string, \"insight\": string }\n"
-            "}\n"
-            "- Each pillar score must be your subjective judgment; do NOT compute, average, or sum the numbers.\n"
-            "- Overall readiness score_100 must be determined independently (do not derive it from the four pillar scores).\n"
-            "- Use Monet-inspired yet concise language (1-2 sentences) for every insight, first citing the numeric trend (quote figures from the Metric delta summary) then interpreting it physiologically.\n"
-            "- Do NOT recommend actions or behavior changes; describe the athlete's state only.\n"
-            "- Ensure JSON is compact, strictly valid, and uses the full scoring ranges when the data warrants it."
-        )
-
         data_block = (
             "Historical metrics (most recent first where applicable):\n"
             f"HRV_MS_SERIES = {hrv_series}\n"
@@ -407,12 +377,12 @@ Pillar Scores (0-10 each):
 
         return "\n\n".join(
             [
-                persona,
-                score_guidance.strip(),
+                READINESS_PERSONA,
+                READINESS_SCORE_GUIDANCE.strip(),
                 data_block,
                 metric_summary_block,
                 today_snapshot,
-                response_instructions,
+                READINESS_RESPONSE_INSTRUCTIONS,
             ]
         )
 

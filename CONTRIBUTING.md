@@ -10,21 +10,25 @@ This document describes how changes are proposed, implemented, and reviewed. All
    - Discuss the requested change with the repository owner until goals, acceptance criteria, and risks are understood.
    - Ask questions early; do not assume requirements.
 
-2. **Obtain explicit approval**
+2. **Create user stories**
+   - Partner with the repository owner (me) to outline one or more user stories that capture the persona, goal, and measurable acceptance criteria for the change.
+   - Keep these stories visible (PR description, linked doc, or ticket) and update them if scope shifts.
+
+3. **Obtain explicit approval**
    - Wait for a clear “Approved” response before editing code or documentation.
 
-3. **Implement**
+4. **Implement**
    - Follow the Style Guide (`STYLE_GUIDE.md`).
    - Ensure every directory touched has a `{folder}-readme.md` that documents the folder’s purpose and file inventory.
      - Create the readme if it does not exist.
      - Update the table whenever files are added, removed, or relocated.
    - Keep code commented where non-obvious.
 
-4. **Test & document**
+5. **Test & document**
    - Run all relevant automated tests or manual verification.
    - Record the tests performed and outcomes in the pull request summary.
 
-5. **Prepare the pull request**
+6. **Prepare the pull request**
    - Summarize changes, risks, and test results.
    - Reference any discussions or approvals.
    - Request approval from the repository owner (other approvals are advisory).

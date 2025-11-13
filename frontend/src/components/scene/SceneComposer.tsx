@@ -3,6 +3,7 @@ import styled, { keyframes, css } from 'styled-components';
 import { useTheme } from 'styled-components';
 import { MonetTheme } from '../../theme/monetTheme';
 import { useSceneForeground } from './SceneForegroundContext';
+import { Z_LAYERS } from '../../styles/zLayers';
 
 type ScatterPoint = {
   id: string;
@@ -101,7 +102,6 @@ const SceneRoot = styled.div`
   inset: 0;
   pointer-events: none;
   overflow: hidden;
-  z-index: 0;
   image-rendering: pixelated;
 `;
 
@@ -109,7 +109,7 @@ const ForegroundOverlay = styled.div`
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 6;
+  z-index: ${Z_LAYERS.willows};
   image-rendering: pixelated;
 `;
 
@@ -117,7 +117,21 @@ const MidgroundOverlay = styled.div`
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 4; /* below cards (z:5) and willows (z:6) */
+  z-index: ${Z_LAYERS.bridge};
+`;
+
+const BoatOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: ${Z_LAYERS.boat};
+`;
+
+const BoatReflectionOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: ${Z_LAYERS.boatReflection};
 `;
 
 
@@ -128,7 +142,7 @@ const BlossomSprite = styled.div`
   background-size: contain;
   image-rendering: pixelated;
   filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.16));
-  z-index: 2;
+  z-index: ${Z_LAYERS.blossoms};
 `;
 
 const WillowOverhang = styled.div<{ $side: 'left' | 'right'; $sprite: string }>`
@@ -236,7 +250,7 @@ const PadsLayer = styled.div`
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 0;
+  z-index: ${Z_LAYERS.lilyPadTextLayer};
 `;
 
 const PadSprite = styled.div<{ $size: number; $depth: number; $sprite: string }>`
@@ -248,7 +262,7 @@ const PadSprite = styled.div<{ $size: number; $depth: number; $sprite: string }>
   background-repeat: no-repeat;
   background-size: contain;
   image-rendering: pixelated;
-  z-index: ${(p) => Math.round(p.$depth)};
+  z-index: ${Z_LAYERS.lilyPads};
   animation: ${slowParallax} 14s ease-in-out infinite;
 `;
 
@@ -284,7 +298,7 @@ const FullWidthImage = styled.img`
   height: auto;
   image-rendering: pixelated;
   pointer-events: none;
-  z-index: 4;
+  z-index: ${Z_LAYERS.bridge};
 `;
 
 const BoatImage = styled.img`
@@ -331,7 +345,7 @@ const AnimatedTrack = styled.div<{ $dir: 'left' | 'right'; $duration: number; $b
   pointer-events: none;
   image-rendering: pixelated;
   will-change: transform;
-  z-index: 5; /* above bridge images within midground */
+  z-index: ${Z_LAYERS.boat};
   animation: ${(p) =>
     p.$dir === 'left'
       ? css`${boatDriftLeft} ${p.$duration}s ease-in-out 1`
@@ -540,6 +554,59 @@ export function SceneComposer() {
   const showFeature = theme.intensity !== 'flat';
   const willowSprites = theme.pixels.willowStrands[mode];
 
+  const buildBoatTracks = () => {
+    const maxBottomVh = Math.max(6, (100 - horizon * 100) - 8);
+    const low = 12;
+    const ceiling = Math.max(0, maxBottomVh - 2);
+    const high = Math.min(ceiling, low + 30);
+    const bottomVh = boatDir === 'left' ? low : high;
+    const scale = boatDir === 'left' ? 1.0 : 0.6;
+    const flip = boatDir === 'left';
+    const duration = 30;
+    if (typeof window !== 'undefined') {
+      const vhPx = window.innerHeight / 100;
+      const laneBottomPx = bottomVh * vhPx;
+      const spriteHeightPx = 140 * scale;
+      const laneTopPx = Math.max(0, window.innerHeight - laneBottomPx - spriteHeightPx);
+      document.documentElement.style.setProperty('--boat-lane-top', `${laneTopPx}`);
+      document.documentElement.style.setProperty('--boat-lane-bottom', `${laneTopPx + spriteHeightPx}`);
+    }
+    const handleEnd = () => {
+      const nextDir = boatDir === 'left' ? 'right' : 'left';
+      setBoatDir(nextDir);
+      setBoatKey((k) => k + 1);
+    };
+    const boatTrack = (
+      <AnimatedTrack
+        key={`boat-${boatKey}`}
+        $dir={boatDir}
+        $duration={duration}
+        $bottomVh={bottomVh}
+        onAnimationEnd={handleEnd}
+      >
+        <BoatBob>
+          <BoatSprite src={theme.pixels.boatFull[mode]} alt="Boat" $scale={scale} $flip={flip} />
+        </BoatBob>
+      </AnimatedTrack>
+    );
+    const reflectionTrack = (
+      <AnimatedTrack
+        key={`boat-ref-${boatKey}`}
+        $dir={boatDir}
+        $duration={duration}
+        $bottomVh={Math.max(0, bottomVh - 8)}
+      >
+        <BoatBobReflection>
+          <BoatReflectionSprite src={theme.pixels.boatReflection[mode]} alt="Boat Reflection" $scale={scale} $flip={flip} />
+          <RippleShimmer $img={theme.pixels.causticRipple[mode]} $scale={scale} $flip={flip} />
+        </BoatBobReflection>
+      </AnimatedTrack>
+    );
+    return { boatTrack, reflectionTrack };
+  };
+
+  const { boatTrack, reflectionTrack } = buildBoatTracks();
+
   return (
     <>
       <SceneRoot aria-hidden>
@@ -677,8 +744,8 @@ export function SceneComposer() {
           const showMoon = !(hour >= 7 && hour < 17);
           const isSunAbove = Math.sin(sunAngle) > -0.2;
           const isMoonAbove = Math.sin(moonAngle) > -0.2;
-          const sunOpacity = isSunAbove ? 0.92 : 0.35;
-          const moonOpacity = isMoonAbove ? 0.6 : 0.25;
+          const sunOpacity = showSun ? 1 : 0;
+          const moonOpacity = showMoon ? 1 : 0;
           const variant: 'light' | 'dark' = 'light';
 
           return (
@@ -697,7 +764,7 @@ export function SceneComposer() {
                     backgroundSize: 'contain',
                     opacity: sunOpacity,
                     mixBlendMode: 'screen',
-                    zIndex: 3
+                    zIndex: 2
                   }}
                 />
               )}
@@ -715,7 +782,7 @@ export function SceneComposer() {
                     backgroundSize: 'contain',
                     opacity: moonOpacity,
                     mixBlendMode: 'screen',
-                    zIndex: 3
+                    zIndex: 2
                   }}
                 />
               )}
@@ -740,7 +807,8 @@ export function SceneComposer() {
               alt="Bridge Reflection"
           style={{
             top: `calc(var(--bridge-top, 22vh) + (calc(100vw - (2 * var(--willow-offset, 6vw))) / var(--bridge-ar, 6)))`,
-            opacity: 0.45
+            opacity: 0.45,
+            zIndex: Z_LAYERS.bridgeReflection
           }}
               onLoad={(e) => {
                 const img = e.currentTarget;
@@ -750,74 +818,9 @@ export function SceneComposer() {
                 recomputeOrbit();
               }}
             />
-        {/* Animated Boat drift across water */}
-        {(() => {
-          const maxBottomVh = Math.max(6, (100 - (horizon * 100)) - 8);
-          const low = 12; // bottom track for right->left (near viewer)
-          // much higher pass for left->right; approach horizon safely (leave ~2vh margin)
-          const ceiling = Math.max(0, maxBottomVh - 2);
-          const high = Math.min(ceiling, low + 30);
-          const bottomVh = boatDir === 'left' ? low : high;
-          // much smaller on left->right pass
-          const scale = boatDir === 'left' ? 1.0 : 0.60;
-          const flip = boatDir === 'left'; // assume asset faces right by default; flip when moving left
-          const duration = 30; // seconds side-to-side
-          const doc = document.documentElement;
-          if (typeof window !== 'undefined') {
-            const vhPx = window.innerHeight / 100;
-            const laneBottomPx = bottomVh * vhPx;
-            const spriteHeightPx = 140 * scale;
-            const laneTopPx = Math.max(0, window.innerHeight - laneBottomPx - spriteHeightPx);
-            doc.style.setProperty('--boat-lane-top', `${laneTopPx}`);
-            doc.style.setProperty('--boat-lane-bottom', `${laneTopPx + spriteHeightPx}`);
-          }
-          const handleEnd = () => {
-            const nextDir = boatDir === 'left' ? 'right' : 'left';
-            setBoatDir(nextDir);
-            setBoatKey((k) => k + 1);
-          };
-          return (
-            <>
-              <AnimatedTrack
-                key={`boat-${boatKey}`}
-                $dir={boatDir}
-                $duration={duration}
-                $bottomVh={bottomVh}
-                onAnimationEnd={handleEnd}
-              >
-                <BoatBob>
-                  <BoatSprite
-                    src={theme.pixels.boatFull[mode]}
-                    alt="Boat"
-                    $scale={scale}
-                    $flip={flip}
-                  />
-                </BoatBob>
-              </AnimatedTrack>
-              <AnimatedTrack
-                key={`boat-ref-${boatKey}`}
-                $dir={boatDir}
-                $duration={duration}
-                $bottomVh={Math.max(0, bottomVh - 8)}
-              >
-                <BoatBobReflection>
-                  <BoatReflectionSprite
-                    src={theme.pixels.boatReflection[mode]}
-                    alt="Boat Reflection"
-                    $scale={scale}
-                    $flip={flip}
-                  />
-                  <RippleShimmer
-                    $img={theme.pixels.causticRipple[mode]}
-                    $scale={scale}
-                    $flip={flip}
-                  />
-                </BoatBobReflection>
-              </AnimatedTrack>
-            </>
-          );
-        })()}
       </MidgroundOverlay>
+      <BoatReflectionOverlay aria-hidden>{reflectionTrack}</BoatReflectionOverlay>
+      <BoatOverlay aria-hidden>{boatTrack}</BoatOverlay>
       <ForegroundOverlay aria-hidden>
         {theme.willowEnabled !== false && (
           <>

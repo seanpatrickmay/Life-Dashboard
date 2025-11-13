@@ -22,6 +22,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.prompts import CLAUDE_FOOD_EXTRACTION_PROMPT, CLAUDE_NUTRIENT_PROFILE_PROMPT
 from app.db.models.nutrition import (
     NUTRIENT_COLUMN_BY_SLUG,
     NUTRIENT_DEFINITIONS,
@@ -133,13 +134,7 @@ class ClaudeNutritionAgent:
         return ClaudeResponse(reply=reply, logged_entries=entries)
 
     async def _extract_food_mentions(self, user_text: str) -> dict[str, Any]:
-        prompt = (
-            "You are Claude, a Monet-inspired nutrition mentor. Read the user's text and "
-            "extract any foods they ate. Return JSON with keys: foods (list of objects with name, quantity, unit) and summary. "
-            "Quantities should be numeric floats; default to 1 if unspecified. Use common units like cup, tbsp, serving, piece. "
-            'Example response: {"foods":[{"name":"oatmeal","quantity":1,"unit":"cup"}],"summary":"Logged oatmeal"}. '
-            "User text: " + user_text
-        )
+        prompt = CLAUDE_FOOD_EXTRACTION_PROMPT.format(user_text=user_text)
         response = await self._call_model(prompt, use_search=False)
         return self._extract_json(response) or {"foods": [], "summary": None}
 
@@ -150,10 +145,10 @@ class ClaudeNutritionAgent:
         nutrient_list = ", ".join(
             definition.slug for definition in NUTRIENT_DEFINITIONS
         )
-        prompt = (
-            "Using authoritative nutrition sources via Google Search, provide the macro/micro nutrient values for "
-            f"{food_name} per {unit}. Use the exact nutrient slug names: {nutrient_list}. Respond with JSON mapping "
-            "slug to float grams/mg/etc (per the canonical units). Use null if unknown."
+        prompt = CLAUDE_NUTRIENT_PROFILE_PROMPT.format(
+            food_name=food_name,
+            unit=unit,
+            nutrient_list=nutrient_list,
         )
         response = await self._call_model(prompt, use_search=True)
         data = self._extract_json(response) or {}

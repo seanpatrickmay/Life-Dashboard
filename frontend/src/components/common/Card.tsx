@@ -1,13 +1,14 @@
 import React, { forwardRef, useCallback, useRef } from 'react';
 import styled from 'styled-components';
 import { useSceneForeground } from '../scene/SceneForegroundContext';
+import { Z_LAYERS } from '../../styles/zLayers';
 
 const defaultHeadingHalo = '0 0 2px rgba(65,201,211,0.80), 0 0 8px rgba(125,215,196,0.45), 0 10px 24px rgba(17,122,158,0.20)';
 const defaultBodyHalo = '0 0 2px rgba(201,243,246,0.75), 0 0 6px rgba(126,215,196,0.28)';
 
 const CardShell = styled.div`
   position: relative;
-  z-index: 5;
+  z-index: ${Z_LAYERS.uiCards};
   background: transparent;
   color: ${({ theme }) => theme.colors.textPrimary};
   padding: clamp(18px, 2vw, 26px);
@@ -38,7 +39,7 @@ const CardShell = styled.div`
     background: radial-gradient(circle, rgba(15, 30, 69, 0.25) 0%, transparent 70%);
     filter: blur(18px);
     opacity: 0.35;
-    z-index: -1;
+    z-index: ${Z_LAYERS.gradient};
   }
 `;
 
