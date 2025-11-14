@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -40,6 +40,13 @@ class NutrientGoalItem(BaseModel):
     group: str
     goal: float
     default_goal: float
+    computed_at: datetime | None = None
+    computed_from_date: date | None = None
+    calorie_source: str | None = None
+
+
+class NutrientGoalUpdateRequest(BaseModel):
+    goal: float = Field(gt=0)
 
 
 class NutrientProgress(BaseModel):
@@ -97,3 +104,18 @@ class NutritionIntakeMenuResponse(BaseModel):
 class NutritionIntakeUpdateRequest(BaseModel):
     quantity: float = Field(gt=0)
     unit: str
+
+
+class ScalingRuleItem(BaseModel):
+    slug: str
+    label: str
+    description: str | None = None
+    type: str
+    owner_user_id: int | None = None
+    active: bool
+    multipliers: dict[str, float]
+
+
+class ScalingRuleListResponse(BaseModel):
+    rules: list[ScalingRuleItem]
+    manual_rule_slug: str | None = None

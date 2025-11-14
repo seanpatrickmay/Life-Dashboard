@@ -14,13 +14,14 @@ from app.schemas.metrics import (
     MetricDelta,
     TimeSeriesPoint,
 )
+from app.utils.timezone import eastern_now, eastern_today
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
 
 @router.get("/overview", response_model=MetricsOverviewResponse)
 async def metrics_overview(range_days: int = 14, session: AsyncSession = Depends(get_session)) -> MetricsOverviewResponse:
-    cutoff = datetime.utcnow().date() - timedelta(days=range_days - 1)
+    cutoff = eastern_today() - timedelta(days=range_days - 1)
     repo = MetricsRepository(session)
     records = await repo.list_metrics_since(cutoff)
     hrv_series = [
@@ -49,7 +50,7 @@ async def metrics_overview(range_days: int = 14, session: AsyncSession = Depends
         else None
     )
     return MetricsOverviewResponse(
-        generated_at=datetime.utcnow(),
+        generated_at=eastern_now(),
         range_label=f"last {range_days} days",
         training_volume_hours=round(volume_hours_total, 2),
         training_volume_window_days=range_days,
@@ -63,7 +64,7 @@ async def metrics_overview(range_days: int = 14, session: AsyncSession = Depends
 
 @router.get("/daily", response_model=list[DailyMetricResponse])
 async def daily_metrics(range_days: int = 30, session: AsyncSession = Depends(get_session)) -> list[DailyMetricResponse]:
-    cutoff = datetime.utcnow().date() - timedelta(days=range_days - 1)
+    cutoff = eastern_today() - timedelta(days=range_days - 1)
     repo = MetricsRepository(session)
     records = await repo.list_metrics_since(cutoff)
     return [

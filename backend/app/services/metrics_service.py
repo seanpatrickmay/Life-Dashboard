@@ -1,15 +1,18 @@
 """Metric ingestion and aggregation services."""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.garmin_client import GarminClient
+from app.db.models.entities import DailyEnergy
 from app.db.repositories.activity_repository import ActivityRepository
 from app.db.repositories.metrics_repository import MetricsRepository
+from app.utils.timezone import eastern_now, eastern_today
 
 
 class MetricsService:
@@ -29,17 +32,18 @@ class MetricsService:
         rhr_payload: list[dict[str, Any]] | None = None,
         sleep_payload: list[dict[str, Any]] | None = None,
         load_payload: list[dict[str, Any]] | None = None,
+        energy_payload: list[dict[str, Any]] | None = None,
     ) -> dict:
-        today = datetime.utcnow()
-        cutoff_dt = today - timedelta(days=lookback_days)
+        now = eastern_now()
+        cutoff_dt = now - timedelta(days=lookback_days)
         if activities is None:
             logger.info("Fetching Garmin activities since {}", cutoff_dt)
             activities = self.garmin.fetch_recent_activities(cutoff_dt)
 
         ingested = await self.activity_repo.upsert_many(user_id, activities)
 
-        start_date = date.today() - timedelta(days=lookback_days - 1)
-        end_date = date.today()
+        start_date = eastern_today() - timedelta(days=lookback_days - 1)
+        end_date = eastern_today()
         if hrv_payload is None:
             hrv_payload = self.garmin.fetch_daily_hrv(start_date, end_date)
         if rhr_payload is None:
@@ -48,12 +52,21 @@ class MetricsService:
             sleep_payload = self.garmin.fetch_sleep(start_date, end_date)
         if load_payload is None:
             load_payload = []
+        if energy_payload is None:
+            energy_payload = self.garmin.fetch_daily_energy(start_date, end_date)
 
         hrv_map = self._map_hrv(hrv_payload)
         rhr_map = self._map_rhr(rhr_payload)
         sleep_map = self._map_sleep(sleep_payload)
         load_map = self._map_training_loads(load_payload)
         activity_totals = self._aggregate_activity_totals(activities)
+        await self._persist_daily_energy(
+            user_id,
+            start_date,
+            end_date,
+            energy_payload,
+            activity_totals,
+        )
         if not rhr_map:
             rhr_map = self._extract_rhr_from_sleep(sleep_payload)
 
@@ -112,6 +125,7 @@ class MetricsService:
             "rhr_entries": len(rhr_payload),
             "sleep_entries": len(sleep_payload),
             "training_load_entries": len(load_payload) if load_payload else sum(1 for v in activity_totals.values() if v.get("load") is not None),
+            "energy_entries": len(energy_payload),
         }
 
     def _map_hrv(self, payload: list[dict]) -> dict[date, float]:
@@ -325,14 +339,101 @@ class MetricsService:
             metric_day = self._parse_activity_date(activity)
             if metric_day is None:
                 continue
-            stats = totals.setdefault(metric_day, {"duration": 0.0, "distance": 0.0, "load": 0.0})
+            stats = totals.setdefault(
+                metric_day,
+                {"duration": 0.0, "distance": 0.0, "load": 0.0, "calories": 0.0},
+            )
             duration = self._safe_float(activity.get("duration") or activity.get("summaryDTO", {}).get("duration"))
             distance = self._safe_float(activity.get("distance") or activity.get("summaryDTO", {}).get("distance"))
             load = self._extract_activity_training_load(activity)
+            calories = self._safe_float(
+                activity.get("calories") or activity.get("summaryDTO", {}).get("calories")
+            )
             stats["duration"] += duration
             stats["distance"] += distance
             stats["load"] += load
+            stats["calories"] += calories
         return totals
+
+    async def _persist_daily_energy(
+        self,
+        user_id: int,
+        start: date,
+        end: date,
+        energy_payload: list[dict[str, Any]],
+        activity_totals: dict[date, dict[str, float]],
+    ) -> None:
+        energy_map = self._map_daily_energy(energy_payload)
+        current = start
+        while current <= end:
+            entry = energy_map.get(current)
+            source = "garmin"
+            if entry is None:
+                calories = activity_totals.get(current, {}).get("calories")
+                if calories:
+                    entry = {
+                        "total": calories,
+                        "active": calories,
+                        "bmr": None,
+                    }
+                    source = "activities"
+            if entry:
+                stmt = select(DailyEnergy).where(
+                    DailyEnergy.user_id == user_id,
+                    DailyEnergy.metric_date == current,
+                )
+                result = await self.session.execute(stmt)
+                record = result.scalar_one_or_none()
+                if record is None:
+                    record = DailyEnergy(
+                        user_id=user_id,
+                        metric_date=current,
+                        total_kcal=entry["total"],
+                        active_kcal=entry.get("active"),
+                        bmr_kcal=entry.get("bmr"),
+                        source=source,
+                    )
+                    self.session.add(record)
+                else:
+                    record.total_kcal = entry["total"]
+                    record.active_kcal = entry.get("active")
+                    record.bmr_kcal = entry.get("bmr")
+                    record.source = source
+                    record.ingested_at = eastern_now()
+            current += timedelta(days=1)
+
+    def _map_daily_energy(self, payload: list[dict[str, Any]]) -> dict[date, dict[str, float | None]]:
+        result: dict[date, dict[str, float | None]] = {}
+        for entry in payload:
+            metric_day = self._extract_date(entry) or self._parse_iso_date(
+                str(entry.get("calendarDate"))
+            )
+            if not metric_day:
+                continue
+            total = self._optional_float(
+                entry.get("totalKilocalories") or entry.get("totalCalories")
+            )
+            if total is None or total <= 0:
+                continue
+            result[metric_day] = {
+                "total": total,
+                "active": self._optional_float(
+                    entry.get("activeKilocalories") or entry.get("activeCalories")
+                ),
+                "bmr": self._optional_float(
+                    entry.get("bmrKilocalories") or entry.get("bmrCalories")
+                ),
+            }
+        return result
+
+    @staticmethod
+    def _optional_float(value: Any) -> float | None:
+        try:
+            if value is None:
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     @staticmethod
     def _extract_activity_training_load(activity: dict[str, Any]) -> float:

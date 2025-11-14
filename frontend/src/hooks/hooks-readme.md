@@ -14,3 +14,4 @@ Stores reusable React hooks for data fetching and derived state used across page
 | `useNutritionGoals.ts` | Loads nutrient defaults and user overrides, handles updates. |
 | `useNutritionIntake.ts` | Provides daily summaries and 14-day averages. |
 | `useClaudeChat.ts` | Manages Claude nutrition chat sessions and logged entries. |
+| `useUserProfile.ts` | Fetches and updates the personalized user profile + scaling rules. |

@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import Enum
 from typing import ClassVar, TYPE_CHECKING
 
-from sqlalchemy import Enum as SAEnum, Float, ForeignKey, String, UniqueConstraint, Date
+from sqlalchemy import (
+    Date,
+    DateTime,
+    Enum as SAEnum,
+    Float,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
+from app.utils.timezone import eastern_now
 
 if TYPE_CHECKING:
     from .entities import User
@@ -261,6 +270,14 @@ DEFAULT_GOAL_BY_SLUG: dict[str, float] = {
 }
 
 
+def goal_column(slug: str) -> str:
+    return f"goal_{slug}"
+
+
+def multiplier_column(slug: str) -> str:
+    return f"mult_{slug}"
+
+
 class NutritionNutrient(Base):
     __tablename__ = "nutrition_nutrients"
 
@@ -282,8 +299,6 @@ class NutritionNutrient(Base):
     )
     unit: Mapped[str] = mapped_column(String(32))
     default_goal: Mapped[float]
-
-    goals: Mapped[list["NutritionUserGoal"]] = relationship(back_populates="nutrient")
 
 
 class NutritionFoodProfile(Base):
@@ -325,20 +340,6 @@ class NutritionFood(Base):
     intakes: Mapped[list["NutritionIntake"]] = relationship(back_populates="food")
 
 
-class NutritionUserGoal(Base):
-    __tablename__ = "nutrition_user_goals"
-    __table_args__ = (
-        UniqueConstraint("user_id", "nutrient_id", name="uq_user_nutrient_goal"),
-    )
-
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    nutrient_id: Mapped[int] = mapped_column(ForeignKey("nutrition_nutrients.id"))
-    daily_goal: Mapped[float]
-
-    nutrient: Mapped[NutritionNutrient] = relationship(back_populates="goals")
-    user: Mapped["User"] = relationship(back_populates="nutrition_goals")
-
-
 class NutritionIntakeSource(str, Enum):
     MANUAL = "manual"
     CLAUDE = "claude"
@@ -363,3 +364,60 @@ class NutritionIntake(Base):
 
     food: Mapped[NutritionFood] = relationship(back_populates="intakes")
     user: Mapped["User"] = relationship(back_populates="nutrition_intakes")
+
+
+class ScalingRuleType(str, Enum):
+    CATALOG = "catalog"
+    MANUAL = "manual"
+
+
+class NutrientScalingRule(Base):
+    __tablename__ = "nutrient_scaling_rule"
+    __table_args__ = (UniqueConstraint("owner_user_id", name="uq_scaling_rule_owner"),)
+
+    slug: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    label: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str | None] = mapped_column(String(255))
+    type: Mapped[ScalingRuleType] = mapped_column(
+        SAEnum(
+            ScalingRuleType,
+            name="nutrient_scaling_rule_type",
+            values_callable=enum_values,
+            create_type=False,
+        ),
+        default=ScalingRuleType.CATALOG,
+    )
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+
+    for definition in NUTRIENT_DEFINITIONS:
+        locals()[multiplier_column(definition.slug)] = mapped_column(Float, default=1.0)
+
+    owner: Mapped["User"] = relationship(lazy="joined")
+    assignments: Mapped[list["UserNutrientScalingRule"]] = relationship(back_populates="rule")
+
+
+class UserNutrientScalingRule(Base):
+    __tablename__ = "user_nutrient_scaling_rule"
+    __table_args__ = (UniqueConstraint("user_id", "rule_id", name="uq_user_rule"),)
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    rule_id: Mapped[int] = mapped_column(ForeignKey("nutrient_scaling_rule.id"), nullable=False)
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=eastern_now)
+
+    user: Mapped["User"] = relationship(back_populates="scaling_rules")
+    rule: Mapped[NutrientScalingRule] = relationship(back_populates="assignments")
+
+
+class NutritionGoal(Base):
+    __tablename__ = "nutrition_goal"
+    __table_args__ = (UniqueConstraint("user_id", name="uq_nutrition_goal_user_id"),)
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    computed_from_date: Mapped[date | None]
+    computed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    calorie_source: Mapped[str | None] = mapped_column(String(64))
+
+    for definition in NUTRIENT_DEFINITIONS:
+        locals()[goal_column(definition.slug)] = mapped_column(Float, nullable=True)
+
+    user: Mapped["User"] = relationship(lazy="joined")

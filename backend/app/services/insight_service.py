@@ -16,6 +16,7 @@ from app.prompts.llm_prompts import (
     READINESS_RESPONSE_INSTRUCTIONS,
     READINESS_SCORE_GUIDANCE,
 )
+from app.utils.timezone import eastern_today
 
 
 class InsightService:
@@ -24,7 +25,7 @@ class InsightService:
         self.vertex = vertex or VertexClient()
 
     async def refresh_daily_insight(self, user_id: int, metric_date: date | None = None) -> VertexInsight:
-        metric_date = metric_date or date.today()
+        metric_date = metric_date or eastern_today()
         metric = await self._fetch_metric(user_id, metric_date)
         history = await self._fetch_metric_history(user_id, metric_date, days=14)
         existing_insight = await self._fetch_insight(user_id, metric_date)
@@ -210,7 +211,7 @@ class InsightService:
         return result.scalars().first()
 
     def _build_prompt(self, metric: DailyMetric | None, history: list[DailyMetric]) -> str:
-        today = date.today()
+        today = eastern_today()
 
         def avg(values: list[float | None]) -> float | None:
             numeric = [v for v in values if v is not None]

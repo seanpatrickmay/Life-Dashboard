@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.db.models import Base
 from app.db.session import engine
-from app.routers import admin, insights, metrics, time, nutrition
+from app.routers import admin, insights, metrics, time, nutrition, user
 from app.services.scheduler import start_scheduler
 
 configure_logging(settings.debug)
@@ -30,6 +30,7 @@ app.include_router(insights.router, prefix=settings.api_prefix)
 app.include_router(admin.router, prefix=settings.api_prefix)
 app.include_router(time.router, prefix=settings.api_prefix)
 app.include_router(nutrition.router, prefix=settings.api_prefix)
+app.include_router(user.router, prefix=settings.api_prefix)
 
 
 @app.on_event("startup")

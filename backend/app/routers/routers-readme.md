@@ -12,4 +12,5 @@ Contains FastAPI router modules that expose HTTP endpoints grouped by domain (me
 | `insights.py` | Insight retrieval API endpoints. |
 | `metrics.py` | Metrics retrieval API endpoints. |
 | `time.py` | Returns current US-Eastern time & moment for scene sync. |
-| `nutrition.py` | Nutrition foods/goals/intake endpoints and Claude chat stub. |
+| `nutrition.py` | Nutrition foods, goals, scaling rules, intake endpoints, and Claude chat stub. |
+| `user.py` | User profile endpoints for demographics and personal settings. |

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_session
 from app.schemas.insights import InsightResponse
 from app.services.insight_service import InsightService
+from app.utils.timezone import EASTERN_TZ, eastern_now
 
 router = APIRouter(prefix="/insights", tags=["insights"])
 
@@ -18,19 +19,21 @@ async def latest_insight(session: AsyncSession = Depends(get_session)) -> Insigh
     service = InsightService(session)
     metric = await service.fetch_latest_completed_metric()
     if metric is None:
+        now = eastern_now()
         return InsightResponse(
-            metric_date=datetime.utcnow(),
+            metric_date=now,
             readiness_score=None,
             readiness_label="Pending",
             narrative="Insight not yet generated.",
             source_model="vertex",
-            last_updated=datetime.utcnow(),
+            last_updated=now,
             refreshing=True,
         )
 
     insight = metric.vertex_insight
     source_model = insight.model_name if insight else "vertex"
-    last_updated = insight.updated_at if insight else datetime.combine(metric.metric_date, datetime.min.time())
+    metric_datetime = datetime.combine(metric.metric_date, datetime.min.time(), tzinfo=EASTERN_TZ)
+    last_updated = insight.updated_at if insight else metric_datetime
     narrative = metric.readiness_narrative or "Insight not yet generated."
     logger.debug(
         "Serving insight (date={}, len={}):\n{}",
@@ -39,7 +42,7 @@ async def latest_insight(session: AsyncSession = Depends(get_session)) -> Insigh
         narrative,
     )
     return InsightResponse(
-        metric_date=datetime.combine(metric.metric_date, datetime.min.time()),
+        metric_date=metric_datetime,
         readiness_score=metric.readiness_score,
         readiness_label=metric.readiness_label,
         narrative=narrative,

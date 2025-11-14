@@ -31,6 +31,7 @@ from app.db.models.nutrition import (
 )
 from app.db.repositories.nutrition_foods_repository import NutritionFoodsRepository
 from app.db.repositories.nutrition_intake_repository import NutritionIntakeRepository
+from app.utils.timezone import eastern_today
 
 
 @dataclass
@@ -101,7 +102,7 @@ class ClaudeNutritionAgent:
                 food_id=food.id,
                 quantity=quantity,
                 unit=unit,
-                day=date.today(),
+                day=eastern_today(),
                 source=NutritionIntakeSource.CLAUDE,
                 claude_request_id=request_id,
             )

@@ -22,11 +22,14 @@ from app.schemas.nutrition import (
     NutritionFoodResponse,
     NutritionHistoryResponse,
     NutrientGoalItem,
+    NutrientGoalUpdateRequest,
+    ScalingRuleListResponse,
 )
 from app.services.claude_nutrition_agent import ClaudeNutritionAgent
 from app.services.nutrition_foods_service import NutritionFoodsService
 from app.services.nutrition_goals_service import NutritionGoalsService
 from app.services.nutrition_intake_service import NutritionIntakeService
+from app.utils.timezone import eastern_today
 
 
 router = APIRouter(prefix="/nutrition", tags=["nutrition"])
@@ -115,17 +118,52 @@ async def list_goals(
 
 @router.put("/goals/{slug}", response_model=NutrientGoalItem)
 async def update_goal(
-    slug: str, body: dict[str, float], session: AsyncSession = Depends(get_session)
+    slug: str,
+    body: NutrientGoalUpdateRequest,
+    session: AsyncSession = Depends(get_session),
 ) -> NutrientGoalItem:
-    goal_value = body.get("goal")
-    if goal_value is None or goal_value <= 0:
-        raise HTTPException(status_code=400, detail="Goal must be positive")
     service = NutritionGoalsService(session)
     try:
-        result = await service.upsert_goal(DEFAULT_USER_ID, slug, goal_value)
+        result = await service.update_goal(DEFAULT_USER_ID, slug, body.goal)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await session.commit()
     return NutrientGoalItem(**result)
+
+
+@router.get("/scaling-rules", response_model=ScalingRuleListResponse)
+async def get_scaling_rules(
+    session: AsyncSession = Depends(get_session),
+) -> ScalingRuleListResponse:
+    service = NutritionGoalsService(session)
+    data = await service.list_scaling_rules(DEFAULT_USER_ID)
+    return ScalingRuleListResponse(**data)
+
+
+@router.post("/scaling-rules/{slug}", status_code=204)
+async def enable_scaling_rule(
+    slug: str, session: AsyncSession = Depends(get_session)
+) -> Response:
+    service = NutritionGoalsService(session)
+    try:
+        await service.set_rule_state(DEFAULT_USER_ID, slug, True)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await session.commit()
+    return Response(status_code=204)
+
+
+@router.delete("/scaling-rules/{slug}", status_code=204)
+async def disable_scaling_rule(
+    slug: str, session: AsyncSession = Depends(get_session)
+) -> Response:
+    service = NutritionGoalsService(session)
+    try:
+        await service.set_rule_state(DEFAULT_USER_ID, slug, False)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    await session.commit()
+    return Response(status_code=204)
 
 
 @router.post("/intake/manual", response_model=dict)
@@ -133,7 +171,7 @@ async def log_manual_intake(
     request: LogIntakeRequest, session: AsyncSession = Depends(get_session)
 ) -> dict:
     service = NutritionIntakeService(session)
-    day = request.day or date.today()
+    day = request.day or eastern_today()
     try:
         record = await service.log_manual_intake(
             user_id=DEFAULT_USER_ID,
@@ -151,7 +189,7 @@ async def list_today_menu(
     day: date | None = None, session: AsyncSession = Depends(get_session)
 ) -> NutritionIntakeMenuResponse:
     service = NutritionIntakeService(session)
-    day_value = day or date.today()
+    day_value = day or eastern_today()
     items = await service.list_day_menu(DEFAULT_USER_ID, day_value)
     return NutritionIntakeMenuResponse(day=day_value, entries=items)
 
@@ -188,7 +226,7 @@ async def daily_summary(
     day: date | None = None, session: AsyncSession = Depends(get_session)
 ) -> NutritionDailySummaryResponse:
     service = NutritionIntakeService(session)
-    summary = await service.daily_summary(DEFAULT_USER_ID, day or date.today())
+    summary = await service.daily_summary(DEFAULT_USER_ID, day or eastern_today())
     return NutritionDailySummaryResponse(**summary)
 
 

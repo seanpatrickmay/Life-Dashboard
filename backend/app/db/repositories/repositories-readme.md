@@ -11,5 +11,5 @@ Implements data-access helpers that encapsulate SQLAlchemy queries and mutations
 | `activity_repository.py` | CRUD helpers for user activities. |
 | `metrics_repository.py` | CRUD helpers for daily metrics and insight linkage. |
 | `nutrition_foods_repository.py` | Nutrition food/profile persistence helpers. |
-| `nutrition_goals_repository.py` | Accessor for nutrient definitions and user goal overrides. |
+| `nutrition_goals_repository.py` | Accessor for nutrient definitions, goal snapshots, and scaling rule assignments. |
 | `nutrition_intake_repository.py` | Logging and querying of nutrition intake entries. |

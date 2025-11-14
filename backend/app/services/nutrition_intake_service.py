@@ -14,6 +14,7 @@ from app.db.models.nutrition import (
 from app.db.repositories.nutrition_intake_repository import NutritionIntakeRepository
 from app.db.repositories.nutrition_foods_repository import NutritionFoodsRepository
 from app.services.nutrition_goals_service import NutritionGoalsService
+from app.utils.timezone import eastern_today
 
 
 class NutritionIntakeService:
@@ -98,7 +99,7 @@ class NutritionIntakeService:
         return {"date": day, "nutrients": nutrients}
 
     async def rolling_average(self, user_id: int, days: int = 14) -> dict[str, Any]:
-        end = date.today()
+        end = eastern_today()
         start = end - timedelta(days=days - 1)
         intakes = await self.repo.fetch_between(user_id, start, end)
         totals_by_day: dict[date, dict[str, float]] = defaultdict(

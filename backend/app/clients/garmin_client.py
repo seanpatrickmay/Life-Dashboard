@@ -169,6 +169,23 @@ class GarminClient:
             current += timedelta(days=1)
         return results
 
+    def fetch_daily_energy(self, start_date: date, end_date: date) -> list[dict[str, Any]]:
+        self.authenticate()
+        results: list[dict[str, Any]] = []
+        current = start_date
+        while current <= end_date:
+            iso = current.isoformat()
+            try:
+                summary = self.client.get_user_summary(iso)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Failed to fetch user summary for %s: %s", iso, exc)
+                summary = None
+            if summary:
+                summary["calendarDate"] = summary.get("calendarDate") or iso
+                results.append(summary)
+            current += timedelta(days=1)
+        return results
+
     @staticmethod
     def _parse_dt(value: str | None) -> datetime | None:
         if not value:

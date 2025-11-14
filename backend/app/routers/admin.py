@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +8,7 @@ from app.db.session import get_session
 from app.schemas.admin import IngestionTriggerResponse
 from app.services.insight_service import InsightService
 from app.services.metrics_service import MetricsService
+from app.utils.timezone import eastern_now
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -28,7 +27,7 @@ async def trigger_ingestion(
     await insight.refresh_daily_insight(user_id=1)
 
     return IngestionTriggerResponse(
-        started_at=datetime.utcnow(),
+        started_at=eastern_now(),
         status="queued",
         message="Ingestion and insight refresh completed",
     )

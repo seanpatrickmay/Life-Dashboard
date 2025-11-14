@@ -5,6 +5,7 @@ import { InsightsPage } from './Insights';
 import { SettingsPage } from './Settings';
 import { GardenPage } from './Garden';
 import { NutritionPage } from './Nutrition';
+import { UserPage } from './User';
 import { PageShell } from '../components/layout/PageShell';
 import { PageBackground } from '../components/layout/PageBackground';
 
@@ -13,7 +14,8 @@ const routes = [
   { path: '/insights', element: <InsightsPage /> },
   { path: '/settings', element: <SettingsPage /> },
   { path: '/garden', element: <GardenPage /> },
-  { path: '/nutrition', element: <NutritionPage /> }
+  { path: '/nutrition', element: <NutritionPage /> },
+  { path: '/user', element: <UserPage /> }
 ];
 
 function App() {

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -21,12 +20,13 @@ sys.path.append(str(ROOT / "backend"))
 
 from app.db.session import AsyncSessionLocal  # type: ignore  # noqa: E402
 from app.db.models.entities import IngestionRun  # type: ignore  # noqa: E402
+from app.utils.timezone import eastern_now  # type: ignore  # noqa: E402
 
 
 async def main() -> None:
     async with AsyncSessionLocal() as session:
         test_run = IngestionRun(
-            started_at=datetime.utcnow(),
+            started_at=eastern_now(),
             completed_at=None,
             status="test_roundtrip",
             message="Temporary record to verify store + fetch workflow.",

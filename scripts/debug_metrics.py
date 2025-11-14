@@ -16,6 +16,7 @@ load_dotenv(ROOT / ".env")
 sys.path.append(str(ROOT / "backend"))
 
 from app.clients.garmin_client import GarminClient  # type: ignore  # noqa: E402
+from app.utils.timezone import eastern_today  # type: ignore  # noqa: E402
 
 LOOKBACK_DAYS = int(os.getenv("DEBUG_LOOKBACK_DAYS", 14))
 OUTPUT_DIR = Path(os.getenv("DEBUG_OUTPUT_DIR", ROOT / "scripts" / "debug_output"))
@@ -44,7 +45,7 @@ def main() -> None:
     client.authenticate()
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    today = date.today()
+    today = eastern_today()
     start_day = today - timedelta(days=LOOKBACK_DAYS - 1)
 
     payload = {

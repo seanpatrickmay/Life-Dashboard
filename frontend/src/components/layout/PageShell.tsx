@@ -74,6 +74,9 @@ export function PageShell({ children }: PropsWithChildren) {
           <Link className={pathname.startsWith('/nutrition') ? 'active' : ''} to="/nutrition">
             Nutrition
           </Link>
+          <Link className={pathname.startsWith('/user') ? 'active' : ''} to="/user">
+            User
+          </Link>
           <Link className={pathname.startsWith('/settings') ? 'active' : ''} to="/settings">
             Settings
           </Link>

@@ -115,6 +115,9 @@ export type NutritionGoal = {
   group: string;
   goal: number;
   default_goal: number;
+  computed_at?: string | null;
+  computed_from_date?: string | null;
+  calorie_source?: string | null;
 };
 
 export type NutritionSummary = {
@@ -232,5 +235,73 @@ export const fetchNutritionHistory = async (days = 14): Promise<NutritionHistory
 
 export const sendClaudeMessage = async (message: string, session_id?: string): Promise<ClaudeChatResponse> => {
   const { data } = await api.post('/api/nutrition/claude/message', { message, session_id });
+  return data;
+};
+
+export type ScalingRule = {
+  slug: string;
+  label: string;
+  description?: string | null;
+  type: 'catalog' | 'manual';
+  owner_user_id?: number | null;
+  active: boolean;
+  multipliers: Record<string, number>;
+};
+
+export type ScalingRuleList = {
+  rules: ScalingRule[];
+  manual_rule_slug?: string | null;
+};
+
+export const fetchScalingRules = async (): Promise<ScalingRuleList> => {
+  const { data } = await api.get('/api/user/scaling-rules');
+  return data;
+};
+
+export const enableScalingRule = async (slug: string) => {
+  await api.post(`/api/user/scaling-rules/${slug}`);
+};
+
+export const disableScalingRule = async (slug: string) => {
+  await api.delete(`/api/user/scaling-rules/${slug}`);
+};
+
+export type UserProfileData = {
+  date_of_birth?: string | null;
+  sex?: string | null;
+  height_cm?: number | null;
+  current_weight_kg?: number | null;
+  preferred_units?: 'metric' | 'imperial';
+  daily_energy_delta_kcal?: number;
+};
+
+export type MeasurementEntry = {
+  measured_at: string;
+  weight_kg: number;
+};
+
+export type DailyEnergySummary = {
+  metric_date: string;
+  active_kcal?: number | null;
+  bmr_kcal?: number | null;
+  total_kcal?: number | null;
+  source?: string | null;
+};
+
+export type UserProfileResponse = {
+  profile: UserProfileData;
+  measurements: MeasurementEntry[];
+  latest_energy?: DailyEnergySummary | null;
+  goals: NutritionGoal[];
+  scaling_rules: ScalingRuleList;
+};
+
+export const fetchUserProfile = async (): Promise<UserProfileResponse> => {
+  const { data } = await api.get('/api/user/profile');
+  return data;
+};
+
+export const updateUserProfile = async (payload: UserProfileData): Promise<UserProfileResponse> => {
+  const { data } = await api.put('/api/user/profile', payload);
   return data;
 };

@@ -1,1 +1,1 @@
-from . import admin, insights, metrics, time, nutrition  # noqa: F401
+from . import admin, insights, metrics, time, nutrition, user  # noqa: F401

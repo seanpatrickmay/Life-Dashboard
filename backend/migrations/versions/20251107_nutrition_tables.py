@@ -1,12 +1,11 @@
 """Create nutrition tables."""
 from __future__ import annotations
 
-from datetime import datetime
-
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import inspect
 
+from app.utils.timezone import eastern_now
 
 # revision identifiers, used by Alembic.
 revision = "20251107_nutrition_tables"
@@ -105,8 +104,8 @@ def upgrade() -> None:
         op.create_table(
             "nutrition_food_profiles",
             sa.Column("id", sa.Integer(), primary_key=True),
-            sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-            sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
             *[sa.Column(column_name, sa.Float(), nullable=True) for _, _, _, _, column_name, _ in NUTRIENT_DEFS],
         )
 
@@ -114,8 +113,8 @@ def upgrade() -> None:
         op.create_table(
             "nutrition_foods",
             sa.Column("id", sa.Integer(), primary_key=True),
-            sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-            sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
             sa.Column("name", sa.String(length=255), nullable=False, unique=True),
             sa.Column("default_unit", sa.String(length=64), nullable=False, server_default="serving"),
             sa.Column("status", food_status, nullable=False, server_default="unconfirmed"),
@@ -127,8 +126,8 @@ def upgrade() -> None:
         op.create_table(
             "nutrition_nutrients",
             sa.Column("id", sa.Integer(), primary_key=True),
-            sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-            sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
             sa.Column("slug", sa.String(length=50), nullable=False, unique=True, index=True),
             sa.Column("display_name", sa.String(length=120), nullable=False),
             sa.Column("category", nutrient_category, nullable=False),
@@ -140,8 +139,8 @@ def upgrade() -> None:
         op.create_table(
             "nutrition_user_goals",
             sa.Column("id", sa.Integer(), primary_key=True),
-            sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-            sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
             sa.Column("user_id", sa.Integer(), sa.ForeignKey("user.id"), nullable=False),
             sa.Column("nutrient_id", sa.Integer(), sa.ForeignKey("nutrition_nutrients.id"), nullable=False),
             sa.Column("daily_goal", sa.Float(), nullable=False),
@@ -152,8 +151,8 @@ def upgrade() -> None:
         op.create_table(
             "nutrition_intake",
             sa.Column("id", sa.Integer(), primary_key=True),
-            sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-            sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
             sa.Column("user_id", sa.Integer(), sa.ForeignKey("user.id"), nullable=False),
             sa.Column("food_id", sa.Integer(), sa.ForeignKey("nutrition_foods.id"), nullable=False),
             sa.Column("quantity", sa.Float(), nullable=False),
@@ -170,13 +169,13 @@ def upgrade() -> None:
         sa.column("category", nutrient_category),
         sa.column("unit", sa.String()),
         sa.column("default_goal", sa.Float()),
-        sa.column("created_at", sa.DateTime()),
-        sa.column("updated_at", sa.DateTime()),
+        sa.column("created_at", sa.DateTime(timezone=True)),
+        sa.column("updated_at", sa.DateTime(timezone=True)),
     )
     result = bind.execute(sa.text("SELECT COUNT(*) FROM nutrition_nutrients"))
     (existing_rows,) = result.fetchone()
     if existing_rows == 0:
-        now = datetime.utcnow()
+        now = eastern_now()
         op.bulk_insert(
             nutrient_table,
             [

@@ -9,12 +9,10 @@ export function useNutritionGoals() {
 
   const updateMutation = useMutation({
     mutationFn: ({ slug, goal }: { slug: string; goal: number }) => updateNutritionGoal(slug, goal),
-    onSuccess: (_, variables) => {
+    onSuccess: (updatedGoal) => {
       queryClient.setQueryData<NutritionGoal[]>(GOALS_QUERY_KEY, (prev) => {
         if (!prev) return prev;
-        return prev.map((goalItem) =>
-          goalItem.slug === variables.slug ? { ...goalItem, goal: variables.goal } : goalItem
-        );
+        return prev.map((goalItem) => (goalItem.slug === updatedGoal.slug ? updatedGoal : goalItem));
       });
     }
   });
