@@ -56,11 +56,15 @@ export function ClaudeChatPanel() {
   const { history, sendMessage, isSending } = useClaudeChat();
   const [text, setText] = useState('');
 
-  const onSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const submit = async () => {
     if (!text.trim()) return;
     await sendMessage(text.trim());
     setText('');
+  };
+
+  const onSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await submit();
   };
 
   return (
@@ -88,6 +92,12 @@ export function ClaudeChatPanel() {
           placeholder="e.g. I had 1 cup oatmeal and 1 tbsp chia seeds"
           value={text}
           onChange={(e) => setText(e.target.value)}
+          onKeyDown={async (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              await submit();
+            }
+          }}
         />
         <Button type="submit" disabled={isSending}>
           {isSending ? '...' : 'Send'}

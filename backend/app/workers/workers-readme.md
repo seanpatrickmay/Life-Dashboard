@@ -8,4 +8,4 @@ Contains background job definitions and task helpers used by schedulers or Celer
 | File | Description |
 | --- | --- |
 | `__init__.py` | Package marker. |
-| `tasks.py` | Background task definitions (e.g., scheduled ingestion). |
+| `tasks.py` | Visit-triggered ingestion controller and throttled refresh helpers. |

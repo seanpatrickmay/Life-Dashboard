@@ -25,6 +25,27 @@ const Narrative = styled.p`
   max-width: 380px;
 `;
 
+const ReadinessBlock = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+`;
+
+const ReadinessValue = styled.div`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: clamp(2.4rem, 4vw, 3.2rem);
+`;
+
+const ReadinessLabel = styled.span`
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.85;
+`;
+
 const Subtitle = styled.span`
   display: block;
   font-size: 0.8rem;
@@ -160,6 +181,10 @@ export function LilyPadsInsights() {
           title={`${data?.greeting ?? 'Good morning'}, ${formattedDate}`}
           contentWidthPct={0.9}
         >
+          <ReadinessBlock>
+            <ReadinessValue data-halo="heading">{formatReadinessValue(data?.readiness_score)}</ReadinessValue>
+            <ReadinessLabel>{data?.readiness_label ?? 'Awaiting insight'}</ReadinessLabel>
+          </ReadinessBlock>
           <Narrative>{data?.morning_note ?? 'Structured readiness insight is not available yet.'}</Narrative>
         </LilyPadCard>
       </MetricRow>
@@ -188,3 +213,10 @@ export function LilyPadsInsights() {
     </Stage>
   );
 }
+
+const formatReadinessValue = (score?: number | null) => {
+  if (typeof score === 'number') {
+    return `${Math.round(score)} / 100`;
+  }
+  return '— / 100';
+};

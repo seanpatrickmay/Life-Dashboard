@@ -13,6 +13,7 @@ Holds the procedurally generated Monet sprite sheet used by the scene composer (
 | `water_base_{mode}.png`, `water_reflection_{mode}.png`, `cloud_reflect_{mode}.png`, `water_stroke_{size}_{mode}.png` | Layered water textures and reflections. |
 | `ripple_{mode}.png`, `caustic_ripple_fine_{mode}.png` | Ripple tiles for parallax overlays. |
 | `reeds_{mode}.png`, `reeds_edge_{mode}.png`, `willow_frond_{mode}.png`, `willow_strands_{side}_{mode}.png` | Vegetation sprites (edge reeds and hanging willows). |
+| `island_left_{day,night}.png`, `island_right_{day,night}.png` | Text-capable left island plus small right counterweight for the bridge scene. |
 | `bridge_arc_{mode}.png`, `bridge_arc_reflection_{mode}.png`, `koi_silhouette.png`, `boat_silhouette.png` | Feature-scene overlays (bridge, koi, boat). |
 | `microgrid_{mode}.png`, `dither_{mode}.png`, `speckles_{mode}.png`, `vignette_radial_{mode}.png`, `vignette_haze_{mode}.png` | Utility textures for cards and night speckles. |
 | `stroke_{stipple,crosshatch,zigzag}.png` | Fill patterns applied to charts. |

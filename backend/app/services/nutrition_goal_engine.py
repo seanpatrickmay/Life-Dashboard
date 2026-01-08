@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Iterable
 
+from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,6 +63,13 @@ class NutritionGoalEngine:
             slug: max(baseline[slug] * multipliers.get(slug, 1.0), 0.0)
             for slug in baseline
         }
+        logger.info(
+            "Nutrition goals compute for user_id={} using day={} total_kcal={} source={}",
+            user_id,
+            source_date,
+            total_kcal,
+            calorie_source,
+        )
         return GoalComputationResult(
             baseline=baseline,
             final=final,

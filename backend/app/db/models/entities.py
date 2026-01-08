@@ -22,6 +22,7 @@ class User(Base):
     display_name: Mapped[str | None]
 
     activities: Mapped[list["Activity"]] = relationship(back_populates="user")
+    todos: Mapped[list["TodoItem"]] = relationship(back_populates="user")
     daily_metrics: Mapped[list["DailyMetric"]] = relationship(back_populates="user")
     nutrition_intakes: Mapped[list["NutritionIntake"]] = relationship(back_populates="user")
     profile: Mapped["UserProfile"] = relationship(back_populates="user", uselist=False)

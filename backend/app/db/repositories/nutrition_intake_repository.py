@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.models.nutrition import (
-    NutritionFood,
+    NutritionIngredient,
     NutritionIntake,
     NutritionIntakeSource,
 )
@@ -31,7 +31,7 @@ class NutritionIntakeRepository:
     ) -> NutritionIntake:
         intake = NutritionIntake(
             user_id=user_id,
-            food_id=food_id,
+            ingredient_id=food_id,
             quantity=quantity,
             unit=unit,
             day_date=day,
@@ -45,7 +45,7 @@ class NutritionIntakeRepository:
         stmt = (
             select(NutritionIntake)
             .where(NutritionIntake.user_id == user_id, NutritionIntake.day_date == day)
-            .options(selectinload(NutritionIntake.food).selectinload(NutritionFood.profile))
+            .options(selectinload(NutritionIntake.ingredient).selectinload(NutritionIngredient.profile))
             .order_by(NutritionIntake.created_at.asc())
         )
         result = await self.session.execute(stmt)
@@ -59,7 +59,7 @@ class NutritionIntakeRepository:
                 NutritionIntake.day_date >= start,
                 NutritionIntake.day_date <= end,
             )
-            .options(selectinload(NutritionIntake.food).selectinload(NutritionFood.profile))
+            .options(selectinload(NutritionIntake.ingredient).selectinload(NutritionIngredient.profile))
             .order_by(NutritionIntake.day_date.asc())
         )
         result = await self.session.execute(stmt)
@@ -72,8 +72,8 @@ class NutritionIntakeRepository:
             select(NutritionIntake)
             .where(NutritionIntake.user_id == user_id, NutritionIntake.day_date == day)
             .options(
-                selectinload(NutritionIntake.food).selectinload(
-                    NutritionFood.profile
+                selectinload(NutritionIntake.ingredient).selectinload(
+                    NutritionIngredient.profile
                 )
             )
             .order_by(NutritionIntake.created_at.asc())
@@ -87,7 +87,7 @@ class NutritionIntakeRepository:
         stmt = (
             select(NutritionIntake)
             .where(NutritionIntake.id == intake_id)
-            .options(selectinload(NutritionIntake.food))
+            .options(selectinload(NutritionIntake.ingredient))
         )
         result = await self.session.execute(stmt)
         intake = result.scalar_one_or_none()

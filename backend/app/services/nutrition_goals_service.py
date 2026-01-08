@@ -23,7 +23,11 @@ class NutritionGoalsService:
 
     async def list_goals(self, user_id: int) -> list[dict]:
         nutrients = await self.repo.list_nutrients()
+        if not nutrients:
+            nutrients = list(NUTRIENT_DEFINITIONS)
         snapshot = await self.repo.fetch_goal_snapshot(user_id)
+        if snapshot is None:
+            snapshot = await self.recompute_goals(user_id)
         computed_at = snapshot.computed_at if snapshot else None
         computed_from_date = snapshot.computed_from_date if snapshot else None
         calorie_source = snapshot.calorie_source if snapshot else None

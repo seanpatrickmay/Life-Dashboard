@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,7 +14,7 @@ from app.schemas.metrics import (
     MetricDelta,
     TimeSeriesPoint,
 )
-from app.utils.timezone import eastern_now, eastern_today
+from app.utils.timezone import eastern_midnight, eastern_now, eastern_today
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -25,22 +25,22 @@ async def metrics_overview(range_days: int = 14, session: AsyncSession = Depends
     repo = MetricsRepository(session)
     records = await repo.list_metrics_since(cutoff)
     hrv_series = [
-        TimeSeriesPoint(timestamp=datetime.combine(r.metric_date, datetime.min.time()), value=r.hrv_avg_ms)
+        TimeSeriesPoint(timestamp=eastern_midnight(r.metric_date), value=r.hrv_avg_ms)
         for r in records
     ]
     rhr_series = [
-        TimeSeriesPoint(timestamp=datetime.combine(r.metric_date, datetime.min.time()), value=r.rhr_bpm)
+        TimeSeriesPoint(timestamp=eastern_midnight(r.metric_date), value=r.rhr_bpm)
         for r in records
     ]
     sleep_series = [
         TimeSeriesPoint(
-            timestamp=datetime.combine(r.metric_date, datetime.min.time()),
+            timestamp=eastern_midnight(r.metric_date),
             value=(r.sleep_seconds / 3600 if r.sleep_seconds else None),
         )
         for r in records
     ]
     load_series = [
-        TimeSeriesPoint(timestamp=datetime.combine(r.metric_date, datetime.min.time()), value=r.training_load)
+        TimeSeriesPoint(timestamp=eastern_midnight(r.metric_date), value=r.training_load)
         for r in records
     ]
     volume_hours_total = sum((r.training_volume_seconds or 0) / 3600 for r in records)

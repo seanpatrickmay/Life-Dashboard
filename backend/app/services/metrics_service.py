@@ -1,9 +1,11 @@
 """Metric ingestion and aggregation services."""
 from __future__ import annotations
 
-from datetime import date, timedelta
+from collections import defaultdict
+from datetime import date, datetime, timedelta
 from typing import Any
 
+from dateutil import parser
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +14,7 @@ from app.clients.garmin_client import GarminClient
 from app.db.models.entities import DailyEnergy
 from app.db.repositories.activity_repository import ActivityRepository
 from app.db.repositories.metrics_repository import MetricsRepository
-from app.utils.timezone import eastern_now, eastern_today
+from app.utils.timezone import EASTERN_TZ, ensure_eastern, eastern_now, eastern_today
 
 
 class MetricsService:
@@ -35,14 +37,15 @@ class MetricsService:
         energy_payload: list[dict[str, Any]] | None = None,
     ) -> dict:
         now = eastern_now()
-        cutoff_dt = now - timedelta(days=lookback_days)
+        start_date = eastern_today() - timedelta(days=lookback_days - 1)
+        cutoff_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=EASTERN_TZ)
         if activities is None:
             logger.info("Fetching Garmin activities since {}", cutoff_dt)
             activities = self.garmin.fetch_recent_activities(cutoff_dt)
+        activities = self._filter_recent_activities(activities, cutoff_dt)
 
         ingested = await self.activity_repo.upsert_many(user_id, activities)
 
-        start_date = eastern_today() - timedelta(days=lookback_days - 1)
         end_date = eastern_today()
         if hrv_payload is None:
             hrv_payload = self.garmin.fetch_daily_hrv(start_date, end_date)
@@ -51,7 +54,7 @@ class MetricsService:
         if sleep_payload is None:
             sleep_payload = self.garmin.fetch_sleep(start_date, end_date)
         if load_payload is None:
-            load_payload = []
+            load_payload = self.garmin.fetch_training_loads(start_date, end_date)
         if energy_payload is None:
             energy_payload = self.garmin.fetch_daily_energy(start_date, end_date)
 
@@ -85,6 +88,7 @@ class MetricsService:
 
         rolling_window_days = 14
         daily_loads: dict[date, float] = {}
+        metric_changes: dict[date, set[str]] = defaultdict(set)
 
         for offset in range(lookback_days):
             metric_day = start_date + timedelta(days=offset)
@@ -106,7 +110,7 @@ class MetricsService:
             training_volume_seconds = duration_total if duration_total else None
             sleep_value = sleep_map.get(metric_day)
             sleep_seconds = int(round(sleep_value)) if sleep_value else None
-            await self.metrics_repo.upsert_daily_metric(
+            _, changed_fields = await self.metrics_repo.upsert_daily_metric(
                 user_id=user_id,
                 metric_date=metric_day,
                 values={
@@ -117,6 +121,8 @@ class MetricsService:
                     "training_volume_seconds": training_volume_seconds,
                 },
             )
+            if changed_fields:
+                metric_changes[metric_day].update(changed_fields)
 
         await self.session.commit()
         return {
@@ -126,7 +132,41 @@ class MetricsService:
             "sleep_entries": len(sleep_payload),
             "training_load_entries": len(load_payload) if load_payload else sum(1 for v in activity_totals.values() if v.get("load") is not None),
             "energy_entries": len(energy_payload),
+            "metric_changes": {
+                metric_day.isoformat(): sorted(fields) for metric_day, fields in metric_changes.items() if fields
+            },
         }
+
+    def _filter_recent_activities(self, activities: list[dict[str, Any]], cutoff: datetime) -> list[dict[str, Any]]:
+        entries: list[tuple[dict[str, Any], datetime | None]] = []
+        dropped = 0
+        for payload in activities:
+            timestamp = payload.get("startTimeLocal") or payload.get("startTimeGMT")
+            if not timestamp:
+                entries.append((payload, None))
+                continue
+            try:
+                parsed = parser.isoparse(timestamp)
+                normalized = ensure_eastern(parsed)
+            except (ValueError, TypeError):
+                entries.append((payload, None))
+                continue
+            if normalized >= cutoff:
+                entries.append((payload, normalized))
+            else:
+                dropped += 1
+        if dropped:
+            logger.debug("Dropped {} activities older than {}", dropped, cutoff)
+
+        with_timestamps = [(payload, ts) for payload, ts in entries if ts is not None]
+        without_timestamps = [payload for payload, ts in entries if ts is None]
+        with_timestamps.sort(key=lambda item: item[1], reverse=True)
+        limited: list[dict[str, Any]] = [payload for payload, _ in with_timestamps[:6]]
+        if len(with_timestamps) > 6:
+            logger.debug("Truncated {} activities to keep the latest 6 entries", len(with_timestamps) - 6)
+        remaining_slots = max(0, 6 - len(limited))
+        limited.extend(without_timestamps[:remaining_slots])
+        return limited
 
     def _map_hrv(self, payload: list[dict]) -> dict[date, float]:
         result: dict[date, float] = {}

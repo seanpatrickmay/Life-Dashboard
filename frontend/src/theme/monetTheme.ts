@@ -97,6 +97,10 @@ import bridge_arc_light from '../assets/pixels/bridge_arc_light.png';
 import bridge_arc_dark from '../assets/pixels/bridge_arc_dark.png';
 import bridge_arc_reflection_light from '../assets/pixels/bridge_arc_reflection_light.png';
 import bridge_arc_reflection_dark from '../assets/pixels/bridge_arc_reflection_dark.png';
+import island_left_day from '../assets/pixels/island_left_day.png';
+import island_left_night from '../assets/pixels/island_left_night.png';
+import island_right_day from '../assets/pixels/island_right_day.png';
+import island_right_night from '../assets/pixels/island_right_night.png';
 import koi_silhouette from '../assets/pixels/koi_silhouette.png';
 import boat_silhouette from '../assets/pixels/boat_silhouette.png';
 import boat_light from '../assets/pixels/boat_light.png';
@@ -285,6 +289,8 @@ type PixelRegistry = {
   reedsEdge: SpriteSingle;
   willow: SpriteSingle;
   willowStrands: DirectionalSprite;
+  islandLeft: SpriteSingle;
+  islandRight: SpriteSingle;
   microgrid: SpriteSingle;
   dither: SpriteSingle;
   stroke: { stipple: string; crosshatch: string; zigzag: string };
@@ -411,6 +417,14 @@ export const pixelSprites: PixelRegistry = {
   willowStrands: {
     light: { left: willow_strands_left_light, right: willow_strands_right_light },
     dark: { left: willow_strands_left_dark, right: willow_strands_right_dark }
+  },
+  islandLeft: {
+    light: island_left_day,
+    dark: island_left_night
+  },
+  islandRight: {
+    light: island_right_day,
+    dark: island_right_night
   },
   vignette: {
     light: vignette_radial_light,

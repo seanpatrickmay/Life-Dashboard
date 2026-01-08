@@ -31,19 +31,21 @@ const Nav = styled.nav`
     letter-spacing: 0.16em;
     text-transform: uppercase;
     text-decoration: none;
-    color: ${({ theme }) => theme.colors.textSecondary};
-    opacity: 0.72;
-    transition: opacity 0.2s ease, color 0.2s ease, transform 0.2s ease;
+    color: ${({ theme }) => theme.colors.textPrimary};
+    opacity: 0.86;
+    text-shadow: 0 2px 10px rgba(10, 18, 40, 0.55);
+    transition: opacity 0.2s ease, color 0.2s ease, transform 0.2s ease, text-shadow 0.2s ease;
     border-bottom: 2px solid transparent;
     padding-bottom: 4px;
     &:hover {
-      opacity: 0.9;
+      opacity: 1;
+      text-shadow: 0 2px 12px rgba(10, 18, 40, 0.7);
     }
     &.active {
       opacity: 1;
       color: ${({ theme }) => theme.colors.textPrimary};
       border-bottom: 2px solid ${({ theme }) => paletteAccent(theme.mode ?? 'light', theme)};
-      text-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
     }
   }
 `;

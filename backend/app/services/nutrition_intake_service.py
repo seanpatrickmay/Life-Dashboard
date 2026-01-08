@@ -8,11 +8,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.nutrition import (
     NUTRIENT_DEFINITIONS,
+    NutritionIngredient,
     NutritionIntake,
     NutritionIntakeSource,
+    NutritionRecipe,
+    NutritionRecipeComponent,
 )
 from app.db.repositories.nutrition_intake_repository import NutritionIntakeRepository
-from app.db.repositories.nutrition_foods_repository import NutritionFoodsRepository
+from app.db.repositories.nutrition_ingredients_repository import (
+    NutritionIngredientsRepository,
+    NutritionRecipesRepository,
+)
 from app.services.nutrition_goals_service import NutritionGoalsService
 from app.utils.timezone import eastern_today
 
@@ -21,38 +27,57 @@ class NutritionIntakeService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repo = NutritionIntakeRepository(session)
-        self.food_repo = NutritionFoodsRepository(session)
+        self.ingredients_repo = NutritionIngredientsRepository(session)
+        self.recipes_repo = NutritionRecipesRepository(session)
         self.goals_service = NutritionGoalsService(session)
 
     async def log_manual_intake(
         self,
         *,
         user_id: int,
-        food_id: int,
+        ingredient_id: int | None = None,
+        recipe_id: int | None = None,
         quantity: float,
         unit: str,
         day: date,
     ) -> dict[str, Any]:
-        food = await self.food_repo.get_food(food_id)
-        if food is None:
-            raise ValueError("Food not found")
-        intake = await self.repo.log_intake(
+        if bool(ingredient_id) == bool(recipe_id):
+            raise ValueError("Provide exactly one of ingredient_id or recipe_id")
+
+        if ingredient_id:
+            ingredient = await self.ingredients_repo.get_ingredient(ingredient_id)
+            if ingredient is None:
+                raise ValueError("Ingredient not found")
+            intake = await self.repo.log_intake(
+                user_id=user_id,
+                food_id=ingredient_id,
+                quantity=quantity,
+                unit=unit,
+                day=day,
+                source=NutritionIntakeSource.MANUAL,
+            )
+            await self.session.flush()
+            await self.session.commit()
+            return {
+                "id": intake.id,
+                "ingredient_id": ingredient_id,
+                "day": day,
+                "quantity": quantity,
+                "unit": unit,
+            }
+
+        recipe = await self.recipes_repo.get_recipe(recipe_id, load_components=True)
+        if recipe is None:
+            raise ValueError("Recipe not found")
+        created = await self._expand_and_log_recipe(
             user_id=user_id,
-            food_id=food_id,
-            quantity=quantity,
-            unit=unit,
+            recipe=recipe,
+            servings=quantity,
             day=day,
             source=NutritionIntakeSource.MANUAL,
         )
-        await self.session.flush()
         await self.session.commit()
-        return {
-            "id": intake.id,
-            "food_id": food_id,
-            "day": day,
-            "quantity": quantity,
-            "unit": unit,
-        }
+        return created
 
     async def list_day_menu(self, user_id: int, day: date) -> list[dict[str, Any]]:
         intakes = await self.repo.fetch_for_day_with_food(user_id, day)
@@ -107,7 +132,7 @@ class NutritionIntakeService:
         )
         for intake in intakes:
             bucket = totals_by_day[intake.day_date]
-            profile = intake.food.profile
+            profile = intake.ingredient.profile
             for definition in NUTRIENT_DEFINITIONS:
                 value = getattr(profile, definition.column_name)
                 if value is None:
@@ -147,7 +172,7 @@ class NutritionIntakeService:
             definition.slug: 0.0 for definition in NUTRIENT_DEFINITIONS
         }
         for intake in intakes:
-            profile = intake.food.profile
+            profile = intake.ingredient.profile
             for definition in NUTRIENT_DEFINITIONS:
                 value = getattr(profile, definition.column_name)
                 if value is None:
@@ -158,9 +183,49 @@ class NutritionIntakeService:
     def _serialize_entry(self, intake: NutritionIntake) -> dict[str, Any]:
         return {
             "id": intake.id,
-            "food_id": intake.food_id,
-            "food_name": intake.food.name if intake.food else None,
+            "ingredient_id": intake.ingredient_id,
+            "ingredient_name": intake.ingredient.name if intake.ingredient else None,
             "quantity": intake.quantity,
             "unit": intake.unit,
             "source": intake.source.value,
         }
+
+    async def _expand_and_log_recipe(
+        self,
+        *,
+        user_id: int,
+        recipe: NutritionRecipe,
+        servings: float,
+        day: date,
+        source: NutritionIntakeSource,
+    ) -> dict[str, Any]:
+        created_entries: list[dict[str, Any]] = []
+
+        async def _expand(target_recipe: NutritionRecipe, multiplier: float) -> None:
+            for comp in target_recipe.components:
+                per_serving_qty = comp.quantity / target_recipe.servings if target_recipe.servings else comp.quantity
+                effective_qty = multiplier * per_serving_qty
+                if comp.ingredient:
+                    await self.repo.log_intake(
+                        user_id=user_id,
+                        food_id=comp.ingredient.id,
+                        quantity=effective_qty,
+                        unit=comp.unit,
+                        day=day,
+                        source=source,
+                    )
+                    created_entries.append(
+                        {
+                            "ingredient_id": comp.ingredient.id,
+                            "ingredient_name": comp.ingredient.name,
+                            "quantity": effective_qty,
+                            "unit": comp.unit,
+                            "source": source.value,
+                        }
+                    )
+                elif comp.child_recipe:
+                    await _expand(comp.child_recipe, effective_qty)
+
+        await _expand(recipe, servings)
+        await self.session.flush()
+        return {"recipe_id": recipe.id, "created_entries": created_entries}

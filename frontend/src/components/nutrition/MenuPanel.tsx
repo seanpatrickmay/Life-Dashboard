@@ -164,7 +164,7 @@ export function MenuPanel() {
             {entries.map((entry) => (
               <EntryCard key={entry.id}>
                 <div>
-                  <strong>{entry.food_name ?? foodMap.get(entry.food_id)}</strong>
+                  <strong>{entry.ingredient_name ?? foodMap.get(entry.ingredient_id)}</strong>
                   <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>
                     Source: {entry.source}
                   </div>

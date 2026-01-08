@@ -4,7 +4,7 @@ const baseURL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 export const api = axios.create({
   baseURL,
-  timeout: 10000
+  timeout: 180000
 });
 
 export type InsightResponse = {
@@ -67,6 +67,17 @@ export type SceneTimeResponse = {
   moment: 'morning' | 'noon' | 'twilight' | 'night';
 };
 
+export type RefreshStatusResponse = {
+  job_started: boolean;
+  running: boolean;
+  last_started_at?: string | null;
+  last_completed_at?: string | null;
+  next_allowed_at?: string | null;
+  cooldown_seconds: number;
+  message?: string | null;
+  last_error?: string | null;
+};
+
 export const fetchInsight = async (): Promise<InsightResponse> => {
   const { data } = await api.get('/api/insights/daily');
   return data;
@@ -87,6 +98,11 @@ export const fetchSceneTime = async (): Promise<SceneTimeResponse> => {
   return data;
 };
 
+export const triggerVisitRefresh = async (): Promise<RefreshStatusResponse> => {
+  const { data } = await api.post('/api/system/refresh-today');
+  return data;
+};
+
 // Nutrition
 
 export type NutritionNutrient = {
@@ -98,13 +114,52 @@ export type NutritionNutrient = {
   default_goal: number;
 };
 
-export type NutritionFood = {
+export type IngredientStatus = 'confirmed' | 'unconfirmed';
+
+export type NutritionIngredient = {
   id: number;
+  owner_user_id: number;
   name: string;
   default_unit: string;
-  status: string;
+  status: IngredientStatus;
   source?: string | null;
   nutrients: Record<string, number | null>;
+};
+
+export type RecipeComponent = {
+  ingredient_id?: number | null;
+  child_recipe_id?: number | null;
+  ingredient_name?: string | null;
+  child_recipe_name?: string | null;
+  quantity: number;
+  unit: string;
+  position?: number | null;
+};
+
+export type NutritionRecipe = {
+  id: number;
+  owner_user_id: number;
+  name: string;
+  default_unit: string;
+  servings: number;
+  status: IngredientStatus;
+  components: RecipeComponent[];
+  derived_nutrients: Record<string, number | null>;
+};
+
+export type RecipeSuggestion = {
+  recipe: {
+    name: string;
+    default_unit: string;
+    servings: number;
+    status?: IngredientStatus;
+    components?: RecipeComponent[];
+  };
+  ingredients: Array<{
+    name: string;
+    quantity: number;
+    unit: string;
+  }>;
 };
 
 export type NutritionGoal = {
@@ -150,7 +205,8 @@ export type ClaudeChatResponse = {
   session_id: string;
   reply: string;
   logged_entries: Array<{
-    food_id: number;
+    ingredient_id?: number;
+    recipe_id?: number;
     food_name: string;
     quantity: number;
     unit: string;
@@ -168,8 +224,8 @@ export type NutritionMenuResponse = {
   day: string;
   entries: Array<{
     id: number;
-    food_id: number;
-    food_name?: string | null;
+    ingredient_id: number;
+    ingredient_name?: string | null;
     quantity: number;
     unit: string;
     source: string;
@@ -193,19 +249,44 @@ export const deleteNutritionIntake = async (intakeId: number) => {
   await api.delete(`/api/nutrition/intake/${intakeId}`);
 };
 
-export const fetchNutritionFoods = async (): Promise<NutritionFood[]> => {
-  const { data } = await api.get('/api/nutrition/foods');
+export const fetchNutritionIngredients = async (): Promise<NutritionIngredient[]> => {
+  const { data } = await api.get('/api/nutrition/ingredients');
   return data;
 };
 
-export const createNutritionFood = async (payload: Partial<NutritionFood>) => {
-  const { data } = await api.post('/api/nutrition/foods', payload);
-  return data as NutritionFood;
+export const createNutritionIngredient = async (payload: Partial<NutritionIngredient>) => {
+  const { data } = await api.post('/api/nutrition/ingredients', payload);
+  return data as NutritionIngredient;
 };
 
-export const updateNutritionFood = async (id: number, payload: Partial<NutritionFood>) => {
-  const { data } = await api.patch(`/api/nutrition/foods/${id}`, payload);
-  return data as NutritionFood;
+export const updateNutritionIngredient = async (id: number, payload: Partial<NutritionIngredient>) => {
+  const { data } = await api.patch(`/api/nutrition/ingredients/${id}`, payload);
+  return data as NutritionIngredient;
+};
+
+export const fetchNutritionRecipes = async (): Promise<NutritionRecipe[]> => {
+  const { data } = await api.get('/api/nutrition/recipes');
+  return data;
+};
+
+export const fetchNutritionRecipe = async (id: number): Promise<NutritionRecipe> => {
+  const { data } = await api.get(`/api/nutrition/recipes/${id}`);
+  return data;
+};
+
+export const createNutritionRecipe = async (payload: Partial<NutritionRecipe>) => {
+  const { data } = await api.post('/api/nutrition/recipes', payload);
+  return data as NutritionRecipe;
+};
+
+export const updateNutritionRecipe = async (id: number, payload: Partial<NutritionRecipe>) => {
+  const { data } = await api.patch(`/api/nutrition/recipes/${id}`, payload);
+  return data as NutritionRecipe;
+};
+
+export const suggestNutritionRecipe = async (description: string): Promise<RecipeSuggestion> => {
+  const { data } = await api.post('/api/nutrition/recipes/suggest', null, { params: { description } });
+  return data as RecipeSuggestion;
 };
 
 export const fetchNutritionGoals = async (): Promise<NutritionGoal[]> => {
@@ -218,9 +299,9 @@ export const updateNutritionGoal = async (slug: string, goal: number) => {
   return data as NutritionGoal;
 };
 
-export const logManualIntake = async (payload: { food_id: number; quantity: number; unit: string; day?: string }) => {
+export const logManualIntake = async (payload: { ingredient_id?: number; recipe_id?: number; quantity: number; unit: string; day?: string }) => {
   const { data } = await api.post('/api/nutrition/intake/manual', payload);
-  return data as { id: number } & typeof payload;
+  return data as { id?: number } & typeof payload;
 };
 
 export const fetchNutritionDailySummary = async (day?: string): Promise<NutritionSummary> => {
@@ -235,6 +316,81 @@ export const fetchNutritionHistory = async (days = 14): Promise<NutritionHistory
 
 export const sendClaudeMessage = async (message: string, session_id?: string): Promise<ClaudeChatResponse> => {
   const { data } = await api.post('/api/nutrition/claude/message', { message, session_id });
+  return data;
+};
+
+// Todos
+
+export type TodoItem = {
+  id: number;
+  text: string;
+  completed: boolean;
+  deadline_utc: string | null;
+  is_overdue: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClaudeTodoResponse = {
+  session_id: string;
+  reply: string;
+  created_items: TodoItem[];
+  raw_payload?: Record<string, unknown> | null;
+};
+
+export const fetchTodos = async (): Promise<TodoItem[]> => {
+  const { data } = await api.get('/api/todos');
+  return data;
+};
+
+export const createTodo = async (payload: { text: string; deadline_utc?: string | null }) => {
+  const { data } = await api.post('/api/todos', payload);
+  return data as TodoItem;
+};
+
+export const updateTodo = async (
+  id: number,
+  payload: { text?: string; deadline_utc?: string | null; completed?: boolean }
+) => {
+  const { data } = await api.patch(`/api/todos/${id}`, payload);
+  return data as TodoItem;
+};
+
+export const deleteTodo = async (id: number) => {
+  await api.delete(`/api/todos/${id}`);
+};
+
+export const sendClaudeTodoMessage = async (
+  message: string,
+  session_id?: string
+): Promise<ClaudeTodoResponse> => {
+  const { data } = await api.post('/api/todos/claude/message', { message, session_id });
+  return data;
+};
+
+export type MonetChatResponse = {
+  session_id: string;
+  reply: string;
+  nutrition_entries: Array<{
+    ingredient_id?: number;
+    recipe_id?: number;
+    food_name: string;
+    quantity: number;
+    unit: string;
+    status: string;
+    created?: boolean;
+  }>;
+  todo_items: TodoItem[];
+  tools_used: string[];
+};
+
+export const sendMonetMessage = async (payload: {
+  message: string;
+  session_id?: string;
+  window_days?: number;
+  time_zone?: string;
+}): Promise<MonetChatResponse> => {
+  const { data } = await api.post('/api/assistant/monet-message', payload);
   return data;
 };
 

@@ -6,7 +6,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.nutrition import NutritionFoodStatus
+from app.db.models.nutrition import NUTRIENT_DEFINITIONS, NutritionIngredientStatus
 from app.db.repositories.nutrition_goals_repository import NutritionGoalsRepository
 from app.db.session import get_session
 from app.schemas.nutrition import (
@@ -18,15 +18,19 @@ from app.schemas.nutrition import (
     NutritionIntakeEntry,
     NutritionIntakeMenuResponse,
     NutritionDailySummaryResponse,
-    NutritionFoodPayload,
-    NutritionFoodResponse,
+    NutritionIngredientPayload,
+    NutritionIngredientResponse,
+    NutritionRecipePayload,
+    NutritionRecipeResponse,
+    RecipeSuggestion,
     NutritionHistoryResponse,
     NutrientGoalItem,
     NutrientGoalUpdateRequest,
     ScalingRuleListResponse,
 )
 from app.services.claude_nutrition_agent import ClaudeNutritionAgent
-from app.services.nutrition_foods_service import NutritionFoodsService
+from app.services.nutrition_ingredients_service import NutritionIngredientsService
+from app.services.nutrition_recipes_service import NutritionRecipesService
 from app.services.nutrition_goals_service import NutritionGoalsService
 from app.services.nutrition_intake_service import NutritionIntakeService
 from app.utils.timezone import eastern_today
@@ -42,6 +46,8 @@ async def list_nutrients(
 ) -> list[NutrientDefinitionResponse]:
     repo = NutritionGoalsRepository(session)
     nutrients = await repo.list_nutrients()
+    if not nutrients:
+        nutrients = list(NUTRIENT_DEFINITIONS)
     return [
         NutrientDefinitionResponse(
             slug=nutrient.slug,
@@ -55,48 +61,49 @@ async def list_nutrients(
     ]
 
 
-@router.get("/foods", response_model=list[NutritionFoodResponse])
-async def get_foods(
+@router.get("/ingredients", response_model=list[NutritionIngredientResponse])
+async def get_ingredients(
     session: AsyncSession = Depends(get_session),
-) -> list[NutritionFoodResponse]:
-    service = NutritionFoodsService(session)
-    foods = await service.list_foods()
-    return [NutritionFoodResponse(**food) for food in foods]
+) -> list[NutritionIngredientResponse]:
+    service = NutritionIngredientsService(session)
+    ingredients = await service.list_ingredients(DEFAULT_USER_ID)
+    return [NutritionIngredientResponse(**item) for item in ingredients]
 
 
-@router.post("/foods", response_model=NutritionFoodResponse)
-async def create_food(
-    payload: NutritionFoodPayload, session: AsyncSession = Depends(get_session)
-) -> NutritionFoodResponse:
-    service = NutritionFoodsService(session)
+@router.post("/ingredients", response_model=NutritionIngredientResponse)
+async def create_ingredient(
+    payload: NutritionIngredientPayload, session: AsyncSession = Depends(get_session)
+) -> NutritionIngredientResponse:
+    service = NutritionIngredientsService(session)
     status = (
-        NutritionFoodStatus(payload.status.lower())
+        NutritionIngredientStatus(payload.status.lower())
         if payload.status
-        else NutritionFoodStatus.UNCONFIRMED
+        else NutritionIngredientStatus.UNCONFIRMED
     )
-    record = await service.create_food(
+    record = await service.create_ingredient(
         name=payload.name,
         default_unit=payload.default_unit,
         source=payload.source,
         status=status,
         nutrient_values=payload.nutrients,
+        owner_user_id=DEFAULT_USER_ID,
     )
-    return NutritionFoodResponse(**record)
+    return NutritionIngredientResponse(**record)
 
 
-@router.patch("/foods/{food_id}", response_model=NutritionFoodResponse)
-async def update_food(
-    food_id: int,
-    payload: NutritionFoodPayload,
+@router.patch("/ingredients/{ingredient_id}", response_model=NutritionIngredientResponse)
+async def update_ingredient(
+    ingredient_id: int,
+    payload: NutritionIngredientPayload,
     session: AsyncSession = Depends(get_session),
-) -> NutritionFoodResponse:
-    service = NutritionFoodsService(session)
+) -> NutritionIngredientResponse:
+    service = NutritionIngredientsService(session)
     status = (
-        NutritionFoodStatus(payload.status.lower()) if payload.status else None
+        NutritionIngredientStatus(payload.status.lower()) if payload.status else None
     )
     try:
-        record = await service.update_food(
-            food_id,
+        record = await service.update_ingredient(
+            ingredient_id,
             name=payload.name,
             default_unit=payload.default_unit,
             status=status,
@@ -104,7 +111,96 @@ async def update_food(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return NutritionFoodResponse(**record)
+    return NutritionIngredientResponse(**record)
+
+
+@router.get("/recipes", response_model=list[NutritionRecipeResponse])
+async def list_recipes(session: AsyncSession = Depends(get_session)) -> list[NutritionRecipeResponse]:
+    service = NutritionRecipesService(session)
+    recipes = await service.list_recipes(DEFAULT_USER_ID)
+    return [NutritionRecipeResponse(**recipe) for recipe in recipes]
+
+
+@router.get("/recipes/{recipe_id}", response_model=NutritionRecipeResponse)
+async def get_recipe(recipe_id: int, session: AsyncSession = Depends(get_session)) -> NutritionRecipeResponse:
+    service = NutritionRecipesService(session)
+    try:
+        recipe = await service.get_recipe(recipe_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return NutritionRecipeResponse(**recipe)
+
+
+@router.post("/recipes", response_model=NutritionRecipeResponse)
+async def create_recipe(payload: NutritionRecipePayload, session: AsyncSession = Depends(get_session)) -> NutritionRecipeResponse:
+    service = NutritionRecipesService(session)
+    status = (
+        NutritionIngredientStatus(payload.status.lower())
+        if payload.status
+        else NutritionIngredientStatus.UNCONFIRMED
+    )
+    record = await service.create_recipe(
+        name=payload.name,
+        default_unit=payload.default_unit,
+        servings=payload.servings,
+        status=status,
+        owner_user_id=DEFAULT_USER_ID,
+        components=[
+            {
+                "ingredient_id": comp.ingredient_id,
+                "child_recipe_id": comp.child_recipe_id,
+                "quantity": comp.quantity,
+                "unit": comp.unit,
+                "position": comp.position,
+            }
+            for comp in payload.components
+        ],
+    )
+    return NutritionRecipeResponse(**record)
+
+
+@router.patch("/recipes/{recipe_id}", response_model=NutritionRecipeResponse)
+async def update_recipe(
+    recipe_id: int,
+    payload: NutritionRecipePayload,
+    session: AsyncSession = Depends(get_session),
+) -> NutritionRecipeResponse:
+    service = NutritionRecipesService(session)
+    status = (
+        NutritionIngredientStatus(payload.status.lower()) if payload.status else None
+    )
+    try:
+        record = await service.update_recipe(
+            recipe_id,
+            name=payload.name,
+            default_unit=payload.default_unit,
+            servings=payload.servings,
+            status=status,
+            components=[
+                {
+                    "ingredient_id": comp.ingredient_id,
+                    "child_recipe_id": comp.child_recipe_id,
+                    "quantity": comp.quantity,
+                    "unit": comp.unit,
+                    "position": comp.position,
+                }
+                for comp in payload.components
+            ],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return NutritionRecipeResponse(**record)
+
+
+@router.post("/recipes/suggest", response_model=RecipeSuggestion)
+async def suggest_recipe(
+    description: str, session: AsyncSession = Depends(get_session)
+) -> RecipeSuggestion:
+    agent = ClaudeNutritionAgent(session)
+    suggestion = await agent._suggest_recipe(description)  # re-use agent logic
+    if suggestion is None:
+        raise HTTPException(status_code=400, detail="Unable to suggest recipe from description")
+    return RecipeSuggestion(**suggestion)
 
 
 @router.get("/goals", response_model=list[NutrientGoalItem])
@@ -175,7 +271,8 @@ async def log_manual_intake(
     try:
         record = await service.log_manual_intake(
             user_id=DEFAULT_USER_ID,
-            food_id=request.food_id,
+            ingredient_id=request.ingredient_id,
+            recipe_id=request.recipe_id,
             quantity=request.quantity,
             unit=request.unit,
             day=day,

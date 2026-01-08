@@ -301,7 +301,7 @@ class NutritionNutrient(Base):
     default_goal: Mapped[float]
 
 
-class NutritionFoodProfile(Base):
+class NutritionIngredientProfile(Base):
     __tablename__ = "nutrition_food_profiles"
 
     _column_map: ClassVar[dict[str, str]] = {
@@ -312,32 +312,80 @@ class NutritionFoodProfile(Base):
     for definition in NUTRIENT_DEFINITIONS:
         locals()[definition.column_name] = mapped_column(Float, nullable=True)
 
-    foods: Mapped[list["NutritionFood"]] = relationship(back_populates="profile")
+    ingredients: Mapped[list["NutritionIngredient"]] = relationship(back_populates="profile")
 
 
-class NutritionFoodStatus(str, Enum):
+class NutritionIngredientStatus(str, Enum):
     CONFIRMED = "confirmed"
     UNCONFIRMED = "unconfirmed"
 
 
-class NutritionFood(Base):
+class NutritionIngredient(Base):
     __tablename__ = "nutrition_foods"
 
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     default_unit: Mapped[str] = mapped_column(String(64), default="serving")
-    status: Mapped[NutritionFoodStatus] = mapped_column(
+    status: Mapped[NutritionIngredientStatus] = mapped_column(
         SAEnum(
-            NutritionFoodStatus,
+            NutritionIngredientStatus,
             name="nutrition_food_status",
             values_callable=enum_values,
         ),
-        default=NutritionFoodStatus.UNCONFIRMED,
+        default=NutritionIngredientStatus.UNCONFIRMED,
     )
     source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, default=1)
     profile_id: Mapped[int] = mapped_column(ForeignKey("nutrition_food_profiles.id"))
 
-    profile: Mapped[NutritionFoodProfile] = relationship(back_populates="foods")
-    intakes: Mapped[list["NutritionIntake"]] = relationship(back_populates="food")
+    profile: Mapped[NutritionIngredientProfile] = relationship(back_populates="ingredients")
+    intakes: Mapped[list["NutritionIntake"]] = relationship(back_populates="ingredient")
+
+
+class NutritionRecipe(Base):
+    __tablename__ = "nutrition_recipes"
+
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    default_unit: Mapped[str] = mapped_column(String(64), default="serving")
+    servings: Mapped[float] = mapped_column(Float, default=1.0)
+    status: Mapped[NutritionIngredientStatus] = mapped_column(
+        SAEnum(
+            NutritionIngredientStatus,
+            name="nutrition_recipe_status",
+            values_callable=enum_values,
+        ),
+        default=NutritionIngredientStatus.UNCONFIRMED,
+    )
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, default=1)
+
+    components: Mapped[list["NutritionRecipeComponent"]] = relationship(
+        back_populates="recipe", cascade="all, delete-orphan", foreign_keys="NutritionRecipeComponent.recipe_id"
+    )
+
+
+class NutritionRecipeComponent(Base):
+    __tablename__ = "nutrition_recipe_components"
+
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("nutrition_recipes.id"), nullable=False)
+    ingredient_id: Mapped[int | None] = mapped_column(ForeignKey("nutrition_foods.id"), nullable=True)
+    child_recipe_id: Mapped[int | None] = mapped_column(ForeignKey("nutrition_recipes.id"), nullable=True)
+    quantity: Mapped[float] = mapped_column(Float)
+    unit: Mapped[str] = mapped_column(String(64))
+    position: Mapped[int | None] = mapped_column(nullable=True)
+
+    recipe: Mapped[NutritionRecipe] = relationship(
+        back_populates="components",
+        foreign_keys=[recipe_id],
+    )
+    ingredient: Mapped[NutritionIngredient | None] = relationship(
+        foreign_keys=[ingredient_id]
+    )
+    child_recipe: Mapped[NutritionRecipe | None] = relationship(
+        "NutritionRecipe",
+        foreign_keys=[child_recipe_id],
+        post_update=True,
+        viewonly=True,
+    )
 
 
 class NutritionIntakeSource(str, Enum):
@@ -349,7 +397,7 @@ class NutritionIntake(Base):
     __tablename__ = "nutrition_intake"
 
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    food_id: Mapped[int] = mapped_column(ForeignKey("nutrition_foods.id"))
+    ingredient_id: Mapped[int] = mapped_column("food_id", ForeignKey("nutrition_foods.id"))
     quantity: Mapped[float]
     unit: Mapped[str] = mapped_column(String(64))
     day_date: Mapped[date] = mapped_column(Date)
@@ -362,7 +410,7 @@ class NutritionIntake(Base):
     )
     claude_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    food: Mapped[NutritionFood] = relationship(back_populates="intakes")
+    ingredient: Mapped[NutritionIngredient] = relationship(back_populates="intakes")
     user: Mapped["User"] = relationship(back_populates="nutrition_intakes")
 
 

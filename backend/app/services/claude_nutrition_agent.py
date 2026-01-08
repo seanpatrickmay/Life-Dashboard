@@ -22,15 +22,25 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.prompts import CLAUDE_FOOD_EXTRACTION_PROMPT, CLAUDE_NUTRIENT_PROFILE_PROMPT
+from app.prompts import (
+    CLAUDE_FOOD_EXTRACTION_PROMPT,
+    CLAUDE_NUTRIENT_PROFILE_PROMPT,
+    CLAUDE_RECIPE_SUGGESTION_PROMPT,
+)
 from app.db.models.nutrition import (
     NUTRIENT_COLUMN_BY_SLUG,
     NUTRIENT_DEFINITIONS,
-    NutritionFoodStatus,
+    NutritionIngredient,
+    NutritionIngredientStatus,
+    NutritionRecipe,
     NutritionIntakeSource,
 )
-from app.db.repositories.nutrition_foods_repository import NutritionFoodsRepository
+from app.db.repositories.nutrition_ingredients_repository import (
+    NutritionIngredientsRepository,
+    NutritionRecipesRepository,
+)
 from app.db.repositories.nutrition_intake_repository import NutritionIntakeRepository
+from app.services.nutrition_units import NutritionUnitNormalizer
 from app.utils.timezone import eastern_today
 
 
@@ -45,8 +55,10 @@ class ClaudeNutritionAgent:
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
-        self.food_repo = NutritionFoodsRepository(session)
+        self.ingredients_repo = NutritionIngredientsRepository(session)
+        self.recipes_repo = NutritionRecipesRepository(session)
         self.intake_repo = NutritionIntakeRepository(session)
+        self.unit_normalizer = NutritionUnitNormalizer()
         http_options = HttpOptions(api_version="v1") if HttpOptions else None
         client_kwargs = {"http_options": http_options} if http_options else {}
         self.client = genai.Client(**client_kwargs)
@@ -76,45 +88,82 @@ class ClaudeNutritionAgent:
             name = item.get("name", "").strip()
             if not name:
                 continue
-            quantity = self._safe_float(item.get("quantity")) or 1.0
-            unit = item.get("unit") or "serving"
+            raw_quantity = self._safe_float(item.get("quantity"))
+            quantity = raw_quantity if raw_quantity and raw_quantity > 0 else 1.0
+            unit = (item.get("unit") or "serving").strip()
 
-            food = await self.food_repo.get_food_by_name(name)
-            created = False
-            if food is None:
-                nutrients = await self._fetch_nutrient_profile(name, unit)
-                try:
-                    food = await self.food_repo.create_food(
-                        name=name,
-                        default_unit=unit,
-                        source="claude",
-                        status=NutritionFoodStatus.UNCONFIRMED,
-                        nutrient_values=nutrients,
-                    )
-                    created = True
-                    logger.info(f"[claude] created new food={name} id={food.id}")
-                except Exception as exc:  # pragma: no cover - safety net
-                    logger.exception("Failed to create food %s: %s", name, exc)
-                    continue
+            ingredient = await self.ingredients_repo.get_ingredient_by_name(user_id, name)
+            recipe = await self.ingredients_repo.get_recipe_by_name(user_id, name)
 
-            await self.intake_repo.log_intake(
-                user_id=user_id,
-                food_id=food.id,
-                quantity=quantity,
-                unit=unit,
-                day=eastern_today(),
-                source=NutritionIntakeSource.CLAUDE,
-                claude_request_id=request_id,
+            if ingredient:
+                normalized = self.unit_normalizer.normalize(
+                    quantity=quantity,
+                    unit=unit,
+                    target_unit=ingredient.default_unit,
+                )
+                await self.intake_repo.log_intake(
+                    user_id=user_id,
+                    food_id=ingredient.id,
+                    quantity=normalized.quantity,
+                    unit=normalized.unit,
+                    day=eastern_today(),
+                    source=NutritionIntakeSource.CLAUDE,
+                    claude_request_id=request_id,
+                )
+                entries.append(
+                    {
+                        "ingredient_id": ingredient.id,
+                        "food_name": ingredient.name,
+                        "ingredient_name": ingredient.name,
+                        "quantity": normalized.quantity,
+                        "unit": normalized.unit,
+                        "input_quantity": normalized.input_quantity,
+                        "input_unit": normalized.input_unit,
+                        "display": normalized.display,
+                        "converted": normalized.converted,
+                        "status": ingredient.status.value,
+                        "created": False,
+                    }
+                )
+                continue
+
+            if recipe:
+                await self._log_recipe(recipe_id=recipe.id, servings=quantity, user_id=user_id, request_id=request_id)
+                entries.append(
+                    {
+                        "recipe_id": recipe.id,
+                        "food_name": recipe.name,
+                        "quantity": quantity,
+                        "unit": unit,
+                        "status": recipe.status.value,
+                        "created": False,
+                    }
+                )
+                continue
+
+            # Unknown dish: ask recipe agent for structure, create ingredients + recipe, then log
+            suggestion = await self._suggest_recipe(name)
+            if suggestion is None:
+                logger.info("[claude] no recipe suggestion for %s", name)
+                continue
+            created_recipe = await self._ensure_recipe_from_suggestion(
+                owner_user_id=user_id,
+                suggestion=suggestion,
             )
-
+            await self._log_recipe(
+                recipe_id=created_recipe.id,
+                servings=quantity,
+                user_id=user_id,
+                request_id=request_id,
+            )
             entries.append(
                 {
-                    "food_id": food.id,
-                    "food_name": food.name,
+                    "recipe_id": created_recipe.id,
+                    "food_name": created_recipe.name,
                     "quantity": quantity,
                     "unit": unit,
-                    "status": food.status.value,
-                    "created": created,
+                    "status": created_recipe.status.value,
+                    "created": True,
                 }
             )
 
@@ -126,7 +175,7 @@ class ClaudeNutritionAgent:
 
         reply = parsed.get("summary") or self._build_summary(entries)
         if any(
-            entry["status"] == NutritionFoodStatus.UNCONFIRMED.value
+            entry["status"] == NutritionIngredientStatus.UNCONFIRMED.value
             for entry in entries
         ):
             reply += "\nNote: items marked unconfirmed still need a quick review."
@@ -159,6 +208,110 @@ class ClaudeNutritionAgent:
             nutrients[slug] = value
         logger.info(f"[claude] nutrient profile resolved for {food_name}")
         return nutrients
+
+    async def _suggest_recipe(self, description: str) -> dict[str, Any] | None:
+        prompt = CLAUDE_RECIPE_SUGGESTION_PROMPT.format(description=description)
+        text = await self._call_model(prompt, use_search=False)
+        data = self._extract_json(text)
+        if not data or not isinstance(data, dict):
+            return None
+        recipe = data.get("recipe")
+        ingredients = data.get("ingredients")
+        if not isinstance(recipe, dict) or not isinstance(ingredients, list):
+            return None
+        return {"recipe": recipe, "ingredients": ingredients}
+
+    async def _ensure_recipe_from_suggestion(
+        self, *, owner_user_id: int, suggestion: dict[str, Any]
+    ) -> NutritionRecipe:
+        recipe_data = suggestion.get("recipe") or {}
+        ingredient_rows = suggestion.get("ingredients") or []
+
+        name = recipe_data.get("name") or "Untitled recipe"
+        default_unit = recipe_data.get("default_unit") or "serving"
+        servings = self._safe_float(recipe_data.get("servings")) or 1.0
+
+        components: list[dict[str, Any]] = []
+
+        for raw in ingredient_rows:
+            ing_name = (raw.get("name") or "").strip()
+            if not ing_name:
+                continue
+            qty = self._safe_float(raw.get("quantity")) or 1.0
+            unit = (raw.get("unit") or "100g").strip()
+            ingredient = await self.ingredients_repo.get_ingredient_by_name(owner_user_id, ing_name)
+            created = False
+            if ingredient is None:
+                nutrients = await self._fetch_nutrient_profile(ing_name, unit)
+                ingredient = await self.ingredients_repo.create_ingredient(
+                    name=ing_name,
+                    default_unit=unit,
+                    source="claude",
+                    nutrient_values=nutrients,
+                    owner_user_id=owner_user_id,
+                    status=NutritionIngredientStatus.UNCONFIRMED,
+                )
+                created = True
+                logger.info(f"[claude] created ingredient={ing_name} id={ingredient.id}")
+            components.append(
+                {
+                    "ingredient_id": ingredient.id,
+                    "quantity": qty,
+                    "unit": unit,
+                    "created": created,
+                }
+            )
+
+        recipe = await self.recipes_repo.get_recipe_by_name(owner_user_id, name)
+        if recipe is None:
+            recipe = await self.recipes_repo.create_recipe(
+                name=name,
+                default_unit=default_unit,
+                servings=servings,
+                status=NutritionIngredientStatus.UNCONFIRMED,
+                owner_user_id=owner_user_id,
+                components=components,
+                source="claude",
+            )
+            logger.info(f"[claude] created recipe name={name} id={recipe.id}")
+            recipe = await self.recipes_repo.get_recipe(recipe.id, load_components=True)
+        return recipe
+
+    async def _log_recipe(
+        self,
+        *,
+        recipe_id: int,
+        servings: float,
+        user_id: int,
+        request_id: str,
+    ) -> None:
+        recipe = await self.recipes_repo.get_recipe(recipe_id, load_components=True)
+        if recipe is None:
+            raise ValueError("Recipe not found")
+
+        async def _expand(target_recipe, multiplier: float) -> None:
+            for comp in target_recipe.components:
+                per_serving = comp.quantity / target_recipe.servings if target_recipe.servings else comp.quantity
+                effective_qty = multiplier * per_serving
+                if comp.ingredient:
+                    normalized = self.unit_normalizer.normalize(
+                        quantity=effective_qty,
+                        unit=comp.unit,
+                        target_unit=comp.ingredient.default_unit,
+                    )
+                    await self.intake_repo.log_intake(
+                        user_id=user_id,
+                        food_id=comp.ingredient.id,
+                        quantity=normalized.quantity,
+                        unit=normalized.unit,
+                        day=eastern_today(),
+                        source=NutritionIntakeSource.CLAUDE,
+                        claude_request_id=request_id,
+                    )
+                elif comp.child_recipe:
+                    await _expand(comp.child_recipe, effective_qty)
+
+        await _expand(recipe, servings)
 
     async def _call_model(self, prompt: str, use_search: bool) -> str:
         def _invoke() -> str:
@@ -194,10 +347,18 @@ class ClaudeNutritionAgent:
     def _build_summary(self, entries: list[dict[str, Any]]) -> str:
         if not entries:
             return "No items were logged."
-        parts = [
-            f"{entry['quantity']} {entry['unit']} {entry['food_name']} ({entry['status']})"
-            for entry in entries
-        ]
+        parts = []
+        for entry in entries:
+            display = entry.get("display")
+            base = (
+                f"{entry['quantity']} {entry['unit']}"
+                if display in (None, "")
+                else display
+            )
+            summary = f"{base} {entry['food_name']} ({entry['status']})"
+            if entry.get("converted"):
+                summary += f" → saved as {entry['quantity']:.3g} {entry['unit']}"
+            parts.append(summary)
         return "Logged: " + ", ".join(parts)
 
     def _safe_float(self, value: Any) -> float | None:

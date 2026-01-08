@@ -20,8 +20,62 @@ const Surface = styled.div.attrs({ 'data-scene-surface': 'true' })`
   overflow-x: hidden;
   overflow-y: auto;
   background-color: ${({ theme }) => theme.colors.backgroundPage};
-  background-image: ${({ theme }) =>
-    `linear-gradient(180deg, ${theme.scene?.palette.waterLight ?? '#6E8FD1'} 0%, ${theme.scene?.palette.waterMid ?? '#2E4F9A'} 38%, ${theme.scene?.palette.waterDeep ?? '#10224B'} 100%)`};
+  background-image: ${({ theme }) => {
+    const palette = theme.scene?.palette ?? {};
+    const mode = theme.mode ?? 'light';
+    const moment = theme.moment ?? 'noon';
+
+    // Sky palette per mode/moment
+    const SKY_COLORS: Record<string, { top: string; mid: string }> = {
+      'light-morning': { top: '#bde1ff', mid: '#8fc2ff' },
+      'light-noon': { top: '#a6d4ff', mid: '#78b4ff' },
+      'light-twilight': { top: '#d6b8ff', mid: '#8ba2ff' },
+      'light-night': { top: '#5f7fb8', mid: '#4a65a3' },
+      'dark-morning': { top: '#9cc6ff', mid: '#6fa8ff' },
+      'dark-noon': { top: '#85b7ff', mid: '#4f8aff' },
+      'dark-twilight': { top: '#b48cff', mid: '#6a7be0' },
+      'dark-night': { top: '#3d4f7d', mid: '#2c3c69' }
+    };
+
+    const skyKey = `${mode}-${moment}`;
+    const skyChoice = SKY_COLORS[skyKey] ?? SKY_COLORS['light-noon'];
+
+    const skyTop = palette.skyTop ?? skyChoice.top;
+    const skyMid = palette.skyMid ?? skyChoice.mid;
+    const horizon = palette.horizon ?? palette.waterLight ?? '#5E78C7';
+    const waterMid = palette.waterMid ?? '#2E4F9A';
+    const waterDeep = palette.waterDeep ?? '#10224B';
+    const bandColor =
+      mode === 'dark'
+        ? moment === 'night'
+          ? 'rgba(100,126,170,0.35)'
+          : 'rgba(212,223,255,0.32)'
+        : 'rgba(255,255,255,0.28)';
+
+    const skyLayer = `linear-gradient(
+      180deg,
+      ${skyTop} 0px,
+      ${skyMid} calc(var(--scene-horizon, 200px) - 120px),
+      ${horizon} calc(var(--scene-horizon, 200px))
+    )`;
+
+    const waterLayer = `linear-gradient(
+      180deg,
+      ${horizon} calc(var(--scene-horizon, 200px) - 2px),
+      ${waterMid} calc(var(--scene-horizon, 200px) + 12px),
+      ${waterDeep} 100%
+    )`;
+
+    const horizonBand = `linear-gradient(
+      180deg,
+      transparent calc(var(--scene-horizon, 200px) - 20px),
+      ${bandColor} calc(var(--scene-horizon, 200px) - 6px),
+      ${bandColor} calc(var(--scene-horizon, 200px) + 6px),
+      transparent calc(var(--scene-horizon, 200px) + 26px)
+    )`;
+
+    return `${horizonBand}, ${waterLayer}, ${skyLayer}`;
+  }};
   image-rendering: pixelated;
 
   &::before {
@@ -60,6 +114,22 @@ const Surface = styled.div.attrs({ 'data-scene-surface': 'true' })`
     pointer-events: none;
     z-index: ${Z_LAYERS.waterRipple};
     animation: ${({ theme }) => (theme.motion ? css`${drift} 18s ease-in-out infinite alternate` : 'none')};
+    mask-image: linear-gradient(
+      180deg,
+      transparent calc(var(--scene-horizon, 200px) - 14px),
+      transparent calc(var(--scene-horizon, 200px) - 2px),
+      white calc(var(--scene-horizon, 200px) + 2px),
+      white 100%
+    );
+    mask-mode: alpha;
+    -webkit-mask-image: linear-gradient(
+      180deg,
+      transparent calc(var(--scene-horizon, 200px) - 14px),
+      transparent calc(var(--scene-horizon, 200px) - 2px),
+      white calc(var(--scene-horizon, 200px) + 2px),
+      white 100%
+    );
+    -webkit-mask-mode: alpha;
   }
 `;
 
@@ -68,6 +138,30 @@ const ContentLayer = styled.div`
   z-index: ${Z_LAYERS.uiCards};
   width: 100%;
   height: 100%;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: clamp(6%, 9vw, 16%);
+    right: clamp(6%, 9vw, 16%);
+    top: clamp(80px, 10vh, 160px);
+    height: clamp(220px, 32vh, 420px);
+    background: radial-gradient(
+        ellipse at 50% 0%,
+        rgba(214, 230, 255, 0.32) 0%,
+        rgba(214, 230, 255, 0.14) 48%,
+        transparent 72%
+      ),
+      linear-gradient(
+        180deg,
+        rgba(120, 150, 210, 0.24) 0%,
+        transparent 70%
+      );
+    opacity: ${({ theme }) => (theme.mode === 'dark' ? 0.75 : 0.55)};
+    filter: blur(2px);
+    pointer-events: none;
+    z-index: 0;
+  }
 
   & > * {
     position: relative;
@@ -84,60 +178,27 @@ export function PageBackground({ children, className }: Props) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const theme = useTheme() as MonetTheme;
   const moment = theme.moment ?? 'morning';
+  const NAV_OFFSET = 360; // px below nav for horizon baseline (just under cloud band)
   useLayoutEffect(() => {
     const update = () => {
       const root = surfaceRef.current;
       if (!root) return;
       const rootRect = root.getBoundingClientRect();
-      const willowOffsetPx = Math.max(32, rootRect.width * 0.06);
+      const willowOffsetPx = Math.max(32, rootRect.width * 0.08);
       root.style.setProperty('--willow-offset', `${willowOffsetPx}px`);
-      const hero = root.querySelector('[data-hero-readiness="true"]') as HTMLElement | null;
-      let topPx = Math.max(0, window.innerHeight * 0.28);
-      if (hero) {
-        const heroRect = hero.getBoundingClientRect();
-        const gap = 0; // lift bridge closer to nav clouds when hero present
-        topPx = Math.max(0, heroRect.bottom - rootRect.top + gap);
-        const heroTop = Math.max(0, heroRect.top - rootRect.top);
-        const heroRight = Math.max(0, heroRect.right - rootRect.left);
-        const heroLeft = Math.max(0, heroRect.left - rootRect.left);
-        root.style.setProperty('--hero-top', `${heroTop}px`);
-        root.style.setProperty('--hero-right', `${heroRight}px`);
-        root.style.setProperty('--hero-left', `${heroLeft}px`);
-      } else {
-        root.style.setProperty('--hero-top', '0px');
-        root.style.setProperty('--hero-right', '0px');
-        root.style.setProperty('--hero-left', '0px');
-      }
-      root.style.setProperty('--bridge-top', `${topPx}px`);
-
-      const doc = document.documentElement;
-      const docStyles = getComputedStyle(doc);
-      const bridgeAR = parseFloat(docStyles.getPropertyValue('--bridge-ar') || '6');
-      const bridgeRefAR = parseFloat(docStyles.getPropertyValue('--bridge-ref-ar') || '6');
-      const arcWidth = Math.max(0, rootRect.width - 2 * willowOffsetPx);
-      const arcHeight = arcWidth / Math.max(bridgeAR, 0.1);
-      const bridgeBottom = topPx + arcHeight;
-      root.style.setProperty('--bridge-band-bottom', `${bridgeBottom}px`);
-      const reflectionHeight = arcWidth / Math.max(bridgeRefAR, 6);
-      const reflectionBottom = bridgeBottom + reflectionHeight;
-      root.style.setProperty('--reflection-band-bottom', `${reflectionBottom}px`);
-      root.style.setProperty('--safe-metrics-top', `${reflectionBottom + 24}px`);
-
-      const boatTop = parseFloat(docStyles.getPropertyValue('--boat-lane-top') || '0');
-      const boatBottom = parseFloat(docStyles.getPropertyValue('--boat-lane-bottom') || '0');
-      if (!Number.isNaN(boatTop) && !Number.isNaN(boatBottom)) {
-        root.style.setProperty('--boat-lane-top', `${boatTop}px`);
-        root.style.setProperty('--boat-lane-bottom', `${boatBottom}px`);
-        root.style.setProperty('--boat-padding', `${Math.max(0, rootRect.bottom - boatTop)}px`);
-      } else {
-        root.style.setProperty('--boat-padding', '64px');
-      }
+      const horizon = NAV_OFFSET; // px below nav (static anchor)
+      root.style.setProperty('--scene-horizon', `${horizon}px`);
+      root.style.setProperty('--bridge-band-bottom', `${horizon}px`);
+      root.style.setProperty('--bridge-top', `${Math.max(0, horizon - 220)}px`);
+      root.style.setProperty('--hero-top', '0px');
+      root.style.setProperty('--hero-right', '0px');
+      root.style.setProperty('--hero-left', '0px');
+      document.documentElement.style.setProperty('--scene-horizon', `${horizon}px`);
+      document.documentElement.style.setProperty('--bridge-band-bottom', `${horizon}px`);
     };
     update();
     const obs = new ResizeObserver(update);
     if (surfaceRef.current) obs.observe(surfaceRef.current);
-    const hero = surfaceRef.current?.querySelector('[data-hero-readiness="true"]') as HTMLElement | null;
-    if (hero) obs.observe(hero);
     const onResize = () => update();
     window.addEventListener('resize', onResize);
     return () => {
@@ -150,7 +211,7 @@ export function PageBackground({ children, className }: Props) {
     <Surface className={className} ref={surfaceRef}>
       <DynamicCloudField moment={moment} />
       <SceneForegroundProvider>
-        <SceneComposer />
+        <SceneComposer showStructure={false} />
         <ContentLayer>{children}</ContentLayer>
       </SceneForegroundProvider>
     </Surface>

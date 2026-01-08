@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class NutrientDefinitionResponse(BaseModel):
@@ -15,7 +15,7 @@ class NutrientDefinitionResponse(BaseModel):
     default_goal: float
 
 
-class NutritionFoodPayload(BaseModel):
+class NutritionIngredientPayload(BaseModel):
     name: str
     default_unit: str = Field(default="serving")
     source: str | None = None
@@ -23,8 +23,9 @@ class NutritionFoodPayload(BaseModel):
     nutrients: dict[str, float | None]
 
 
-class NutritionFoodResponse(BaseModel):
+class NutritionIngredientResponse(BaseModel):
     id: int
+    owner_user_id: int
     name: str
     default_unit: str
     status: str
@@ -69,11 +70,62 @@ class NutritionHistoryResponse(BaseModel):
     nutrients: list[NutrientProgress]
 
 
+class RecipeComponentPayload(BaseModel):
+    ingredient_id: int | None = None
+    child_recipe_id: int | None = None
+    quantity: float = Field(gt=0)
+    unit: str
+    position: int | None = None
+
+    @model_validator(mode="after")
+    def validate_component(self):
+        if bool(self.ingredient_id) == bool(self.child_recipe_id):
+            raise ValueError("Provide exactly one of ingredient_id or child_recipe_id")
+        return self
+
+
+class NutritionRecipePayload(BaseModel):
+    name: str
+    default_unit: str = Field(default="serving")
+    servings: float = Field(gt=0, default=1)
+    status: str | None = None
+    components: list[RecipeComponentPayload]
+
+
+class NutritionRecipeResponse(BaseModel):
+    id: int
+    owner_user_id: int
+    name: str
+    default_unit: str
+    servings: float
+    status: str
+    components: list[RecipeComponentPayload]
+    derived_nutrients: dict[str, float | None]
+
+
+class RecipeSuggestionIngredient(BaseModel):
+    name: str
+    quantity: float = Field(gt=0)
+    unit: str
+
+
+class RecipeSuggestion(BaseModel):
+    recipe: NutritionRecipePayload
+    ingredients: list[RecipeSuggestionIngredient]
+
+
 class LogIntakeRequest(BaseModel):
-    food_id: int
+    ingredient_id: int | None = None
+    recipe_id: int | None = None
     quantity: float = Field(gt=0)
     unit: str
     day: date | None = None
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        if bool(self.ingredient_id) == bool(self.recipe_id):
+            raise ValueError("Provide exactly one of ingredient_id or recipe_id")
+        return self
 
 
 class ClaudeMessageRequest(BaseModel):
@@ -89,8 +141,8 @@ class ClaudeMessageResponse(BaseModel):
 
 class NutritionIntakeEntry(BaseModel):
     id: int
-    food_id: int
-    food_name: str | None = None
+    ingredient_id: int
+    ingredient_name: str | None = None
     quantity: float
     unit: str
     source: str

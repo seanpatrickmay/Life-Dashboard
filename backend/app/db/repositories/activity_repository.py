@@ -8,6 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import Activity
+from app.utils.timezone import ensure_eastern, to_naive_eastern
 from loguru import logger
 
 
@@ -23,8 +24,9 @@ class ActivityRepository:
             result = await self.session.execute(stmt)
             existing = result.scalar_one_or_none()
             start_time = self._parse_start(payload)
+            start_time_naive = to_naive_eastern(start_time)
             if existing:
-                existing.start_time = start_time
+                existing.start_time = start_time_naive
                 existing.duration_sec = float(payload.get("duration", 0))
                 existing.distance_m = float(payload.get("distance", 0))
                 existing.calories = float(payload.get("calories") or 0)
@@ -43,7 +45,7 @@ class ActivityRepository:
                     garmin_id=garmin_id,
                     name=payload.get("activityName"),
                     type=self._activity_type(payload),
-                    start_time=start_time,
+                    start_time=start_time_naive,
                     duration_sec=float(payload.get("duration", 0)),
                     distance_m=float(payload.get("distance", 0)),
                     calories=float(payload.get("calories") or 0),
@@ -67,7 +69,8 @@ class ActivityRepository:
         from dateutil import parser
 
         timestamp = payload.get("startTimeLocal") or payload.get("startTimeGMT")
-        return parser.isoparse(timestamp)
+        parsed = parser.isoparse(timestamp)
+        return ensure_eastern(parsed)
 
     def _activity_type(self, payload: dict) -> str | None:
         activity_type = payload.get("activityType")

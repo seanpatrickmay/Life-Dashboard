@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter
 
-TIME_ZONE_NAME = "America/New_York"
-TIME_ZONE = ZoneInfo(TIME_ZONE_NAME)
+from app.utils.timezone import EASTERN_TZ
+
+TIME_ZONE = EASTERN_TZ
+TIME_ZONE_NAME = getattr(TIME_ZONE, "key", "America/New_York")
 
 router = APIRouter(prefix="/time", tags=["time"])
 

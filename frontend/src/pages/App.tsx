@@ -8,6 +8,7 @@ import { NutritionPage } from './Nutrition';
 import { UserPage } from './User';
 import { PageShell } from '../components/layout/PageShell';
 import { PageBackground } from '../components/layout/PageBackground';
+import { useVisitRefresh } from '../hooks/useVisitRefresh';
 
 const routes = [
   { path: '/', element: <DashboardPage /> },
@@ -19,6 +20,7 @@ const routes = [
 ];
 
 function App() {
+  useVisitRefresh();
   return (
     <PageBackground className="flatten-textures">
       <PageShell>

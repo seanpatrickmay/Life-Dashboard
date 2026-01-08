@@ -7,19 +7,25 @@ Goal: Keep the scene unobstructed while presenting data clearly using micro‑ca
 Compute geometry from CSS vars and image AR:
 
 - Inputs
-  - `--willow-offset` (px): inner edge margin on both sides
+  - `--willow-offset` (px): scene side gutter (legacy willow variable)
   - `--bridge-top` (px): top y of the arc image
+  - `--bridge-width` (px): rendered width of the bridge/reflection assets
+  - `--bridge-left` (px): x origin of the bridge (right-justified)
   - `--bridge-ar` (unitless): arc image aspect ratio (w/h)
+  - `--island-left-width`, `--island-right-width` (px): shoreline island spans
+  - `--island-band-top` (px): y used to park the shoreline islands/text pads
   - Viewport: `vw`, `vh` in px
   - Boat lanes: dynamic per direction
 
 - Derived
-  - arcWidth = vw − 2×willowOffset
+  - arcWidth = `--bridge-width` (fallback vw − 2×willowOffset if unset)
   - arcHeight = arcWidth / bridgeAR
-  - bridgeBand = Rect(x: willowOffset, y: bridgeTop, w: arcWidth, h: arcHeight)
+  - bridgeBand = Rect(x: `--bridge-left`, y: bridgeTop, w: arcWidth, h: arcHeight)
   - reflectionTop = bridgeTop + arcHeight
-  - reflectionHeight ≈ arcHeight × 0.55 (tune to asset)
-  - reflectionBand = Rect(x: willowOffset, y: reflectionTop, w: arcWidth, h: reflectionHeight)
+  - reflectionHeight ≈ arcWidth / bridgeRefAR (tune to asset)
+  - reflectionBand = Rect(x: `--bridge-left`, y: reflectionTop, w: arcWidth, h: reflectionHeight)
+  - leftIslandRect = Rect(x: willowOffset, y: islandBandTop, w: `--island-left-width`, h: islandAssetHeight ≈ width × 0.35)
+  - rightIslandRect = Rect(x: vw − willowOffset − `--island-right-width`, y: islandBandTop, w: `--island-right-width`, h: islandAssetHeight ≈ width × 0.28)
   - boatCorridorLow = band near bottom: yBottom ≈ 12vh; height ≈ 10vh
   - boatCorridorHigh = band near horizon: y ≈ ceil − 2vh; height ≈ 8vh
 
@@ -59,11 +65,10 @@ Compute geometry from CSS vars and image AR:
 
 ## Implementation Notes
 
-- PageBackground already computes `--bridge-top`; ensure `--willow-offset` is exposed and consistent with SceneComposer
+- PageBackground already computes the scene vars; ensure `--willow-offset`, `--bridge-width`, `--bridge-left`, and shoreline island widths stay in sync with SceneComposer
 - Add a lightweight LayoutEngine util:
   - API: `place(items: LayoutItem[], constraints: Constraints): Placement[]`
   - Data: preferred anchors, min size, avoidance masks
   - Output: top/left/col/row for inline styles or grid‑area values
 
 - Use ResizeObserver to recompute on resize and on hero/bridge image load (when AR is known)
-

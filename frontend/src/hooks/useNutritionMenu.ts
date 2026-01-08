@@ -7,6 +7,8 @@ import {
 } from '../services/api';
 
 const MENU_QUERY_KEY = ['nutrition', 'menu'];
+const SUMMARY_QUERY_KEY = ['nutrition', 'summary'];
+const HISTORY_QUERY_KEY = ['nutrition', 'history'];
 
 export function useNutritionMenu() {
   const queryClient = useQueryClient();
@@ -16,15 +18,21 @@ export function useNutritionMenu() {
     queryFn: fetchNutritionMenu
   });
 
+  const invalidateIntakeQueries = () => {
+    void queryClient.invalidateQueries({ queryKey: MENU_QUERY_KEY });
+    void queryClient.invalidateQueries({ queryKey: SUMMARY_QUERY_KEY });
+    void queryClient.invalidateQueries({ queryKey: HISTORY_QUERY_KEY });
+  };
+
   const updateMutation = useMutation({
     mutationFn: (payload: { id: number; quantity: number; unit: string }) =>
       updateNutritionIntake(payload.id, { quantity: payload.quantity, unit: payload.unit }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: MENU_QUERY_KEY })
+    onSuccess: invalidateIntakeQueries
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteNutritionIntake(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: MENU_QUERY_KEY })
+    onSuccess: invalidateIntakeQueries
   });
 
   return {
@@ -33,4 +41,3 @@ export function useNutritionMenu() {
     deleteEntry: deleteMutation.mutateAsync
   };
 }
-

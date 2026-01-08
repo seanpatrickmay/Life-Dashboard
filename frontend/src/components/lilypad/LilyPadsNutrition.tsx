@@ -5,9 +5,16 @@ import { LilyPadCard } from './LilyPadCard';
 import { useNutritionMenu } from '../../hooks/useNutritionMenu';
 import { useNutritionDailySummary, useNutritionHistory } from '../../hooks/useNutritionIntake';
 import { useNutritionFoods } from '../../hooks/useNutritionFoods';
+import { useNutritionRecipes } from '../../hooks/useNutritionRecipes';
 import { useClaudeChat, type ChatEntry } from '../../hooks/useClaudeChat';
 import { GROUP_LABELS, GROUP_ORDER, type GroupKey } from '../nutrition/NutrientGroupUI';
-import type { NutritionHistory, NutritionSummary, NutritionFood, NutritionGoal } from '../../services/api';
+import type {
+  NutritionHistory,
+  NutritionSummary,
+  NutritionIngredient,
+  NutritionGoal,
+  NutritionRecipe
+} from '../../services/api';
 import { useNutritionGoals } from '../../hooks/useNutritionGoals';
 
 const Stage = styled.div`
@@ -37,6 +44,18 @@ const PadListItem = styled.li`
   &:last-of-type {
     border-bottom: none;
   }
+`;
+
+const MenuRemoveButton = styled.button`
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.1);
+  color: ${({ theme }) => theme.colors.textPrimary};
+  cursor: pointer;
 `;
 
 const PaletteRowButton = styled.button<{ $status?: string }>`
@@ -88,6 +107,27 @@ const PaletteSearch = styled.div`
     color: #ffffff;
     caret-color: #ffffff;
     font-family: ${({ theme }) => theme.fonts.body};
+  }
+`;
+
+const PaletteTabs = styled.div`
+  display: inline-flex;
+  gap: 8px;
+  margin-bottom: 12px;
+`;
+
+const PaletteTabButton = styled.button<{ $active?: boolean }>`
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: ${({ $active, theme }) => ($active ? theme.colors.accentPrimary : 'transparent')};
+  color: ${({ $active, theme }) => ($active ? '#0b0f19' : theme.colors.textPrimary)};
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: opacity 0.2s ease;
+
+  &:hover {
+    opacity: 0.9;
   }
 `;
 
@@ -422,7 +462,17 @@ const tidyDisplayName = (name: string, group: GroupKey) => {
   return final;
 };
 
-const MACRO_KEYS = ['calorie', 'calories', 'protein', 'carbohydrate', 'carbohydrates', 'carb', 'carbs'];
+const MACRO_KEYS = [
+  'calorie',
+  'calories',
+  'kcal',
+  'protein',
+  'carbohydrate',
+  'carbohydrates',
+  'carb',
+  'carbs',
+  'fat'
+];
 const isMacroTarget = (slug?: string | null, label?: string | null) => {
   const source = `${slug ?? ''} ${label ?? ''}`.toLowerCase();
   return MACRO_KEYS.some((key) => source.includes(key));
@@ -455,19 +505,28 @@ const getAssistantMessage = (entry: ChatEntry): string => {
 };
 
 export function LilyPadsNutrition() {
-  const { menuQuery } = useNutritionMenu();
+  const { menuQuery, deleteEntry: deleteMenuEntry } = useNutritionMenu();
   const { data: summaryData } = useNutritionDailySummary();
   const { data: historyData } = useNutritionHistory();
   const { foodsQuery } = useNutritionFoods();
+  const { recipesQuery, updateRecipe } = useNutritionRecipes();
   const { goalsQuery, updateGoal } = useNutritionGoals();
   const { history, sendMessage, isSending } = useClaudeChat();
   const chatHistoryRef = useRef<HTMLDivElement | null>(null);
   const [chatText, setChatText] = useState('');
   const [paletteFilter, setPaletteFilter] = useState('');
+  const [paletteTab, setPaletteTab] = useState<'ingredients' | 'recipes'>('ingredients');
   const [groupIndex, setGroupIndex] = useState(0);
   const [historyGroupIndex, setHistoryGroupIndex] = useState(0);
   const [selectedFoodId, setSelectedFoodId] = useState<number | null>(null);
+  const [selectedRecipeId, setSelectedRecipeId] = useState<number | null>(null);
   const [foodDetailGroup, setFoodDetailGroup] = useState<GroupKey>('macro');
+  const [recipeDetailGroup, setRecipeDetailGroup] = useState<GroupKey>('macro');
+  const [recipeDetailTab, setRecipeDetailTab] = useState<'ingredients' | 'nutrients'>('ingredients');
+  const [editingRecipe, setEditingRecipe] = useState(false);
+  const [recipeDraftComponents, setRecipeDraftComponents] = useState<RecipeComponentDraft[]>([]);
+  const [ingredientPickerQuery, setIngredientPickerQuery] = useState('');
+  const [recipePickerQuery, setRecipePickerQuery] = useState('');
   const [selectedMenuEntryId, setSelectedMenuEntryId] = useState<number | null>(null);
   const [menuDetailGroup, setMenuDetailGroup] = useState<GroupKey>('macro');
   const [goalGroupIndex, setGoalGroupIndex] = useState(0);
@@ -482,9 +541,16 @@ export function LilyPadsNutrition() {
   type SummaryEntry = NutritionSummary['nutrients'][number];
   type HistoryEntry = NutritionHistory['nutrients'][number];
 type FoodDialEntry = { slug: string; display: string; percent: number; amount: string };
+type RecipeComponentDraft = {
+  type: 'ingredient' | 'recipe';
+  ingredient_id?: number | null;
+  child_recipe_id?: number | null;
+  quantity: number;
+  unit: string;
+};
 
 const buildDialEntries = (
-  food: NutritionFood,
+  food: NutritionIngredient,
   group: GroupKey,
   goals: NutritionGoal[],
   multiplier = 1
@@ -499,6 +565,33 @@ const buildDialEntries = (
       const rawAmount = food.nutrients?.[goal.slug];
       if (rawAmount == null) return null;
       const amount = Number(rawAmount) * multiplier;
+      if (!Number.isFinite(amount) || amount < 0) return null;
+      const percent = goal.goal ? (amount / goal.goal) * 100 : 0;
+      return {
+        slug: goal.slug,
+        display: tidyDisplayName(goal.display_name, goal.group as GroupKey),
+        percent,
+        amount: formatAmount(amount, goal.unit)
+      };
+    })
+    .filter((entry): entry is FoodDialEntry => entry !== null);
+};
+
+const buildRecipeDialEntries = (
+  recipe: NutritionRecipe,
+  group: GroupKey,
+  goals: NutritionGoal[]
+): FoodDialEntry[] => {
+  const relevantGoals = goals.filter((goal) => (goal.group as GroupKey) === group);
+  const filteredGoals =
+    group === 'macro'
+      ? relevantGoals.filter((goal) => isMacroTarget(goal.slug, goal.display_name))
+      : relevantGoals;
+  return filteredGoals
+    .map((goal) => {
+      const rawAmount = recipe.derived_nutrients?.[goal.slug];
+      if (rawAmount == null) return null;
+      const amount = Number(rawAmount);
       if (!Number.isFinite(amount) || amount < 0) return null;
       const percent = goal.goal ? (amount / goal.goal) * 100 : 0;
       return {
@@ -564,15 +657,25 @@ const buildDialEntries = (
   }, [historyData]);
 
   const foods = foodsQuery.data ?? [];
+  const recipes = recipesQuery.data ?? [];
   const nutritionGoals = goalsQuery.data ?? [];
 const filteredFoods = useMemo(() => {
   const query = paletteFilter.trim().toLowerCase();
   if (!query) return foods;
   return foods.filter((food) => food.name.toLowerCase().includes(query));
 }, [foods, paletteFilter]);
+  const filteredRecipes = useMemo(() => {
+    const query = paletteFilter.trim().toLowerCase();
+    if (!query) return recipes;
+    return recipes.filter((recipe) => recipe.name.toLowerCase().includes(query));
+  }, [recipes, paletteFilter]);
   const selectedFood = useMemo(
     () => foods.find((food) => food.id === selectedFoodId) ?? null,
     [foods, selectedFoodId]
+  );
+  const selectedRecipe = useMemo(
+    () => recipes.find((recipe) => recipe.id === selectedRecipeId) ?? null,
+    [recipes, selectedRecipeId]
   );
   const selectedMenuEntry = useMemo(
     () => menuEntries.find((entry) => entry.id === selectedMenuEntryId) ?? null,
@@ -580,7 +683,7 @@ const filteredFoods = useMemo(() => {
   );
   const selectedMenuFood = useMemo(() => {
     if (!selectedMenuEntry) return null;
-    return foods.find((food) => food.id === selectedMenuEntry.food_id) ?? null;
+    return foods.find((food) => food.id === selectedMenuEntry.ingredient_id) ?? null;
   }, [foods, selectedMenuEntry]);
 
   useEffect(() => {
@@ -590,8 +693,29 @@ const filteredFoods = useMemo(() => {
   }, [selectedFoodId, selectedFood]);
 
   useEffect(() => {
+    if (selectedRecipeId && !selectedRecipe) {
+      setSelectedRecipeId(null);
+    }
+  }, [selectedRecipeId, selectedRecipe]);
+
+  useEffect(() => {
     setFoodDetailGroup('macro');
   }, [selectedFoodId]);
+
+  useEffect(() => {
+    setRecipeDetailGroup('macro');
+    setRecipeDetailTab('ingredients');
+    setEditingRecipe(false);
+    setRecipeDraftComponents([]);
+  }, [selectedRecipeId]);
+
+  useEffect(() => {
+    if (paletteTab === 'recipes') {
+      setSelectedFoodId(null);
+    } else {
+      setSelectedRecipeId(null);
+    }
+  }, [paletteTab, filteredRecipes, selectedRecipeId]);
 
   useEffect(() => {
     if (selectedMenuEntryId && !selectedMenuEntry) {
@@ -635,6 +759,90 @@ const filteredFoods = useMemo(() => {
     if (!selectedFood) return [];
     return buildDialEntries(selectedFood, foodDetailGroup, nutritionGoals, 1);
   }, [selectedFood, nutritionGoals, foodDetailGroup]);
+
+  const recipeDialItems = useMemo<FoodDialEntry[]>(() => {
+    if (!selectedRecipe) return [];
+    return buildRecipeDialEntries(selectedRecipe, recipeDetailGroup, nutritionGoals);
+  }, [selectedRecipe, nutritionGoals, recipeDetailGroup]);
+
+  const recipeComponentRows = useMemo(() => {
+    if (!selectedRecipe) return [];
+    return (selectedRecipe.components ?? []).map((comp) => {
+      const ingredientName =
+        comp.ingredient_name ??
+        foods.find((f) => f.id === comp.ingredient_id)?.name ??
+        (comp.ingredient_id ? `Ingredient ${comp.ingredient_id}` : null);
+      const childRecipeName =
+        comp.child_recipe_name ??
+        recipes.find((r) => r.id === comp.child_recipe_id)?.name ??
+        (comp.child_recipe_id ? `Recipe ${comp.child_recipe_id}` : null);
+      return {
+        key: `${comp.ingredient_id ?? 'r'}-${comp.child_recipe_id ?? 'n'}-${comp.position ?? 'p'}`,
+        name: ingredientName ?? childRecipeName ?? 'Unknown item',
+        type: comp.child_recipe_id ? 'Recipe' : 'Ingredient',
+        quantity: comp.quantity,
+        unit: comp.unit
+      };
+    });
+  }, [selectedRecipe, foods, recipes]);
+
+  const nonNullNutrients = useMemo(() => {
+    if (!selectedFood) return [];
+    return Object.entries(selectedFood.nutrients ?? {})
+      .filter(([, value]) => value != null)
+      .map(([slug, value]) => ({ slug, value }));
+  }, [selectedFood]);
+
+  const goalMap = useMemo(() => {
+    const map: Record<string, NutritionGoal> = {};
+    nutritionGoals.forEach((goal) => {
+      map[goal.slug] = goal;
+    });
+    return map;
+  }, [nutritionGoals]);
+
+  const ingredientGroupEntries = useMemo(() => {
+    if (!selectedFood) return { macro: [], vitamin: [], mineral: [] } as Record<GroupKey, FoodDialEntry[]>;
+    const grouped: Record<GroupKey, FoodDialEntry[]> = { macro: [], vitamin: [], mineral: [] };
+    Object.entries(selectedFood.nutrients ?? {}).forEach(([slug, rawAmount]) => {
+      if (rawAmount == null) return;
+      const amount = Number(rawAmount);
+      if (!Number.isFinite(amount) || amount < 0) return;
+      const goal = goalMap[slug];
+      const group: GroupKey =
+        goal?.group === 'vitamin' || goal?.group === 'mineral'
+          ? (goal.group as GroupKey)
+          : 'macro';
+      const display = tidyDisplayName(goal?.display_name ?? slug, group);
+      const unit = goal?.unit ?? '';
+      const percent = goal?.goal ? (amount / goal.goal) * 100 : null;
+      grouped[group] = [
+        ...(grouped[group] ?? []),
+        {
+          slug,
+          display,
+          percent: percent ?? 0,
+          amount: formatAmount(amount, unit || '')
+        }
+      ];
+    });
+    return grouped;
+  }, [selectedFood, goalMap]);
+
+  const orderedIngredientOptions = useMemo(() => {
+    const term = ingredientPickerQuery.trim().toLowerCase();
+    return foods
+      .filter((food) => food.name.toLowerCase().includes(term))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [foods, ingredientPickerQuery]);
+
+  const orderedRecipeOptions = useMemo(() => {
+    const term = recipePickerQuery.trim().toLowerCase();
+    return recipes
+      .filter((recipe) => recipe.id !== selectedRecipeId)
+      .filter((recipe) => recipe.name.toLowerCase().includes(term))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [recipes, recipePickerQuery, selectedRecipeId]);
 
   const menuDialItems = useMemo<FoodDialEntry[]>(() => {
     if (!selectedMenuEntry || !selectedMenuFood) return [];
@@ -727,18 +935,25 @@ const filteredFoods = useMemo(() => {
 
   const padSpacer = 1680;
 
+  const handleRemoveMenuEntry = async (id: number) => {
+    await deleteMenuEntry(id);
+    if (selectedMenuEntryId === id) {
+      setSelectedMenuEntryId(null);
+    }
+  };
+
   return (
     <Stage>
       <LilyPadCard
         id="nutrition-chat"
         side="left"
         topOffsetPx={40}
-        scale={0.92}
+        scale={0.9}
         title="Log Foods with Claude"
         interactive
-        edgeOffsetPx={-52}
-        sideShiftPercent={22}
-        contentWidthPct={0.8}
+        edgeOffsetPx={-20}
+        sideShiftPercent={38}
+        contentWidthPct={0.72}
       >
         <ChatPadBody>
           <ChatHistory ref={chatHistoryRef}>
@@ -781,12 +996,12 @@ const filteredFoods = useMemo(() => {
         id="nutrition-menu"
         side="right"
         topOffsetPx={220}
-        scale={0.94}
+        scale={0.92}
         title="Today’s Menu"
         interactive
-        edgeOffsetPx={-56}
-        sideShiftPercent={24}
-        contentWidthPct={0.78}
+        edgeOffsetPx={-20}
+        sideShiftPercent={38}
+        contentWidthPct={0.72}
       >
         {menuQuery.isLoading ? (
           <p style={{ opacity: 0.75 }}>Fetching meals logged today…</p>
@@ -796,7 +1011,7 @@ const filteredFoods = useMemo(() => {
           <FoodDetailWrapper>
             <FoodDetailHeader>
               <div>
-                <strong>{selectedMenuEntry.food_name ?? selectedMenuFood.name ?? 'Meal'}</strong>
+                <strong>{selectedMenuEntry.ingredient_name ?? selectedMenuFood?.name ?? 'Meal'}</strong>
                 <span>
                   ({selectedMenuEntry.quantity ?? 1} {selectedMenuEntry.unit ?? selectedMenuFood.default_unit ?? 'unit'})
                 </span>
@@ -847,7 +1062,7 @@ const filteredFoods = useMemo(() => {
                   <PadListItem key={entry.id}>
                     <PaletteRowButton type="button" onClick={() => setSelectedMenuEntryId(entry.id)}>
                       <div>
-                        <strong>{entry.food_name ?? 'Untitled dish'}</strong>
+                        <strong>{entry.ingredient_name ?? entry.food_name ?? 'Untitled dish'}</strong>
                       </div>
                       <div className="meta">
                         <span>
@@ -855,6 +1070,9 @@ const filteredFoods = useMemo(() => {
                         </span>
                       </div>
                     </PaletteRowButton>
+                    <MenuRemoveButton type="button" onClick={() => handleRemoveMenuEntry(entry.id)}>
+                      Remove
+                    </MenuRemoveButton>
                   </PadListItem>
                 ))}
               </PadList>
@@ -922,25 +1140,140 @@ const filteredFoods = useMemo(() => {
         id="nutrition-palette"
         side="right"
         topOffsetPx={580}
-        scale={0.94}
+        scale={0.92}
         title="Pallete"
         interactive
-        edgeOffsetPx={-40}
-        sideShiftPercent={24}
-        contentWidthPct={0.86}
+        edgeOffsetPx={-10}
+        sideShiftPercent={38}
+        contentWidthPct={0.74}
       >
-        {foodsQuery.isLoading ? (
-          <p style={{ opacity: 0.75 }}>Loading pallete…</p>
-        ) : foods.length === 0 ? (
-          <p style={{ opacity: 0.78 }}>No foods saved yet. Logged foods will appear here so you can reuse them quickly.</p>
-        ) : selectedFood ? (
+        <PaletteTabs>
+          <PaletteTabButton
+            type="button"
+            $active={paletteTab === 'ingredients'}
+            onClick={() => setPaletteTab('ingredients')}
+          >
+            Ingredients
+          </PaletteTabButton>
+          <PaletteTabButton
+            type="button"
+            $active={paletteTab === 'recipes'}
+            onClick={() => setPaletteTab('recipes')}
+          >
+            Recipes
+          </PaletteTabButton>
+        </PaletteTabs>
+
+        {paletteTab === 'ingredients' ? (
+          foodsQuery.isLoading ? (
+            <p style={{ opacity: 0.75 }}>Loading pallete…</p>
+          ) : foods.length === 0 ? (
+            <p style={{ opacity: 0.78 }}>No foods saved yet. Logged foods will appear here so you can reuse them quickly.</p>
+          ) : selectedFood ? (
+            <FoodDetailWrapper>
+              <FoodDetailHeader>
+                <div>
+                  <strong>{selectedFood.name}</strong>
+                  <span>(1 {selectedFood.default_unit ?? 'unit'})</span>
+                </div>
+                <BackButton type="button" onClick={() => setSelectedFoodId(null)}>
+                  Back to list
+                </BackButton>
+              </FoodDetailHeader>
+          {goalsQuery.isError ? (
+            <p style={{ opacity: 0.75 }}>Unable to load nutrient targets right now.</p>
+          ) : goalsQuery.isLoading ? (
+            <p style={{ opacity: 0.75 }}>Loading nutrient targets…</p>
+          ) : (
+            <FoodDetailContent>
+              <CycleControls>
+                {GROUP_ORDER.map((key) => (
+                  <ControlButton
+                    key={key}
+                    type="button"
+                    onClick={() => setFoodDetailGroup(key)}
+                    $active={foodDetailGroup === key}
+                  >
+                    {GROUP_LABELS[key]}
+                  </ControlButton>
+                ))}
+              </CycleControls>
+              <DialGrid $columns={foodDetailGroup === 'vitamin' ? 4 : 3}>
+                {(ingredientGroupEntries[foodDetailGroup] ?? []).map((entry) => (
+                  <PercentDial key={entry.slug} $value={entry.percent ?? 0}>
+                    <DialLabel>
+                      <strong>{entry.display}</strong>
+                      {entry.percent != null ? (
+                        <span className="value">{formatPercent(entry.percent)}</span>
+                      ) : (
+                        <span className="value">—</span>
+                      )}
+                      <span className="amount">{entry.amount}</span>
+                    </DialLabel>
+                  </PercentDial>
+                ))}
+                {(ingredientGroupEntries[foodDetailGroup] ?? []).length === 0 &&
+                  nonNullNutrients.length === 0 && (
+                    <p style={{ opacity: 0.75 }}>No nutrient data available for this food.</p>
+                  )}
+              </DialGrid>
+            </FoodDetailContent>
+          )}
+            </FoodDetailWrapper>
+          ) : (
+            <>
+              <PaletteSearch>
+                <input
+                  type="search"
+                  placeholder="Search foods…"
+                  value={paletteFilter}
+                  onChange={(e) => setPaletteFilter(e.target.value)}
+                />
+              </PaletteSearch>
+              <PaletteScroll>
+                <PadList>
+                  {filteredFoods.length === 0 ? (
+                    <PadListItem>
+                      <div>
+                        <strong>No foods match “{paletteFilter}”.</strong>
+                      </div>
+                    </PadListItem>
+                  ) : (
+                    filteredFoods.map((food) => (
+                      <PadListItem key={food.id}>
+                        <PaletteRowButton type="button" onClick={() => setSelectedFoodId(food.id)} $status={food.status}>
+                          <div>
+                            <strong>{food.name}</strong>
+                          </div>
+                          <div className="meta">
+                            {(!food.status || food.status === 'unconfirmed') && (
+                              <span className="warn" title="Unconfirmed food">⚠︎</span>
+                            )}
+                            <span>{food.default_unit}</span>
+                          </div>
+                        </PaletteRowButton>
+                      </PadListItem>
+                    ))
+                  )}
+                </PadList>
+              </PaletteScroll>
+            </>
+          )
+        ) : recipesQuery.isLoading ? (
+          <p style={{ opacity: 0.75 }}>Loading recipes…</p>
+        ) : recipes.length === 0 ? (
+          <p style={{ opacity: 0.78 }}>No recipes saved yet. Use the palette to add some favorites.</p>
+        ) : selectedRecipe ? (
           <FoodDetailWrapper>
             <FoodDetailHeader>
               <div>
-                <strong>{selectedFood.name}</strong>
-                <span>(1 {selectedFood.default_unit ?? 'unit'})</span>
+                <strong>{selectedRecipe.name}</strong>
+                <span>
+                  ({selectedRecipe.servings} {selectedRecipe.default_unit ?? 'serving'}
+                  {selectedRecipe.servings === 1 ? '' : 's'})
+                </span>
               </div>
-              <BackButton type="button" onClick={() => setSelectedFoodId(null)}>
+              <BackButton type="button" onClick={() => setSelectedRecipeId(null)}>
                 Back to list
               </BackButton>
             </FoodDetailHeader>
@@ -948,8 +1281,6 @@ const filteredFoods = useMemo(() => {
               <p style={{ opacity: 0.75 }}>Unable to load nutrient targets right now.</p>
             ) : goalsQuery.isLoading ? (
               <p style={{ opacity: 0.75 }}>Loading nutrient targets…</p>
-            ) : paletteDialItems.length === 0 ? (
-              <p style={{ opacity: 0.75 }}>No nutrient data available for this food.</p>
             ) : (
               <FoodDetailContent>
                 <CycleControls>
@@ -957,57 +1288,332 @@ const filteredFoods = useMemo(() => {
                     <ControlButton
                       key={key}
                       type="button"
-                      onClick={() => setFoodDetailGroup(key)}
-                      $active={foodDetailGroup === key}
+                      onClick={() => setRecipeDetailGroup(key)}
+                      $active={recipeDetailGroup === key}
                     >
                       {GROUP_LABELS[key]}
                     </ControlButton>
                   ))}
                 </CycleControls>
-                <DialGrid $columns={foodDetailGroup === 'vitamin' ? 4 : 3}>
-                  {paletteDialItems.map((entry) => (
-                    <PercentDial key={entry.slug} $value={entry.percent}>
-                      <DialLabel>
-                        <strong>{entry.display}</strong>
-                        <span className="value">{formatPercent(entry.percent)}</span>
-                        {foodDetailGroup === 'macro' && <span className="amount">{entry.amount}</span>}
-                      </DialLabel>
-                    </PercentDial>
-                  ))}
+                <DialGrid $columns={recipeDetailGroup === 'vitamin' ? 4 : 3}>
+                  {recipeDialItems.length > 0 ? (
+                    recipeDialItems.map((entry) => (
+                      <PercentDial key={entry.slug} $value={entry.percent ?? 0}>
+                        <DialLabel>
+                          <strong>{entry.display}</strong>
+                          {entry.percent != null ? (
+                            <span className="value">{formatPercent(entry.percent)}</span>
+                          ) : (
+                            <span className="value">—</span>
+                          )}
+                          {recipeDetailGroup === 'macro' && <span className="amount">{entry.amount}</span>}
+                        </DialLabel>
+                      </PercentDial>
+                    ))
+                  ) : (
+                    <p style={{ opacity: 0.75 }}>No nutrient data available for this recipe yet.</p>
+                  )}
                 </DialGrid>
               </FoodDetailContent>
             )}
+            <FoodDetailContent style={{ marginTop: 12 }}>
+              <PaletteTabs>
+                <PaletteTabButton
+                  type="button"
+                  $active={recipeDetailTab === 'ingredients'}
+                  onClick={() => setRecipeDetailTab('ingredients')}
+                >
+                  Ingredients
+                </PaletteTabButton>
+                <PaletteTabButton
+                  type="button"
+                  $active={recipeDetailTab === 'nutrients'}
+                  onClick={() => setRecipeDetailTab('nutrients')}
+                >
+                  Nutrients
+                </PaletteTabButton>
+              </PaletteTabs>
+
+              {recipeDetailTab === 'ingredients' ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <p style={{ opacity: 0.8, margin: 0 }}>Components</p>
+                    {!editingRecipe ? (
+                      <BackButton type="button" onClick={() => {
+                        setEditingRecipe(true);
+                        setRecipeDraftComponents(
+                          (selectedRecipe?.components ?? []).map((comp) => ({
+                            type: comp.child_recipe_id ? 'recipe' : 'ingredient',
+                            ingredient_id: comp.ingredient_id ?? null,
+                            child_recipe_id: comp.child_recipe_id ?? null,
+                            quantity: comp.quantity,
+                            unit: comp.unit
+                          }))
+                        );
+                      }}>
+                        Edit components
+                      </BackButton>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <BackButton type="button" onClick={() => setEditingRecipe(false)}>Cancel</BackButton>
+                        <BackButton
+                          type="button"
+                          onClick={async () => {
+                            if (!selectedRecipe) return;
+                            await updateRecipe({
+                              id: selectedRecipe.id,
+                              payload: {
+                                name: selectedRecipe.name,
+                                default_unit: selectedRecipe.default_unit,
+                                servings: selectedRecipe.servings,
+                                status: selectedRecipe.status,
+                                components: recipeDraftComponents.map((comp, idx) => ({
+                                  ingredient_id: comp.type === 'ingredient' ? comp.ingredient_id ?? undefined : undefined,
+                                  child_recipe_id: comp.type === 'recipe' ? comp.child_recipe_id ?? undefined : undefined,
+                                  quantity: comp.quantity,
+                                  unit: comp.unit,
+                                  position: idx
+                                }))
+                              }
+                            });
+                            setEditingRecipe(false);
+                          }}
+                        >
+                          Save
+                        </BackButton>
+                      </div>
+                    )}
+                  </div>
+                  {!editingRecipe ? (
+                    recipeComponentRows.length === 0 ? (
+                      <p style={{ opacity: 0.7 }}>No components added yet.</p>
+                    ) : (
+                      <PadList>
+                        {recipeComponentRows.map((row) => (
+                          <PadListItem key={row.key}>
+                            <div>
+                              <strong>{row.name}</strong>
+                              <div className="meta">
+                                <span>{row.type}</span>
+                              </div>
+                            </div>
+                            <div className="meta">
+                              <span>
+                                {row.quantity} {row.unit}
+                              </span>
+                            </div>
+                          </PadListItem>
+                        ))}
+                      </PadList>
+                    )
+                  ) : (
+                    <>
+                      <PaletteSearch>
+                        <input
+                          type="search"
+                          placeholder="Search ingredients…"
+                          value={ingredientPickerQuery}
+                          onChange={(e) => setIngredientPickerQuery(e.target.value)}
+                        />
+                        <input
+                          type="search"
+                          placeholder="Search recipes…"
+                          value={recipePickerQuery}
+                          onChange={(e) => setRecipePickerQuery(e.target.value)}
+                        />
+                      </PaletteSearch>
+                      <PadList>
+                        {recipeDraftComponents.map((comp, idx) => (
+                          <PadListItem key={`${comp.type}-${idx}`}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%' }}>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                <select
+                                  value={comp.type}
+                                  onChange={(e) => {
+                                    const type = e.target.value as RecipeComponentDraft['type'];
+                                    setRecipeDraftComponents((prev) => {
+                                      const next = [...prev];
+                                      next[idx] = {
+                                        ...next[idx],
+                                        type,
+                                        ingredient_id: type === 'ingredient' ? next[idx].ingredient_id ?? null : null,
+                                        child_recipe_id: type === 'recipe' ? next[idx].child_recipe_id ?? null : null
+                                      };
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  <option value="ingredient">Ingredient</option>
+                                  <option value="recipe">Recipe</option>
+                                </select>
+                                {comp.type === 'ingredient' ? (
+                                  <select
+                                    value={comp.ingredient_id ?? ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value === '' ? null : Number(e.target.value);
+                                      setRecipeDraftComponents((prev) => {
+                                        const next = [...prev];
+                                        next[idx] = { ...next[idx], ingredient_id: val, child_recipe_id: null };
+                                        return next;
+                                      });
+                                    }}
+                                  >
+                                    <option value="">Select ingredient</option>
+                                    {orderedIngredientOptions.map((food) => (
+                                      <option key={food.id} value={food.id}>
+                                        {food.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <select
+                                    value={comp.child_recipe_id ?? ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value === '' ? null : Number(e.target.value);
+                                      setRecipeDraftComponents((prev) => {
+                                        const next = [...prev];
+                                        next[idx] = { ...next[idx], child_recipe_id: val, ingredient_id: null };
+                                        return next;
+                                      });
+                                    }}
+                                  >
+                                    <option value="">Select recipe</option>
+                                    {orderedRecipeOptions.map((recipe) => (
+                                      <option key={recipe.id} value={recipe.id}>
+                                        {recipe.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                                <input
+                                  type="number"
+                                  step="0.1"
+                                  value={comp.quantity}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setRecipeDraftComponents((prev) => {
+                                      const next = [...prev];
+                                      next[idx] = { ...next[idx], quantity: val };
+                                      return next;
+                                    });
+                                  }}
+                                />
+                                <input
+                                  value={comp.unit}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setRecipeDraftComponents((prev) => {
+                                      const next = [...prev];
+                                      next[idx] = { ...next[idx], unit: val };
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <div className="meta">
+                              <MenuRemoveButton
+                                type="button"
+                                onClick={() =>
+                                  setRecipeDraftComponents((prev) => prev.filter((_, pos) => pos !== idx))
+                                }
+                              >
+                                Remove
+                              </MenuRemoveButton>
+                            </div>
+                          </PadListItem>
+                        ))}
+                      </PadList>
+                      <div style={{ marginTop: 8 }}>
+                        <BackButton
+                          type="button"
+                          onClick={() =>
+                            setRecipeDraftComponents((prev) => [
+                              ...prev,
+                              { type: 'ingredient', ingredient_id: null, child_recipe_id: null, quantity: 1, unit: selectedRecipe?.default_unit ?? 'serving' }
+                            ])
+                          }
+                        >
+                          Add component
+                        </BackButton>
+                      </div>
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  <CycleControls>
+                    {GROUP_ORDER.map((key) => (
+                      <ControlButton
+                        key={key}
+                        type="button"
+                        onClick={() => setRecipeDetailGroup(key)}
+                        $active={recipeDetailGroup === key}
+                      >
+                        {GROUP_LABELS[key]}
+                      </ControlButton>
+                    ))}
+                  </CycleControls>
+                  <DialGrid $columns={recipeDetailGroup === 'vitamin' ? 4 : 3}>
+                    {recipeDialItems.length > 0 ? (
+                      recipeDialItems.map((entry) => (
+                        <PercentDial key={entry.slug} $value={entry.percent ?? 0}>
+                          <DialLabel>
+                            <strong>{entry.display}</strong>
+                            {entry.percent != null ? (
+                              <span className="value">{formatPercent(entry.percent)}</span>
+                            ) : (
+                              <span className="value">—</span>
+                            )}
+                            {recipeDetailGroup === 'macro' && <span className="amount">{entry.amount}</span>}
+                          </DialLabel>
+                        </PercentDial>
+                      ))
+                    ) : (
+                      <p style={{ opacity: 0.75 }}>No nutrient data available for this recipe yet.</p>
+                    )}
+                  </DialGrid>
+                </>
+              )}
+            </FoodDetailContent>
           </FoodDetailWrapper>
         ) : (
           <>
             <PaletteSearch>
               <input
                 type="search"
-                placeholder="Search foods…"
+                placeholder="Search recipes…"
                 value={paletteFilter}
                 onChange={(e) => setPaletteFilter(e.target.value)}
               />
             </PaletteSearch>
             <PaletteScroll>
               <PadList>
-                {filteredFoods.length === 0 ? (
+                {filteredRecipes.length === 0 ? (
                   <PadListItem>
                     <div>
-                      <strong>No foods match “{paletteFilter}”.</strong>
+                      <strong>No recipes match “{paletteFilter}”.</strong>
                     </div>
                   </PadListItem>
                 ) : (
-                  filteredFoods.map((food) => (
-                    <PadListItem key={food.id}>
-                      <PaletteRowButton type="button" onClick={() => setSelectedFoodId(food.id)} $status={food.status}>
+                  filteredRecipes.map((recipe) => (
+                    <PadListItem key={recipe.id}>
+                      <PaletteRowButton
+                        type="button"
+                        onClick={() => setSelectedRecipeId(recipe.id)}
+                        $status={recipe.status}
+                      >
                         <div>
-                          <strong>{food.name}</strong>
+                          <strong>{recipe.name}</strong>
                         </div>
                         <div className="meta">
-                          {(!food.status || food.status === 'unconfirmed') && (
-                            <span className="warn" title="Unconfirmed food">⚠︎</span>
+                          {(!recipe.status || recipe.status === 'unconfirmed') && (
+                            <span className="warn" title="Unconfirmed recipe">⚠︎</span>
                           )}
-                          <span>{food.default_unit}</span>
+                          <span>
+                            {recipe.servings} {recipe.default_unit ?? 'serving'}
+                            {recipe.servings === 1 ? '' : 's'}
+                          </span>
                         </div>
                       </PaletteRowButton>
                     </PadListItem>
@@ -1023,13 +1629,13 @@ const filteredFoods = useMemo(() => {
         id="nutrition-averages"
         side="left"
         topOffsetPx={760}
-        scale={0.96}
+        scale={0.92}
         aspectRatio={14 / 5}
         title="14-day Goal %"
         interactive
-        edgeOffsetPx={-16}
-        sideShiftPercent={12}
-        contentWidthPct={0.92}
+        edgeOffsetPx={-10}
+        sideShiftPercent={32}
+        contentWidthPct={0.82}
       >
         {historyData ? (
           <DialStage>
@@ -1100,13 +1706,13 @@ const filteredFoods = useMemo(() => {
         id="nutrition-goals"
         side="right"
         topOffsetPx={940}
-        scale={0.96}
+        scale={0.92}
         aspectRatio={14 / 5}
         title="Nutrient Goals"
         interactive
-        edgeOffsetPx={-20}
-        sideShiftPercent={10}
-        contentWidthPct={0.94}
+        edgeOffsetPx={-10}
+        sideShiftPercent={32}
+        contentWidthPct={0.82}
       >
         {goalsQuery.isLoading ? (
           <p style={{ opacity: 0.75 }}>Loading goals…</p>

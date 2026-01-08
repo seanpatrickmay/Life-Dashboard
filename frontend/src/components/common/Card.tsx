@@ -9,13 +9,17 @@ const defaultBodyHalo = '0 0 2px rgba(201,243,246,0.75), 0 0 6px rgba(126,215,19
 const CardShell = styled.div`
   position: relative;
   z-index: ${Z_LAYERS.uiCards};
-  background: transparent;
+  background: ${({ theme }) =>
+    theme.mode === 'dark' ? 'rgba(20, 28, 46, 0.72)' : 'rgba(255, 255, 255, 0.82)'};
   color: ${({ theme }) => theme.colors.textPrimary};
   padding: clamp(18px, 2vw, 26px);
   image-rendering: pixelated;
-  border: none;
+  border: 1px solid
+    ${({ theme }) =>
+      theme.mode === 'dark' ? 'rgba(246, 240, 232, 0.24)' : 'rgba(30, 31, 46, 0.18)'};
   border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
   pointer-events: auto;
+  box-shadow: 0 16px 36px rgba(8, 14, 28, 0.35);
 
   &, p, span, label, small, li, strong, em, div {
     text-shadow: ${({ theme }) => theme.tokens?.halo?.body ?? defaultBodyHalo};

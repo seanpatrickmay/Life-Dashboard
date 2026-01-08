@@ -11,6 +11,11 @@ This document collects future-facing feature and improvement concepts so we can 
   - **Why:** Direct nutrition data for composed dishes (e.g., tiramisu) is hard to find and leads to unbounded growth of single-use food entries.
   - **Approach:** Store canonical ingredient records (finite set), link foods to ingredients via recipes, and derive nutrient totals from the ingredient graph. This increases accuracy and keeps the database manageable.
 
+- **Composable foods and units (new)**
+  - **Goal:** Let each food be defined either as a base item with intrinsic nutrient data or as a combination of other foods with quantity units (grams, servings, cups, etc.).
+  - **Why:** Users often log staples like "Breakfast sandwich" or "Protein bowl" that are reusable mixes of known items; recomputing their macros manually is error-prone and bloats the food catalog with near-duplicates.
+  - **Approach:** Extend the food schema with a `type` discriminator (single vs. composed) and recipe units table that references other foods plus per-unit weights. During logging we resolve the recipe tree, aggregate nutrients, and allow editing by swapping or scaling component foods.
+
 - **Lily pad leafs for displaying stats**
 
 - **Menu give some quick select options, and suggested foods based on missing nutrients**

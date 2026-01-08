@@ -11,10 +11,10 @@ const drift = keyframes`
 
 const Field = styled.div`
   position: absolute;
-  top: -8vh;
+  top: 0;
   left: 0;
   right: 0;
-  height: clamp(320px, 55vh, 640px);
+  height: 360px; /* static cloud band height to sit above the horizon */
   pointer-events: none;
   overflow: visible;
   z-index: ${Z_LAYERS.clouds};
@@ -29,9 +29,9 @@ const CloudSprite = styled.img<{
   $z: number;
 }>`
   position: absolute;
-  top: ${(p) => `${p.$top}vh`};
+  top: ${(p) => `${p.$top}px`};
   left: 0;
-  width: ${(p) => `${p.$width}vw`};
+  width: ${(p) => `${p.$width}px`};
   height: auto;
   pointer-events: none;
   z-index: ${(p) => p.$z};
@@ -55,30 +55,30 @@ type CloudConfig = {
 
 const LAYER_CONFIG: Record<LayerKey, CloudConfig> = {
   back: {
-    count: 8,
-    topRange: [6, 16],
-    widthRange: [28, 38],
-    durationRange: [150, 250],
+    count: 22,
+    topRange: [0, 40],
+    widthRange: [140, 220],
+    durationRange: [180, 260],
     delayRange: [0, 200],
-    opacityRange: [0.6, 0.95],
+    opacityRange: [0.7, 0.98],
     z: 1
   },
   mid: {
-    count: 8,
-    topRange: [12, 22],
-    widthRange: [30, 42],
-    durationRange: [220, 360],
+    count: 24,
+    topRange: [20, 60],
+    widthRange: [160, 240],
+    durationRange: [220, 340],
     delayRange: [0, 200],
-    opacityRange: [0.6, 0.95],
+    opacityRange: [0.75, 0.98],
     z: 2
   },
   front: {
-    count: 4,
-    topRange: [18, 30],
-    widthRange: [32, 46],
-    durationRange: [260, 420],
+    count: 16,
+    topRange: [40, 80],
+    widthRange: [180, 260],
+    durationRange: [260, 380],
     delayRange: [0, 200],
-    opacityRange: [0.6, 0.95],
+    opacityRange: [0.75, 0.98],
     z: 3
   }
 };

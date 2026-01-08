@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchNutritionGoals, updateNutritionGoal, type NutritionGoal } from '../services/api';
 
 const GOALS_QUERY_KEY = ['nutrition', 'goals'];
+const SUMMARY_QUERY_KEY = ['nutrition', 'summary'];
+const HISTORY_QUERY_KEY = ['nutrition', 'history'];
 
 export function useNutritionGoals() {
   const queryClient = useQueryClient();
@@ -14,6 +16,8 @@ export function useNutritionGoals() {
         if (!prev) return prev;
         return prev.map((goalItem) => (goalItem.slug === updatedGoal.slug ? updatedGoal : goalItem));
       });
+      void queryClient.invalidateQueries({ queryKey: SUMMARY_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: HISTORY_QUERY_KEY });
     }
   });
 

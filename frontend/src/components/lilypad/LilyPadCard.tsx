@@ -71,7 +71,7 @@ const Pad = styled.div<{
 `;
 
 const PadContent = styled.div<{ $interactive?: boolean; $widthPct: number }>`
-  text-align: ${(p) => (p.$interactive ? 'left' : 'center')};
+  text-align: center;
   padding: clamp(10px, 2.2vw, 24px);
   text-shadow: 0 2px 12px rgba(5, 20, 36, 0.75);
   width: 100%;
