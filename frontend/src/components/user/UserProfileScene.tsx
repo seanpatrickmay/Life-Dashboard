@@ -68,10 +68,14 @@ const Field = styled.label`
     font-size: 1rem;
     padding: 10px 14px;
     border-radius: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(10, 18, 32, 0.6);
+    border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+    background: ${({ theme }) =>
+      theme.mode === 'light' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(10, 18, 32, 0.6)'};
     color: ${({ theme }) => theme.colors.textPrimary};
     font-family: ${({ theme }) => theme.fonts.body};
+    &::placeholder {
+      color: ${({ theme }) => theme.colors.textSecondary};
+    }
   }
 `;
 

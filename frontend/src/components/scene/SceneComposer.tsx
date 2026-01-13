@@ -352,11 +352,11 @@ const BoatReflectionImage = styled.img`
 // Boat drift keyframes and wrappers
 const boatDriftLeft = keyframes`
   0% { transform: translateX(110vw); }
-  100% { transform: translateX(-30vw); }
+  100% { transform: translateX(-45vw); }
 `;
 
 const boatDriftRight = keyframes`
-  0% { transform: translateX(-30vw); }
+  0% { transform: translateX(-45vw); }
   100% { transform: translateX(110vw); }
 `;
 

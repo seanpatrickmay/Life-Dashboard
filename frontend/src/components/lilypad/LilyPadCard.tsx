@@ -12,7 +12,10 @@ export type LilyPadCardProps = {
   side: Side;
   topOffsetPx: number; // distance from bridge-band-bottom
   scale?: PadScale;
+  padWidth?: string;
   aspectRatio?: number; // width / height
+  contentScale?: number;
+  centerShiftPx?: number;
   title: string;
   value?: string; // when absent, show error state
   subtitle?: string; // optional small line under value
@@ -35,10 +38,12 @@ const Pad = styled.div<{
   $topPx: number;
   $img: string;
   $scale: number;
+  $width?: string;
   $aspect?: number;
   $interactive?: boolean;
   $edgeOffset: number;
   $shiftPercent: number;
+  $centerShift: number;
 }>`
   position: absolute;
   top: calc(var(--bridge-band-bottom, 32vh) + ${(p) => p.$topPx}px);
@@ -48,7 +53,7 @@ const Pad = styled.div<{
       : p.$side === 'left'
         ? `left: calc(var(--willow-offset, 6vw) + clamp(12px, 3vw, 60px) + ${p.$edgeOffset}px);`
         : `right: calc(var(--willow-offset, 6vw) + clamp(12px, 3vw, 60px) + ${p.$edgeOffset}px);`}
-  width: clamp(560px, 48vw, 960px);
+  width: ${(p) => p.$width ?? 'clamp(560px, 48vw, 960px)'};
   aspect-ratio: ${(p) => p.$aspect ?? 16/6};
   background-image: url(${(p) => p.$img});
   background-repeat: no-repeat;
@@ -60,7 +65,7 @@ const Pad = styled.div<{
   ${(p) =>
     css`
       transform: ${p.$side === 'center'
-        ? `translateX(-50%) scale(${p.$scale})`
+        ? `translateX(calc(-50% + ${p.$centerShift}px)) scale(${p.$scale})`
         : `translateX(${p.$side === 'left' ? '-' : ''}${p.$shiftPercent}%) scale(${p.$scale})`};
     `}
   pointer-events: ${(p) => (p.$interactive ? 'auto' : 'none')};
@@ -70,13 +75,15 @@ const Pad = styled.div<{
   opacity: 0.95;
 `;
 
-const PadContent = styled.div<{ $interactive?: boolean; $widthPct: number }>`
+const PadContent = styled.div<{ $interactive?: boolean; $widthPct: number; $contentScale: number }>`
   text-align: center;
   padding: clamp(10px, 2.2vw, 24px);
   text-shadow: 0 2px 12px rgba(5, 20, 36, 0.75);
   width: 100%;
   max-width: clamp(220px, ${(p) => p.$widthPct * 100}%, 420px);
   color: #ffffff;
+  transform: scale(${(p) => p.$contentScale});
+  transform-origin: center;
   * {
     color: inherit;
   }
@@ -116,7 +123,10 @@ export function LilyPadCard({
   side,
   topOffsetPx,
   scale = 0.88,
+  padWidth,
   aspectRatio,
+  contentScale = 1,
+  centerShiftPx = 0,
   title,
   value,
   subtitle,
@@ -134,16 +144,18 @@ export function LilyPadCard({
     <Layer>
       <Pad
         id={id}
-        $side={side}
+      $side={side}
         $topPx={topOffsetPx}
         $img={img}
         $scale={scale}
+        $width={padWidth}
         $aspect={aspectRatio}
         $interactive={interactive}
         $edgeOffset={edgeOffsetPx}
         $shiftPercent={sideShiftPercent}
+        $centerShift={centerShiftPx}
       >
-        <PadContent $interactive={interactive} $widthPct={widthPct}>
+        <PadContent $interactive={interactive} $widthPct={widthPct} $contentScale={contentScale}>
           <Title>{title}</Title>
           {children ? (
             children

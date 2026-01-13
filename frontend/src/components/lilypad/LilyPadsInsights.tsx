@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import styled from 'styled-components';
 import { useInsight } from '../../hooks/useInsight';
 import { LilyPadCard } from './LilyPadCard';
@@ -6,44 +7,12 @@ import { RHRChart } from '../charts/RHRChart';
 import { SleepChart } from '../charts/SleepChart';
 import { LoadChart } from '../charts/LoadChart';
 
-const CHART_SINK_PX = 500;
-
 const Stage = styled.div`
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: clamp(180px, 22vh, 260px);
-  padding: clamp(32px, 6vh, 72px) clamp(16px, 6vw, 80px) clamp(220px, 28vh, 360px);
-`;
-
-const Narrative = styled.p`
-  margin: 10px 0 0;
-  font-size: 0.95rem;
-  line-height: 1.7;
+  padding: clamp(24px, 5vh, 60px) clamp(16px, 6vw, 80px) clamp(140px, 18vh, 220px);
   color: #ffffff;
-  opacity: 0.92;
-  max-width: 380px;
-`;
-
-const ReadinessBlock = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  width: 100%;
-`;
-
-const ReadinessValue = styled.div`
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: clamp(2.4rem, 4vw, 3.2rem);
-`;
-
-const ReadinessLabel = styled.span`
-  font-size: 0.85rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.85;
 `;
 
 const Subtitle = styled.span`
@@ -52,20 +21,117 @@ const Subtitle = styled.span`
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.85);
-  margin-bottom: 4px;
+  margin-bottom: 0;
 `;
 
-const MetricRow = styled.div<{ $padSide: 'left' | 'right' }>`
+const MetricSection = styled.section`
+  margin-top: clamp(80px, 12vh, 140px);
+  display: grid;
+  width: min(1200px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: clamp(28px, 5vw, 96px);
+  align-items: start;
+  @media (max-width: 1100px) {
+    grid-template-columns: 1fr;
+    margin-top: clamp(60px, 10vh, 120px);
+  }
+`;
+
+const MetricPadStack = styled.div`
+  position: relative;
+  min-height: clamp(320px, 46vh, 520px);
+  padding-top: clamp(260px, 28vw, 380px);
   display: flex;
-  justify-content: ${(p) => (p.$padSide === 'left' ? 'flex-end' : 'flex-start')};
-  align-items: flex-start;
-  gap: clamp(24px, 5vw, 72px);
-  min-height: clamp(180px, 34vh, 320px);
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  --bridge-band-bottom: 0px;
+  width: min(760px, 100%);
+  justify-self: start;
+  @media (max-width: 1100px) {
+    width: 100%;
+    margin: 0 auto;
+  }
 `;
 
-const ChartUnderlay = styled.div<{ $align: 'left' | 'right' }>`
-  width: min(460px, 44vw);
-  min-height: clamp(220px, 34vh, 320px);
+const MetricToggleRow = styled.div`
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  justify-content: flex-end;
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+`;
+
+const MetricToggleButton = styled.button<{ $active?: boolean }>`
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: #ffffff;
+  background: ${({ $active }) => ($active ? 'rgba(255, 255, 255, 0.22)' : 'rgba(8, 16, 30, 0.45)')};
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  &:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+`;
+
+const ChartHeader = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+`;
+
+const ChartBody = styled.div`
+  position: relative;
+  flex: 1;
+  margin-top: 10px;
+  padding: 12px 18px 20px;
+  border-radius: 24px;
+  overflow: hidden;
+`;
+
+const ChartWater = styled.div`
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(9, 22, 36, 0.08) 0%, rgba(6, 20, 34, 0.45) 55%, rgba(3, 12, 22, 0.75) 100%),
+    radial-gradient(circle at 20% 30%, rgba(122, 197, 220, 0.18), transparent 55%),
+    radial-gradient(circle at 80% 70%, rgba(90, 140, 210, 0.24), transparent 60%);
+  opacity: 0.85;
+  mix-blend-mode: screen;
+  pointer-events: none;
+`;
+
+const ChartDepth = styled.div`
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(2, 8, 14, 0) 0%, rgba(2, 8, 14, 0.4) 55%, rgba(2, 8, 14, 0.65) 100%);
+  opacity: 0.9;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+`;
+
+const ChartContent = styled.div`
+  position: relative;
+  z-index: 1;
+  height: 100%;
+`;
+
+const ChartUnderlay = styled.div`
+  width: 100%;
+  max-width: 620px;
+  min-height: clamp(240px, 40vh, 360px);
   padding: clamp(16px, 2vw, 28px);
   background: linear-gradient(180deg, rgba(5, 18, 34, 0.25), rgba(3, 10, 20, 0.6));
   border-radius: 36px;
@@ -79,13 +145,11 @@ const ChartUnderlay = styled.div<{ $align: 'left' | 'right' }>`
   position: relative;
   overflow: hidden;
   isolation: isolate;
-  transform: translateY(${22 + CHART_SINK_PX}px);
-  margin-left: ${(p) => (p.$align === 'right' ? 'auto' : '0')};
-  margin-right: ${(p) => (p.$align === 'left' ? 'auto' : '0')};
+  justify-self: end;
   &::before {
     content: '';
     position: absolute;
-    inset: -20% -10% -40% -10%;
+    inset: 56px -10% -40% -10%;
     background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.18), transparent 60%),
       radial-gradient(circle at 70% 10%, rgba(173, 216, 255, 0.2), transparent 55%);
     opacity: 0.7;
@@ -95,7 +159,7 @@ const ChartUnderlay = styled.div<{ $align: 'left' | 'right' }>`
   &::after {
     content: '';
     position: absolute;
-    inset: 0;
+    inset: 56px 0 0 0;
     background: linear-gradient(180deg, rgba(4, 9, 18, 0.35), rgba(6, 12, 24, 0.85));
     opacity: 0.9;
     mix-blend-mode: multiply;
@@ -105,31 +169,18 @@ const ChartUnderlay = styled.div<{ $align: 'left' | 'right' }>`
     position: relative;
     z-index: 1;
   }
-`;
-
-const PadSpacer = styled.div`
-  width: 100%;
-  height: 120px;
+  @media (max-width: 1100px) {
+    width: 100%;
+    justify-self: center;
+  }
 `;
 
 export function LilyPadsInsights() {
   const { data } = useInsight();
-
-  const formattedDate = data?.metric_date
-    ? new Date(data.metric_date).toLocaleDateString(undefined, {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric'
-      })
-    : '—';
+  const [activeKey, setActiveKey] = useState('hrv');
 
   const formatValue = (value?: number | null, decimals = 0) =>
     typeof value === 'number' ? value.toFixed(decimals) : '—';
-
-  const PAD_BASE_OFFSET = 650;
-  const PAD_VERTICAL_STEP = 700;
-  const PAD_EDGE_OFFSET = -68;
-  const PAD_SHIFT = 26;
 
   const metricBlocks = [
     {
@@ -137,86 +188,74 @@ export function LilyPadsInsights() {
       title: 'HRV',
       value: formatValue(data?.hrv_value_ms),
       subtitle: data?.hrv_note ?? 'Awaiting insight',
-      chart: <HRVChart />
+      chart: <HRVChart variant="bare" />
     },
     {
       key: 'rhr',
       title: 'Resting HR',
       value: formatValue(data?.rhr_value_bpm),
       subtitle: data?.rhr_note ?? 'Awaiting insight',
-      chart: <RHRChart />
+      chart: <RHRChart variant="bare" />
     },
     {
       key: 'sleep',
       title: 'Sleep Hours',
       value: formatValue(data?.sleep_value_hours, 2),
       subtitle: data?.sleep_note ?? 'Awaiting insight',
-      chart: <SleepChart />
+      chart: <SleepChart variant="bare" />
     },
     {
       key: 'load',
       title: 'Training Load',
       value: formatValue(data?.training_load_value),
       subtitle: data?.training_load_note ?? 'Awaiting insight',
-      chart: <LoadChart />
+      chart: <LoadChart variant="bare" />
     }
-  ].map((block, index) => ({
-    ...block,
-    padSide: index % 2 === 0 ? 'left' : 'right',
-    chartAlign: index % 2 === 0 ? 'right' : 'left',
-    padTopOffset: PAD_BASE_OFFSET + index * PAD_VERTICAL_STEP
-  }));
+  ];
 
-  const padStackSpacer = PAD_VERTICAL_STEP + 280;
+  const activeMetric = metricBlocks.find((metric) => metric.key === activeKey) ?? metricBlocks[0];
 
   return (
     <Stage>
-      <MetricRow $padSide="left">
-        <LilyPadCard
-          id="insights-greeting"
-          side="center"
-          topOffsetPx={0}
-          scale={1.5}
-          aspectRatio={16 / 4}
-          title={`${data?.greeting ?? 'Good morning'}, ${formattedDate}`}
-          contentWidthPct={0.9}
-        >
-          <ReadinessBlock>
-            <ReadinessValue data-halo="heading">{formatReadinessValue(data?.readiness_score)}</ReadinessValue>
-            <ReadinessLabel>{data?.readiness_label ?? 'Awaiting insight'}</ReadinessLabel>
-          </ReadinessBlock>
-          <Narrative>{data?.morning_note ?? 'Structured readiness insight is not available yet.'}</Narrative>
-        </LilyPadCard>
-      </MetricRow>
-
-      {metricBlocks.map((block) => (
-        <MetricRow key={block.key} $padSide={block.padSide}>
+      <MetricSection>
+        <MetricPadStack>
           <LilyPadCard
-            id={`insights-${block.key}`}
-            side={block.padSide}
-            topOffsetPx={block.padTopOffset}
-            scale={1.1}
-            edgeOffsetPx={PAD_EDGE_OFFSET}
-            sideShiftPercent={PAD_SHIFT}
-            title={block.title}
-            value={`${block.value}`}
-            subtitle={block.subtitle}
-            contentWidthPct={0.54}
+            id={`insights-${activeMetric.key}`}
+            side="center"
+            topOffsetPx={0}
+            scale={1.28}
+            padWidth="clamp(420px, 56vw, 760px)"
+            centerShiftPx={-40}
+            title={activeMetric.title}
+            value={`${activeMetric.value}`}
+            subtitle={activeMetric.subtitle}
+            contentWidthPct={0.68}
           />
-          <ChartUnderlay $align={block.chartAlign}>
-            <Subtitle>{block.title} trend</Subtitle>
-            <div style={{ flex: 1 }}>{block.chart}</div>
-          </ChartUnderlay>
-        </MetricRow>
-      ))}
-      <PadSpacer style={{ height: `${padStackSpacer}px` }} />
+        </MetricPadStack>
+        <ChartUnderlay>
+          <ChartHeader>
+            <Subtitle>{activeMetric.title} trend</Subtitle>
+            <MetricToggleRow>
+              {metricBlocks.map((metric) => (
+                <MetricToggleButton
+                  key={metric.key}
+                  type="button"
+                  $active={metric.key === activeKey}
+                  aria-pressed={metric.key === activeKey}
+                  onClick={() => setActiveKey(metric.key)}
+                >
+                  {metric.title}
+                </MetricToggleButton>
+              ))}
+            </MetricToggleRow>
+          </ChartHeader>
+          <ChartBody>
+            <ChartWater />
+            <ChartDepth />
+            <ChartContent>{activeMetric.chart}</ChartContent>
+          </ChartBody>
+        </ChartUnderlay>
+      </MetricSection>
     </Stage>
   );
 }
-
-const formatReadinessValue = (score?: number | null) => {
-  if (typeof score === 'number') {
-    return `${Math.round(score)} / 100`;
-  }
-  return '— / 100';
-};
