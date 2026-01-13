@@ -44,7 +44,9 @@ def _resolve_sa_path() -> Path:
 
 def init_vertex() -> GenerativeModel:
     sa_path = _resolve_sa_path()
-    credentials = service_account.Credentials.from_service_account_file(sa_path)
+    credentials = service_account.Credentials.from_service_account_file(
+        sa_path, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
     logger.info("Loaded Vertex service account credentials from {}", sa_path)
     vertexai.init(
         project=settings.vertex_project_id,

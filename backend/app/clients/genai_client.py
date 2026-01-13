@@ -8,6 +8,8 @@ from google.oauth2 import service_account
 
 from app.core.config import settings
 
+_VERTEX_SCOPES = ("https://www.googleapis.com/auth/cloud-platform",)
+
 
 def _resolve_sa_path() -> Path | None:
     candidates: list[str] = []
@@ -47,6 +49,6 @@ def build_genai_client(*, http_options=None) -> genai.Client:
     sa_path = _resolve_sa_path()
     if sa_path:
         kwargs["credentials"] = service_account.Credentials.from_service_account_file(
-            sa_path
+            sa_path, scopes=list(_VERTEX_SCOPES)
         )
     return genai.Client(**kwargs)

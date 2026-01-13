@@ -47,7 +47,7 @@ class NutritionGoalsRepository:
         computed_at: datetime,
         calorie_source: str | None,
     ) -> NutritionGoal:
-        goal = await self.session.get(NutritionGoal, user_id)
+        goal = await self.fetch_goal_snapshot(user_id)
         if goal is None:
             goal = NutritionGoal(user_id=user_id)
             self.session.add(goal)
