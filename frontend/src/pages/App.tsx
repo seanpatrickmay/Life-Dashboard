@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom';
+import { Outlet, Route, Routes } from 'react-router-dom';
 
 import { DashboardPage } from './Dashboard';
 import { InsightsPage } from './Insights';
@@ -6,9 +6,11 @@ import { SettingsPage } from './Settings';
 import { GardenPage } from './Garden';
 import { NutritionPage } from './Nutrition';
 import { UserPage } from './User';
+import { LoginPage } from './Login';
 import { PageShell } from '../components/layout/PageShell';
 import { PageBackground } from '../components/layout/PageBackground';
 import { useVisitRefresh } from '../hooks/useVisitRefresh';
+import { RequireAuth } from '../components/auth/RequireAuth';
 
 const routes = [
   { path: '/', element: <DashboardPage /> },
@@ -19,17 +21,28 @@ const routes = [
   { path: '/user', element: <UserPage /> }
 ];
 
-function App() {
+function ShellLayout() {
   useVisitRefresh();
   return (
+    <PageShell>
+      <Outlet />
+    </PageShell>
+  );
+}
+
+function App() {
+  return (
     <PageBackground className="flatten-textures">
-      <PageShell>
-        <Routes>
-          {routes.map((route) => (
-            <Route key={route.path} path={route.path} element={route.element} />
-          ))}
-        </Routes>
-      </PageShell>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<RequireAuth />}>
+          <Route element={<ShellLayout />}>
+            {routes.map((route) => (
+              <Route key={route.path} path={route.path} element={route.element} />
+            ))}
+          </Route>
+        </Route>
+      </Routes>
     </PageBackground>
   );
 }

@@ -4,14 +4,15 @@ Internal notes for keeping the manual ingest pipeline predictable and reproducib
 
 ## 1. Authentication & Tokens
 
-1. Copy `.env.example` to `.env` and set:
+1. In the web app, connect Garmin from the User page. Credentials are stored encrypted and tokens are cached under `GARMIN_TOKENS_DIR/<user_id>`.
+2. For CLI/manual ingest, you can still set:
    - `GARMIN_EMAIL`
    - `GARMIN_PASSWORD`
    - `GARMIN_TOKENS_DIR` (defaults to `~/.garminconnect`)
-2. Run `scripts/manual_ingest.py` once interactively to seed tokens. The wrapper calls `Garmin.login(...)` and persists both OAuth tokens under the configured directory.
-3. Subsequent runs re-use those tokens (no password/MFA needed). We call `Garmin.login(tokenstore=...)` so `display_name` is populated and REST endpoints that require `/.../{displayName}` URIs succeed.
+3. Run `scripts/manual_ingest.py` once interactively to seed tokens. The wrapper calls `Garmin.login(...)` and persists both OAuth tokens under the configured directory.
+4. Subsequent runs re-use those tokens (no password/MFA needed). We call `Garmin.login(tokenstore=...)` so `display_name` is populated and REST endpoints that require `/.../{displayName}` URIs succeed.
 
-If tokens ever expire, delete the directory and repeat the manual login.
+If tokens ever expire, the user can re-auth in the UI or delete the directory and repeat the manual login.
 
 ## 2. Data we fetch (per metric)
 

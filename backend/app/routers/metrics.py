@@ -5,8 +5,10 @@ from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import get_current_user
 from app.db.repositories.metrics_repository import MetricsRepository
 from app.db.session import get_session
+from app.db.models.entities import User
 from app.schemas.metrics import (
     DailyMetricResponse,
     MetricsOverviewResponse,
@@ -20,10 +22,14 @@ router = APIRouter(prefix="/metrics", tags=["metrics"])
 
 
 @router.get("/overview", response_model=MetricsOverviewResponse)
-async def metrics_overview(range_days: int = 14, session: AsyncSession = Depends(get_session)) -> MetricsOverviewResponse:
+async def metrics_overview(
+    range_days: int = 14,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> MetricsOverviewResponse:
     cutoff = eastern_today() - timedelta(days=range_days - 1)
     repo = MetricsRepository(session)
-    records = await repo.list_metrics_since(cutoff)
+    records = await repo.list_metrics_since(current_user.id, cutoff)
     hrv_series = [
         TimeSeriesPoint(timestamp=eastern_midnight(r.metric_date), value=r.hrv_avg_ms)
         for r in records
@@ -63,10 +69,14 @@ async def metrics_overview(range_days: int = 14, session: AsyncSession = Depends
 
 
 @router.get("/daily", response_model=list[DailyMetricResponse])
-async def daily_metrics(range_days: int = 30, session: AsyncSession = Depends(get_session)) -> list[DailyMetricResponse]:
+async def daily_metrics(
+    range_days: int = 30,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[DailyMetricResponse]:
     cutoff = eastern_today() - timedelta(days=range_days - 1)
     repo = MetricsRepository(session)
-    records = await repo.list_metrics_since(cutoff)
+    records = await repo.list_metrics_since(current_user.id, cutoff)
     return [
         DailyMetricResponse(
             date=r.metric_date,
@@ -108,15 +118,18 @@ def _metric_delta(
 
 
 @router.get("/readiness-summary", response_model=ReadinessMetricsSummary)
-async def readiness_summary(session: AsyncSession = Depends(get_session)) -> ReadinessMetricsSummary:
+async def readiness_summary(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> ReadinessMetricsSummary:
     repo = MetricsRepository(session)
-    latest = await repo.get_latest_metric()
+    latest = await repo.get_latest_metric(current_user.id)
     if not latest:
         raise HTTPException(status_code=404, detail="No metrics available.")
 
     window_days = 14
     start = latest.metric_date - timedelta(days=window_days - 1)
-    history = await repo.list_metrics_between(start, latest.metric_date)
+    history = await repo.list_metrics_between(current_user.id, start, latest.metric_date)
 
     hrv_avg = _average([m.hrv_avg_ms for m in history])
     rhr_avg = _average([m.rhr_bpm for m in history])

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { sendClaudeTodoMessage, type ClaudeTodoResponse } from '../services/api';
+import { getChatErrorMessage } from '../utils/chatErrors';
 
 export type TodoChatEntry = {
   id: string;
@@ -26,6 +27,10 @@ export function useTodoClaudeChat() {
         { id: crypto.randomUUID(), role: 'assistant', text: response.reply, meta: response.created_items }
       ]);
       queryClient.invalidateQueries({ queryKey: TODOS_QUERY_KEY });
+    },
+    onError: (error) => {
+      const message = getChatErrorMessage(error, 'I ran into an issue—try again in a moment.');
+      setHistory((prev) => [...prev, { id: crypto.randomUUID(), role: 'assistant', text: message }]);
     }
   });
 
@@ -44,4 +49,3 @@ export function useTodoClaudeChat() {
     error: mutation.error
   };
 }
-

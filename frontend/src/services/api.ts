@@ -4,8 +4,69 @@ const baseURL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 export const api = axios.create({
   baseURL,
-  timeout: 180000
+  timeout: 180000,
+  withCredentials: true
 });
+
+// Auth
+
+export type AuthUser = {
+  id: number;
+  email: string;
+  display_name: string | null;
+  role: 'admin' | 'user';
+  email_verified: boolean;
+};
+
+export type AuthMeResponse = {
+  user: AuthUser;
+};
+
+export const fetchAuthMe = async (): Promise<AuthMeResponse> => {
+  const { data } = await api.get('/api/auth/me');
+  return data;
+};
+
+export const logout = async (): Promise<void> => {
+  await api.post('/api/auth/logout');
+};
+
+// Garmin
+
+export type GarminStatusResponse = {
+  connected: boolean;
+  garmin_email: string | null;
+  connected_at: string | null;
+  last_sync_at: string | null;
+  requires_reauth: boolean;
+};
+
+export type GarminConnectPayload = {
+  garmin_email: string;
+  garmin_password: string;
+};
+
+export type GarminConnectResponse = {
+  connected: boolean;
+  garmin_email: string;
+  connected_at: string;
+  requires_reauth: boolean;
+};
+
+export const fetchGarminStatus = async (): Promise<GarminStatusResponse> => {
+  const { data } = await api.get('/api/garmin/status');
+  return data;
+};
+
+export const connectGarmin = async (payload: GarminConnectPayload): Promise<GarminConnectResponse> => {
+  const { data } = await api.post('/api/garmin/connect', payload);
+  return data;
+};
+
+export const reauthGarmin = async (): Promise<GarminStatusResponse> => {
+  const { data } = await api.post('/api/garmin/reauth');
+  return data;
+};
 
 export type InsightResponse = {
   metric_date: string;

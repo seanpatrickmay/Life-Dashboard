@@ -34,7 +34,7 @@ class MonetContextBuilder:
         start_date = today - timedelta(days=window_days - 1)
         local_time = _compute_local_time(time_zone)
 
-        metrics = await self.metrics_repo.list_metrics_since(start_date)
+        metrics = await self.metrics_repo.list_metrics_since(user_id, start_date)
         metrics_payload = [self._serialize_metric(metric) for metric in metrics]
         latest_metric = metrics_payload[-1] if metrics_payload else None
 

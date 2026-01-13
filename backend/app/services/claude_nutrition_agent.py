@@ -274,7 +274,7 @@ class ClaudeNutritionAgent:
                 source="claude",
             )
             logger.info(f"[claude] created recipe name={name} id={recipe.id}")
-            recipe = await self.recipes_repo.get_recipe(recipe.id, load_components=True)
+            recipe = await self.recipes_repo.get_recipe(recipe.id, owner_user_id, load_components=True)
         return recipe
 
     async def _log_recipe(
@@ -285,7 +285,7 @@ class ClaudeNutritionAgent:
         user_id: int,
         request_id: str,
     ) -> None:
-        recipe = await self.recipes_repo.get_recipe(recipe_id, load_components=True)
+        recipe = await self.recipes_repo.get_recipe(recipe_id, user_id, load_components=True)
         if recipe is None:
             raise ValueError("Recipe not found")
 

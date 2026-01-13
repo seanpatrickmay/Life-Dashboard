@@ -6,7 +6,10 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import get_current_user
+from app.core.quotas import enforce_chat_quota
 from app.db.models.nutrition import NUTRIENT_DEFINITIONS, NutritionIngredientStatus
+from app.db.models.entities import User
 from app.db.repositories.nutrition_goals_repository import NutritionGoalsRepository
 from app.db.session import get_session
 from app.schemas.nutrition import (
@@ -37,11 +40,11 @@ from app.utils.timezone import eastern_today
 
 
 router = APIRouter(prefix="/nutrition", tags=["nutrition"])
-DEFAULT_USER_ID = 1
 
 
 @router.get("/nutrients", response_model=list[NutrientDefinitionResponse])
 async def list_nutrients(
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[NutrientDefinitionResponse]:
     repo = NutritionGoalsRepository(session)
@@ -63,16 +66,19 @@ async def list_nutrients(
 
 @router.get("/ingredients", response_model=list[NutritionIngredientResponse])
 async def get_ingredients(
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[NutritionIngredientResponse]:
     service = NutritionIngredientsService(session)
-    ingredients = await service.list_ingredients(DEFAULT_USER_ID)
+    ingredients = await service.list_ingredients(current_user.id)
     return [NutritionIngredientResponse(**item) for item in ingredients]
 
 
 @router.post("/ingredients", response_model=NutritionIngredientResponse)
 async def create_ingredient(
-    payload: NutritionIngredientPayload, session: AsyncSession = Depends(get_session)
+    payload: NutritionIngredientPayload,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> NutritionIngredientResponse:
     service = NutritionIngredientsService(session)
     status = (
@@ -86,7 +92,7 @@ async def create_ingredient(
         source=payload.source,
         status=status,
         nutrient_values=payload.nutrients,
-        owner_user_id=DEFAULT_USER_ID,
+        owner_user_id=current_user.id,
     )
     return NutritionIngredientResponse(**record)
 
@@ -95,6 +101,7 @@ async def create_ingredient(
 async def update_ingredient(
     ingredient_id: int,
     payload: NutritionIngredientPayload,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> NutritionIngredientResponse:
     service = NutritionIngredientsService(session)
@@ -104,6 +111,7 @@ async def update_ingredient(
     try:
         record = await service.update_ingredient(
             ingredient_id,
+            owner_user_id=current_user.id,
             name=payload.name,
             default_unit=payload.default_unit,
             status=status,
@@ -115,24 +123,35 @@ async def update_ingredient(
 
 
 @router.get("/recipes", response_model=list[NutritionRecipeResponse])
-async def list_recipes(session: AsyncSession = Depends(get_session)) -> list[NutritionRecipeResponse]:
+async def list_recipes(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[NutritionRecipeResponse]:
     service = NutritionRecipesService(session)
-    recipes = await service.list_recipes(DEFAULT_USER_ID)
+    recipes = await service.list_recipes(current_user.id)
     return [NutritionRecipeResponse(**recipe) for recipe in recipes]
 
 
 @router.get("/recipes/{recipe_id}", response_model=NutritionRecipeResponse)
-async def get_recipe(recipe_id: int, session: AsyncSession = Depends(get_session)) -> NutritionRecipeResponse:
+async def get_recipe(
+    recipe_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> NutritionRecipeResponse:
     service = NutritionRecipesService(session)
     try:
-        recipe = await service.get_recipe(recipe_id)
+        recipe = await service.get_recipe(recipe_id, owner_user_id=current_user.id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return NutritionRecipeResponse(**recipe)
 
 
 @router.post("/recipes", response_model=NutritionRecipeResponse)
-async def create_recipe(payload: NutritionRecipePayload, session: AsyncSession = Depends(get_session)) -> NutritionRecipeResponse:
+async def create_recipe(
+    payload: NutritionRecipePayload,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> NutritionRecipeResponse:
     service = NutritionRecipesService(session)
     status = (
         NutritionIngredientStatus(payload.status.lower())
@@ -144,7 +163,7 @@ async def create_recipe(payload: NutritionRecipePayload, session: AsyncSession =
         default_unit=payload.default_unit,
         servings=payload.servings,
         status=status,
-        owner_user_id=DEFAULT_USER_ID,
+        owner_user_id=current_user.id,
         components=[
             {
                 "ingredient_id": comp.ingredient_id,
@@ -163,6 +182,7 @@ async def create_recipe(payload: NutritionRecipePayload, session: AsyncSession =
 async def update_recipe(
     recipe_id: int,
     payload: NutritionRecipePayload,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> NutritionRecipeResponse:
     service = NutritionRecipesService(session)
@@ -172,6 +192,7 @@ async def update_recipe(
     try:
         record = await service.update_recipe(
             recipe_id,
+            owner_user_id=current_user.id,
             name=payload.name,
             default_unit=payload.default_unit,
             servings=payload.servings,
@@ -194,7 +215,9 @@ async def update_recipe(
 
 @router.post("/recipes/suggest", response_model=RecipeSuggestion)
 async def suggest_recipe(
-    description: str, session: AsyncSession = Depends(get_session)
+    description: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> RecipeSuggestion:
     agent = ClaudeNutritionAgent(session)
     suggestion = await agent._suggest_recipe(description)  # re-use agent logic
@@ -205,10 +228,11 @@ async def suggest_recipe(
 
 @router.get("/goals", response_model=list[NutrientGoalItem])
 async def list_goals(
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[NutrientGoalItem]:
     service = NutritionGoalsService(session)
-    goals = await service.list_goals(DEFAULT_USER_ID)
+    goals = await service.list_goals(current_user.id)
     return [NutrientGoalItem(**goal) for goal in goals]
 
 
@@ -216,11 +240,12 @@ async def list_goals(
 async def update_goal(
     slug: str,
     body: NutrientGoalUpdateRequest,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> NutrientGoalItem:
     service = NutritionGoalsService(session)
     try:
-        result = await service.update_goal(DEFAULT_USER_ID, slug, body.goal)
+        result = await service.update_goal(current_user.id, slug, body.goal)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     await session.commit()
@@ -229,20 +254,23 @@ async def update_goal(
 
 @router.get("/scaling-rules", response_model=ScalingRuleListResponse)
 async def get_scaling_rules(
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> ScalingRuleListResponse:
     service = NutritionGoalsService(session)
-    data = await service.list_scaling_rules(DEFAULT_USER_ID)
+    data = await service.list_scaling_rules(current_user.id)
     return ScalingRuleListResponse(**data)
 
 
 @router.post("/scaling-rules/{slug}", status_code=204)
 async def enable_scaling_rule(
-    slug: str, session: AsyncSession = Depends(get_session)
+    slug: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> Response:
     service = NutritionGoalsService(session)
     try:
-        await service.set_rule_state(DEFAULT_USER_ID, slug, True)
+        await service.set_rule_state(current_user.id, slug, True)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     await session.commit()
@@ -251,11 +279,13 @@ async def enable_scaling_rule(
 
 @router.delete("/scaling-rules/{slug}", status_code=204)
 async def disable_scaling_rule(
-    slug: str, session: AsyncSession = Depends(get_session)
+    slug: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> Response:
     service = NutritionGoalsService(session)
     try:
-        await service.set_rule_state(DEFAULT_USER_ID, slug, False)
+        await service.set_rule_state(current_user.id, slug, False)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     await session.commit()
@@ -264,13 +294,15 @@ async def disable_scaling_rule(
 
 @router.post("/intake/manual", response_model=dict)
 async def log_manual_intake(
-    request: LogIntakeRequest, session: AsyncSession = Depends(get_session)
+    request: LogIntakeRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> dict:
     service = NutritionIntakeService(session)
     day = request.day or eastern_today()
     try:
         record = await service.log_manual_intake(
-            user_id=DEFAULT_USER_ID,
+            user_id=current_user.id,
             ingredient_id=request.ingredient_id,
             recipe_id=request.recipe_id,
             quantity=request.quantity,
@@ -283,11 +315,13 @@ async def log_manual_intake(
 
 @router.get("/intake/menu", response_model=NutritionIntakeMenuResponse)
 async def list_today_menu(
-    day: date | None = None, session: AsyncSession = Depends(get_session)
+    day: date | None = None,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> NutritionIntakeMenuResponse:
     service = NutritionIntakeService(session)
     day_value = day or eastern_today()
-    items = await service.list_day_menu(DEFAULT_USER_ID, day_value)
+    items = await service.list_day_menu(current_user.id, day_value)
     return NutritionIntakeMenuResponse(day=day_value, entries=items)
 
 
@@ -295,12 +329,14 @@ async def list_today_menu(
 async def update_intake_entry(
     intake_id: int,
     payload: NutritionIntakeUpdateRequest,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> NutritionIntakeEntry:
     service = NutritionIntakeService(session)
     try:
         updated = await service.update_intake(
             intake_id,
+            owner_user_id=current_user.id,
             quantity=payload.quantity,
             unit=payload.unit,
         )
@@ -311,38 +347,46 @@ async def update_intake_entry(
 
 @router.delete("/intake/{intake_id}", status_code=204, response_class=Response)
 async def delete_intake_entry(
-    intake_id: int, session: AsyncSession = Depends(get_session)
+    intake_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> Response:
     service = NutritionIntakeService(session)
-    await service.delete_intake(intake_id)
+    await service.delete_intake(intake_id, owner_user_id=current_user.id)
     return Response(status_code=204)
 
 
 @router.get("/intake/daily", response_model=NutritionDailySummaryResponse)
 async def daily_summary(
-    day: date | None = None, session: AsyncSession = Depends(get_session)
+    day: date | None = None,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> NutritionDailySummaryResponse:
     service = NutritionIntakeService(session)
-    summary = await service.daily_summary(DEFAULT_USER_ID, day or eastern_today())
+    summary = await service.daily_summary(current_user.id, day or eastern_today())
     return NutritionDailySummaryResponse(**summary)
 
 
 @router.get("/intake/history", response_model=NutritionHistoryResponse)
 async def history(
-    days: int = 14, session: AsyncSession = Depends(get_session)
+    days: int = 14,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> NutritionHistoryResponse:
     service = NutritionIntakeService(session)
-    data = await service.rolling_average(DEFAULT_USER_ID, days)
+    data = await service.rolling_average(current_user.id, days)
     return NutritionHistoryResponse(**data)
 
 
 @router.post("/claude/message", response_model=ClaudeMessageResponse)
 async def claude_message(
-    payload: ClaudeMessageRequest, session: AsyncSession = Depends(get_session)
+    payload: ClaudeMessageRequest,
+    current_user: User = Depends(enforce_chat_quota),
+    session: AsyncSession = Depends(get_session),
 ) -> ClaudeMessageResponse:
     agent = ClaudeNutritionAgent(session)
     session_id = payload.session_id or str(uuid4())
-    response = await agent.respond(DEFAULT_USER_ID, payload.message, session_id)
+    response = await agent.respond(current_user.id, payload.message, session_id)
     return ClaudeMessageResponse(
         session_id=session_id,
         reply=response.reply,

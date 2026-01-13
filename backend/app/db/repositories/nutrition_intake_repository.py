@@ -82,11 +82,11 @@ class NutritionIntakeRepository:
         return list(result.scalars().unique().all())
 
     async def update_quantity(
-        self, intake_id: int, *, quantity: float, unit: str
+        self, intake_id: int, *, owner_user_id: int, quantity: float, unit: str
     ) -> NutritionIntake | None:
         stmt = (
             select(NutritionIntake)
-            .where(NutritionIntake.id == intake_id)
+            .where(NutritionIntake.id == intake_id, NutritionIntake.user_id == owner_user_id)
             .options(selectinload(NutritionIntake.ingredient))
         )
         result = await self.session.execute(stmt)
@@ -97,6 +97,9 @@ class NutritionIntakeRepository:
         intake.unit = unit
         return intake
 
-    async def delete_intake(self, intake_id: int) -> None:
-        stmt = delete(NutritionIntake).where(NutritionIntake.id == intake_id)
+    async def delete_intake(self, intake_id: int, *, owner_user_id: int) -> None:
+        stmt = delete(NutritionIntake).where(
+            NutritionIntake.id == intake_id,
+            NutritionIntake.user_id == owner_user_id,
+        )
         await self.session.execute(stmt)

@@ -29,10 +29,15 @@ class NutritionIngredientsRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_ingredient(self, ingredient_id: int) -> NutritionIngredient | None:
+    async def get_ingredient(
+        self, ingredient_id: int, owner_user_id: int
+    ) -> NutritionIngredient | None:
         stmt = (
             select(NutritionIngredient)
-            .where(NutritionIngredient.id == ingredient_id)
+            .where(
+                NutritionIngredient.id == ingredient_id,
+                NutritionIngredient.owner_user_id == owner_user_id,
+            )
             .options(selectinload(NutritionIngredient.profile))
         )
         result = await self.session.execute(stmt)
@@ -135,8 +140,16 @@ class NutritionRecipesRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_recipe(self, recipe_id: int, load_components: bool = True) -> NutritionRecipe | None:
-        stmt = select(NutritionRecipe).where(NutritionRecipe.id == recipe_id)
+    async def get_recipe(
+        self, recipe_id: int, owner_user_id: int, load_components: bool = True
+    ) -> NutritionRecipe | None:
+        stmt = (
+            select(NutritionRecipe)
+            .where(
+                NutritionRecipe.id == recipe_id,
+                NutritionRecipe.owner_user_id == owner_user_id,
+            )
+        )
         if load_components:
             stmt = stmt.options(
                 selectinload(NutritionRecipe.components)

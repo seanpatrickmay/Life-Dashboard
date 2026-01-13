@@ -3,7 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import get_current_user
 from app.db.session import get_session
+from app.db.models.entities import User
 from app.schemas.nutrition import ScalingRuleListResponse
 from app.schemas.user_profile import (
     UserProfileResponse,
@@ -13,48 +15,53 @@ from app.services.nutrition_goals_service import NutritionGoalsService
 from app.services.user_profile_service import UserProfileService
 
 router = APIRouter(prefix="/user", tags=["user"])
-DEFAULT_USER_ID = 1
 
 
 @router.get("/profile", response_model=UserProfileResponse)
 async def get_profile(
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> UserProfileResponse:
     service = UserProfileService(session)
-    payload = await service.fetch_profile_payload(DEFAULT_USER_ID)
+    payload = await service.fetch_profile_payload(current_user.id)
     return UserProfileResponse(**payload)
 
 
 @router.put("/profile", response_model=UserProfileResponse)
 async def update_profile(
-    body: UserProfileUpdateRequest, session: AsyncSession = Depends(get_session)
+    body: UserProfileUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> UserProfileResponse:
     service = UserProfileService(session)
     try:
-        await service.update_profile(DEFAULT_USER_ID, body.model_dump(exclude_unset=True))
+        await service.update_profile(current_user.id, body.model_dump(exclude_unset=True))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await session.commit()
-    payload = await service.fetch_profile_payload(DEFAULT_USER_ID)
+    payload = await service.fetch_profile_payload(current_user.id)
     return UserProfileResponse(**payload)
 
 
 @router.get("/scaling-rules", response_model=ScalingRuleListResponse)
 async def get_scaling_rules(
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> ScalingRuleListResponse:
     service = NutritionGoalsService(session)
-    data = await service.list_scaling_rules(DEFAULT_USER_ID)
+    data = await service.list_scaling_rules(current_user.id)
     return ScalingRuleListResponse(**data)
 
 
 @router.post("/scaling-rules/{slug}", status_code=204)
 async def enable_scaling_rule(
-    slug: str, session: AsyncSession = Depends(get_session)
+    slug: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> Response:
     service = NutritionGoalsService(session)
     try:
-        await service.set_rule_state(DEFAULT_USER_ID, slug, True)
+        await service.set_rule_state(current_user.id, slug, True)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     await session.commit()
@@ -63,11 +70,13 @@ async def enable_scaling_rule(
 
 @router.delete("/scaling-rules/{slug}", status_code=204)
 async def disable_scaling_rule(
-    slug: str, session: AsyncSession = Depends(get_session)
+    slug: str,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> Response:
     service = NutritionGoalsService(session)
     try:
-        await service.set_rule_state(DEFAULT_USER_ID, slug, False)
+        await service.set_rule_state(current_user.id, slug, False)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     await session.commit()

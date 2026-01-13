@@ -4,7 +4,18 @@ from __future__ import annotations
 from datetime import date, datetime
 from enum import Enum
 
-from sqlalchemy import BigInteger, Date, DateTime, Float, ForeignKey, JSON, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 
@@ -17,9 +28,26 @@ class PreferredUnits(str, Enum):
     IMPERIAL = "imperial"
 
 
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    USER = "user"
+
+
 class User(Base):
-    email: Mapped[str]
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     display_name: Mapped[str | None]
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    role: Mapped[UserRole] = mapped_column(
+        SAEnum(
+            UserRole,
+            name="user_role",
+            values_callable=lambda cls: [m.value for m in cls],
+            create_type=False,
+        ),
+        default=UserRole.USER,
+        nullable=False,
+    )
 
     activities: Mapped[list["Activity"]] = relationship(back_populates="user")
     todos: Mapped[list["TodoItem"]] = relationship(back_populates="user")
@@ -29,11 +57,18 @@ class User(Base):
     measurements: Mapped[list["UserMeasurement"]] = relationship(back_populates="user")
     daily_energy: Mapped[list["DailyEnergy"]] = relationship(back_populates="user")
     scaling_rules: Mapped[list["UserNutrientScalingRule"]] = relationship(back_populates="user")
+    sessions: Mapped[list["UserSession"]] = relationship(back_populates="user")
+    garmin_connection: Mapped["GarminConnection | None"] = relationship(
+        back_populates="user", uselist=False
+    )
+    chat_usages: Mapped[list["ChatUsage"]] = relationship(back_populates="user")
 
 
 class Activity(Base):
+    __table_args__ = (UniqueConstraint("user_id", "garmin_id", name="uq_activity_user_garmin"),)
+
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
-    garmin_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    garmin_id: Mapped[int] = mapped_column(BigInteger, index=True)
     name: Mapped[str | None]
     type: Mapped[str | None]
     start_time: Mapped[datetime]
@@ -152,3 +187,45 @@ class DailyEnergy(Base):
     ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=eastern_now)
 
     user: Mapped[User] = relationship(back_populates="daily_energy")
+
+
+class UserSession(Base):
+    __tablename__ = "user_session"
+    __table_args__ = (UniqueConstraint("token_hash", name="uq_user_session_token"),)
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    remember_me: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    user: Mapped[User] = relationship(back_populates="sessions")
+
+
+class GarminConnection(Base):
+    __tablename__ = "garmin_connection"
+    __table_args__ = (UniqueConstraint("user_id", name="uq_garmin_connection_user"),)
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    garmin_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    encrypted_password: Mapped[str] = mapped_column(Text, nullable=False)
+    encryption_key_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token_store_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=eastern_now)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requires_reauth: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    user: Mapped[User] = relationship(back_populates="garmin_connection")
+
+
+class ChatUsage(Base):
+    __tablename__ = "chat_usage"
+    __table_args__ = (UniqueConstraint("user_id", "usage_date", name="uq_chat_usage_user_date"),)
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    usage_date: Mapped[date] = mapped_column(Date, nullable=False)
+    count: Mapped[int] = mapped_column(default=0)
+    last_request_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(back_populates="chat_usages")

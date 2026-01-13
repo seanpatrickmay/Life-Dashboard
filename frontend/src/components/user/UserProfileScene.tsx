@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import styled from 'styled-components';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   type NutritionGoal,
   type ScalingRule,
   type UserProfileData,
+  connectGarmin,
   enableScalingRule,
-  disableScalingRule
+  disableScalingRule,
+  fetchGarminStatus,
+  logout,
+  reauthGarmin
 } from '../../services/api';
 import { useUserProfile } from '../../hooks/useUserProfile';
 
@@ -151,6 +155,32 @@ const ScalingRuleRow = styled.button<{ $active: boolean }>`
   }
 `;
 
+const StatusPill = styled.span<{ $active?: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 1px solid ${({ $active }) => ($active ? 'rgba(120,255,200,0.6)' : 'rgba(255,255,255,0.2)')};
+  background: ${({ $active }) => ($active ? 'rgba(64,180,120,0.25)' : 'rgba(16,20,28,0.4)')};
+  color: ${({ theme }) => theme.colors.textPrimary};
+`;
+
+const HelperText = styled.p`
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.75;
+  line-height: 1.4;
+`;
+
+const InlineForm = styled.div`
+  display: grid;
+  gap: 12px;
+`;
+
 export function UserProfileScene() {
   const { profileQuery, updateProfile } = useUserProfile();
   const queryClient = useQueryClient();
@@ -161,6 +191,13 @@ export function UserProfileScene() {
     current_weight_kg: undefined,
     preferred_units: 'metric',
     daily_energy_delta_kcal: 0
+  });
+  const [garminEmail, setGarminEmail] = useState('');
+  const [garminPassword, setGarminPassword] = useState('');
+
+  const garminStatusQuery = useQuery({
+    queryKey: ['garmin', 'status'],
+    queryFn: fetchGarminStatus
   });
 
   const scalingMutation = useMutation({
@@ -173,6 +210,25 @@ export function UserProfileScene() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user', 'profile'] });
+    }
+  });
+
+  const connectMutation = useMutation({
+    mutationFn: () =>
+      connectGarmin({
+        garmin_email: garminEmail,
+        garmin_password: garminPassword
+      }),
+    onSuccess: () => {
+      setGarminPassword('');
+      queryClient.invalidateQueries({ queryKey: ['garmin', 'status'] });
+    }
+  });
+
+  const reauthMutation = useMutation({
+    mutationFn: () => reauthGarmin(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['garmin', 'status'] });
     }
   });
 
@@ -215,6 +271,17 @@ export function UserProfileScene() {
 
   const toggleRule = (rule: ScalingRule) => {
     scalingMutation.mutate({ slug: rule.slug, nextState: !rule.active });
+  };
+
+  const handleGarminConnect = async () => {
+    if (!garminEmail || !garminPassword) return;
+    await connectMutation.mutateAsync();
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    queryClient.clear();
+    window.location.href = '/login';
   };
 
   if (profileQuery.isLoading) {
@@ -374,6 +441,70 @@ export function UserProfileScene() {
           <p style={{ fontSize: '0.75rem', opacity: 0.7 }}>
             Manual tweaks appear as a rule tied to your account and update whenever you edit a goal.
           </p>
+        </LilyPadCard>
+      </SectionGrid>
+
+      <SectionGrid>
+        <LilyPadCard>
+          <SectionTitle>Garmin Connection</SectionTitle>
+          <StatusPill $active={garminStatusQuery.data?.connected && !garminStatusQuery.data?.requires_reauth}>
+            {garminStatusQuery.data?.connected
+              ? garminStatusQuery.data?.requires_reauth
+                ? 'Re-auth needed'
+                : 'Connected'
+              : 'Not connected'}
+          </StatusPill>
+          {garminStatusQuery.data?.garmin_email && (
+            <HelperText>Connected as {garminStatusQuery.data.garmin_email}</HelperText>
+          )}
+          <InlineForm>
+            <Field>
+              Garmin Email
+              <input
+                type="email"
+                value={garminEmail}
+                onChange={(event) => setGarminEmail(event.target.value)}
+                placeholder="you@example.com"
+              />
+            </Field>
+            <Field>
+              Garmin Password
+              <input
+                type="password"
+                value={garminPassword}
+                onChange={(event) => setGarminPassword(event.target.value)}
+                placeholder="••••••••"
+              />
+            </Field>
+          </InlineForm>
+          <PadButtonRow>
+            <PadButton
+              $variant="primary"
+              onClick={handleGarminConnect}
+              disabled={!garminEmail || !garminPassword || connectMutation.isPending}
+            >
+              {garminStatusQuery.data?.connected ? 'Update Credentials' : 'Connect Garmin'}
+            </PadButton>
+            {garminStatusQuery.data?.connected && (
+              <PadButton
+                onClick={() => reauthMutation.mutate()}
+                disabled={reauthMutation.isPending}
+              >
+                Re-auth
+              </PadButton>
+            )}
+          </PadButtonRow>
+          <HelperText>
+            Credentials are stored encrypted and only used to refresh Garmin tokens.
+          </HelperText>
+        </LilyPadCard>
+
+        <LilyPadCard>
+          <SectionTitle>Account</SectionTitle>
+          <HelperText>Sign out to switch accounts or disconnect this device.</HelperText>
+          <PadButtonRow>
+            <PadButton onClick={handleLogout}>Sign Out</PadButton>
+          </PadButtonRow>
         </LilyPadCard>
       </SectionGrid>
     </SceneLayout>

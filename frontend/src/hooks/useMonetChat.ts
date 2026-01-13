@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { sendMonetMessage, type MonetChatResponse, type TodoItem } from '../services/api';
+import { getChatErrorMessage } from '../utils/chatErrors';
 
 export type MonetChatEntry = {
   id: string;
@@ -121,13 +122,14 @@ export function useMonetChat() {
         queryClient.invalidateQueries({ queryKey: NUTRITION_HISTORY_KEY });
       }
     },
-    onError: (_error, variables) => {
+    onError: (error, variables) => {
+      const message = getChatErrorMessage(error, 'I hit a snag—try that once more for me.');
       setHistory((prev) =>
         prev.map((entry) =>
           entry.id === variables.pendingId
             ? {
                 ...entry,
-                text: 'I hit a snag—try that once more for me.',
+                text: message,
                 status: 'error'
               }
             : entry

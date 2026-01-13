@@ -5,8 +5,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import get_current_user
+from app.core.quotas import enforce_chat_quota
 from app.db.repositories.todo_repository import TodoRepository
 from app.db.session import get_session
+from app.db.models.entities import User
 from app.schemas.todos import (
   ClaudeTodoMessageRequest,
   ClaudeTodoMessageResponse,
@@ -19,13 +22,14 @@ from app.services.claude_todo_agent import ClaudeTodoAgent
 
 router = APIRouter(prefix="/todos", tags=["todos"])
 
-DEFAULT_USER_ID = 1
-
 
 @router.get("", response_model=list[TodoItemResponse])
-async def list_todos(session: AsyncSession = Depends(get_session)) -> list[TodoItemResponse]:
+async def list_todos(
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+) -> list[TodoItemResponse]:
   repo = TodoRepository(session)
-  items = await repo.list_for_user(DEFAULT_USER_ID)
+  items = await repo.list_for_user(current_user.id)
   now_utc = datetime.now(timezone.utc)
   return [
     TodoItemResponse(
@@ -45,10 +49,12 @@ async def list_todos(session: AsyncSession = Depends(get_session)) -> list[TodoI
 
 @router.post("", response_model=TodoItemResponse)
 async def create_todo(
-  payload: TodoCreateRequest, session: AsyncSession = Depends(get_session)
+  payload: TodoCreateRequest,
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
 ) -> TodoItemResponse:
   repo = TodoRepository(session)
-  todo = await repo.create_one(DEFAULT_USER_ID, payload.text, payload.deadline_utc)
+  todo = await repo.create_one(current_user.id, payload.text, payload.deadline_utc)
   await session.flush()
   await session.commit()
   now_utc = datetime.now(timezone.utc)
@@ -69,10 +75,11 @@ async def create_todo(
 async def update_todo(
   todo_id: int,
   payload: TodoUpdateRequest,
+  current_user: User = Depends(get_current_user),
   session: AsyncSession = Depends(get_session),
 ) -> TodoItemResponse:
   repo = TodoRepository(session)
-  todo = await repo.get_for_user(DEFAULT_USER_ID, todo_id)
+  todo = await repo.get_for_user(current_user.id, todo_id)
   if todo is None:
     raise HTTPException(status_code=404, detail="Todo not found")
 
@@ -105,9 +112,13 @@ async def update_todo(
 
 
 @router.delete("/{todo_id}", status_code=204, response_class=Response)
-async def delete_todo(todo_id: int, session: AsyncSession = Depends(get_session)) -> Response:
+async def delete_todo(
+  todo_id: int,
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+) -> Response:
   repo = TodoRepository(session)
-  todo = await repo.get_for_user(DEFAULT_USER_ID, todo_id)
+  todo = await repo.get_for_user(current_user.id, todo_id)
   if todo is None:
     raise HTTPException(status_code=404, detail="Todo not found")
   await session.delete(todo)
@@ -117,10 +128,12 @@ async def delete_todo(todo_id: int, session: AsyncSession = Depends(get_session)
 
 @router.post("/claude/message", response_model=ClaudeTodoMessageResponse)
 async def claude_todo_message(
-  payload: ClaudeTodoMessageRequest, session: AsyncSession = Depends(get_session)
+  payload: ClaudeTodoMessageRequest,
+  current_user: User = Depends(enforce_chat_quota),
+  session: AsyncSession = Depends(get_session),
 ) -> ClaudeTodoMessageResponse:
   agent = ClaudeTodoAgent(session)
-  response = await agent.respond(DEFAULT_USER_ID, payload.message, payload.session_id)
+  response = await agent.respond(current_user.id, payload.message, payload.session_id)
   now_utc = datetime.now(timezone.utc)
   created_items = [
     TodoItemResponse(

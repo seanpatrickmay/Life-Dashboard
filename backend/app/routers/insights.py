@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import get_current_user
 from app.db.session import get_session
+from app.db.models.entities import User
 from app.schemas.insights import InsightResponse
 from app.services.insight_service import InsightService
 from app.utils.timezone import EASTERN_TZ, eastern_now
@@ -15,9 +17,12 @@ router = APIRouter(prefix="/insights", tags=["insights"])
 
 
 @router.get("/daily", response_model=InsightResponse)
-async def latest_insight(session: AsyncSession = Depends(get_session)) -> InsightResponse:
+async def latest_insight(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> InsightResponse:
     service = InsightService(session)
-    metric = await service.fetch_latest_completed_metric()
+    metric = await service.fetch_latest_completed_metric(current_user.id)
     if metric is None:
         now = eastern_now()
         return InsightResponse(

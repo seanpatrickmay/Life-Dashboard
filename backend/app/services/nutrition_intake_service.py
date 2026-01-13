@@ -45,7 +45,7 @@ class NutritionIntakeService:
             raise ValueError("Provide exactly one of ingredient_id or recipe_id")
 
         if ingredient_id:
-            ingredient = await self.ingredients_repo.get_ingredient(ingredient_id)
+            ingredient = await self.ingredients_repo.get_ingredient(ingredient_id, user_id)
             if ingredient is None:
                 raise ValueError("Ingredient not found")
             intake = await self.repo.log_intake(
@@ -66,7 +66,7 @@ class NutritionIntakeService:
                 "unit": unit,
             }
 
-        recipe = await self.recipes_repo.get_recipe(recipe_id, load_components=True)
+        recipe = await self.recipes_repo.get_recipe(recipe_id, user_id, load_components=True)
         if recipe is None:
             raise ValueError("Recipe not found")
         created = await self._expand_and_log_recipe(
@@ -84,17 +84,22 @@ class NutritionIntakeService:
         return [self._serialize_entry(intake) for intake in intakes]
 
     async def update_intake(
-        self, intake_id: int, *, quantity: float, unit: str
+        self, intake_id: int, *, owner_user_id: int, quantity: float, unit: str
     ) -> dict[str, Any]:
-        intake = await self.repo.update_quantity(intake_id, quantity=quantity, unit=unit)
+        intake = await self.repo.update_quantity(
+            intake_id,
+            owner_user_id=owner_user_id,
+            quantity=quantity,
+            unit=unit,
+        )
         if intake is None:
             raise ValueError("Intake not found")
         await self.session.flush()
         await self.session.commit()
         return self._serialize_entry(intake)
 
-    async def delete_intake(self, intake_id: int) -> None:
-        await self.repo.delete_intake(intake_id)
+    async def delete_intake(self, intake_id: int, *, owner_user_id: int) -> None:
+        await self.repo.delete_intake(intake_id, owner_user_id=owner_user_id)
         await self.session.commit()
 
     async def daily_summary(self, user_id: int, day: date) -> dict[str, Any]:

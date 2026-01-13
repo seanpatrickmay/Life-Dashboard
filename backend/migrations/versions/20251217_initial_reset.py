@@ -14,7 +14,7 @@ from app.db.models import Base
 from app.db.models import entities as _entities  # noqa: F401
 from app.db.models import nutrition as _nutrition  # noqa: F401
 from app.db.models import todo as _todo  # noqa: F401
-from app.db.models.entities import PreferredUnits
+from app.db.models.entities import PreferredUnits, UserRole
 from app.db.models.nutrition import ScalingRuleType
 
 
@@ -86,17 +86,23 @@ def upgrade() -> None:
     _ensure_pg_enum(
         bind, "nutrient_scaling_rule_type", [rule.value for rule in ScalingRuleType]
     )
+    _ensure_pg_enum(bind, "user_role", [role.value for role in UserRole])
     Base.metadata.create_all(bind)
     _ensure_all_tables(bind)
-    bind.execute(
-        text(
-            """
-        INSERT INTO "user" (id, email, display_name, created_at, updated_at)
-        SELECT 1, 'seed@example.com', 'Seed User', now(), now()
-        WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE id = 1)
-        """
-        )
-    )
+    inspector = sa.inspect(bind)
+    if "user" in inspector.get_table_names():
+        user_columns = {col["name"] for col in inspector.get_columns("user")}
+        required = {"role", "email_verified"}
+        if required.issubset(user_columns):
+            bind.execute(
+                text(
+                    """
+                INSERT INTO "user" (id, email, display_name, role, email_verified, created_at, updated_at)
+                SELECT 1, 'seed@example.com', 'Seed User', 'user', false, now(), now()
+                WHERE NOT EXISTS (SELECT 1 FROM "user" WHERE id = 1)
+                """
+                )
+            )
 
 
 def downgrade() -> None:
@@ -104,3 +110,4 @@ def downgrade() -> None:
     Base.metadata.drop_all(bind)
     _drop_pg_enum(bind, "nutrient_scaling_rule_type")
     _drop_pg_enum(bind, "preferred_units")
+    _drop_pg_enum(bind, "user_role")

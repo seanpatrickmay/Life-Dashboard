@@ -27,8 +27,8 @@ class NutritionRecipesService:
         recipes = await self.recipes_repo.list_recipes(owner_user_id)
         return [self._serialize_recipe(recipe, include_components=False) for recipe in recipes]
 
-    async def get_recipe(self, recipe_id: int) -> dict[str, Any]:
-        recipe = await self.recipes_repo.get_recipe(recipe_id, load_components=True)
+    async def get_recipe(self, recipe_id: int, *, owner_user_id: int) -> dict[str, Any]:
+        recipe = await self.recipes_repo.get_recipe(recipe_id, owner_user_id, load_components=True)
         if recipe is None:
             raise ValueError("Recipe not found")
         return self._serialize_recipe(recipe, include_components=True)
@@ -44,7 +44,7 @@ class NutritionRecipesService:
         components: list[dict[str, Any]],
         source: str | None = None,
     ) -> dict[str, Any]:
-        await self._assert_no_cycles(None, components)
+        await self._assert_no_cycles(None, components, owner_user_id=owner_user_id)
         recipe = await self.recipes_repo.create_recipe(
             name=name,
             default_unit=default_unit,
@@ -55,24 +55,25 @@ class NutritionRecipesService:
             source=source,
         )
         await self.session.commit()
-        recipe = await self.recipes_repo.get_recipe(recipe.id, load_components=True)  # reload with components
+        recipe = await self.recipes_repo.get_recipe(recipe.id, owner_user_id, load_components=True)
         return self._serialize_recipe(recipe, include_components=True)  # type: ignore[arg-type]
 
     async def update_recipe(
         self,
         recipe_id: int,
         *,
+        owner_user_id: int,
         name: str | None = None,
         default_unit: str | None = None,
         servings: float | None = None,
         status: NutritionIngredientStatus | None = None,
         components: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        recipe = await self.recipes_repo.get_recipe(recipe_id, load_components=True)
+        recipe = await self.recipes_repo.get_recipe(recipe_id, owner_user_id, load_components=True)
         if recipe is None:
             raise ValueError("Recipe not found")
         if components is not None:
-            await self._assert_no_cycles(recipe_id, components)
+            await self._assert_no_cycles(recipe_id, components, owner_user_id=owner_user_id)
         await self.recipes_repo.update_recipe(
             recipe,
             name=name,
@@ -82,13 +83,15 @@ class NutritionRecipesService:
             components=components,
         )
         await self.session.commit()
-        recipe = await self.recipes_repo.get_recipe(recipe_id, load_components=True)
+        recipe = await self.recipes_repo.get_recipe(recipe_id, owner_user_id, load_components=True)
         return self._serialize_recipe(recipe, include_components=True)  # type: ignore[arg-type]
 
-    async def _assert_no_cycles(self, recipe_id: int | None, components: list[dict[str, Any]]) -> None:
+    async def _assert_no_cycles(
+        self, recipe_id: int | None, components: list[dict[str, Any]], *, owner_user_id: int
+    ) -> None:
         """Prevent recipe -> child_recipe cycles by checking new edges."""
         edges: dict[int, set[int]] = {}
-        recipes = await self.recipes_repo.list_recipes(owner_user_id=None, load_components=True)
+        recipes = await self.recipes_repo.list_recipes(owner_user_id=owner_user_id, load_components=True)
         for recipe in recipes:
             if recipe.id not in edges:
                 edges[recipe.id] = set()

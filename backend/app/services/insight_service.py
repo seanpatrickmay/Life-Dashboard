@@ -153,10 +153,13 @@ class InsightService:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def fetch_latest_completed_metric(self) -> DailyMetric | None:
+    async def fetch_latest_completed_metric(self, user_id: int) -> DailyMetric | None:
         stmt = (
             select(DailyMetric)
-            .where(DailyMetric.readiness_narrative.is_not(None))
+            .where(
+                DailyMetric.user_id == user_id,
+                DailyMetric.readiness_narrative.is_not(None),
+            )
             .order_by(DailyMetric.metric_date.desc())
             .limit(1)
         )

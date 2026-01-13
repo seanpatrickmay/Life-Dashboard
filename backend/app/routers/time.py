@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.auth import get_current_user
+from app.db.models.entities import User
 from app.utils.timezone import EASTERN_TZ
 
 TIME_ZONE = EASTERN_TZ
@@ -25,7 +27,7 @@ def compute_moment(hour: int) -> Moment:
 
 
 @router.get("/", summary="Current time in US Eastern")
-async def get_current_time() -> dict[str, object]:
+async def get_current_time(current_user: User = Depends(get_current_user)) -> dict[str, object]:
     now = datetime.now(TIME_ZONE)
     hour_decimal = now.hour + now.minute / 60 + now.second / 3600
     return {

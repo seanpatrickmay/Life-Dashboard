@@ -20,7 +20,7 @@ class ActivityRepository:
         count = 0
         for payload in activities:
             garmin_id = int(payload["activityId"])
-            stmt = select(Activity).where(Activity.garmin_id == garmin_id)
+            stmt = select(Activity).where(Activity.user_id == user_id, Activity.garmin_id == garmin_id)
             result = await self.session.execute(stmt)
             existing = result.scalar_one_or_none()
             start_time = self._parse_start(payload)

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { sendClaudeMessage, type ClaudeChatResponse } from '../services/api';
+import { getChatErrorMessage } from '../utils/chatErrors';
 
 export type ChatEntry = {
   id: string;
@@ -22,6 +23,10 @@ export function useClaudeChat() {
         { id: crypto.randomUUID(), role: 'user', text: variables },
         { id: crypto.randomUUID(), role: 'assistant', text: response.reply, meta: response.logged_entries }
       ]);
+    },
+    onError: (error, variables) => {
+      const message = getChatErrorMessage(error, 'I ran into an issue—try again in a moment.');
+      setHistory((prev) => [...prev, { id: crypto.randomUUID(), role: 'assistant', text: message }]);
     }
   });
 

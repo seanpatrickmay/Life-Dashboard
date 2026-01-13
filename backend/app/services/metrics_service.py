@@ -11,7 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.garmin_client import GarminClient
-from app.db.models.entities import DailyEnergy
+from app.services.garmin_connection_service import GarminConnectionService
+from app.db.models.entities import DailyEnergy, GarminConnection
 from app.db.repositories.activity_repository import ActivityRepository
 from app.db.repositories.metrics_repository import MetricsRepository
 from app.utils.timezone import EASTERN_TZ, ensure_eastern, eastern_now, eastern_today
@@ -20,7 +21,7 @@ from app.utils.timezone import EASTERN_TZ, ensure_eastern, eastern_now, eastern_
 class MetricsService:
     def __init__(self, session: AsyncSession, garmin: GarminClient | None = None) -> None:
         self.session = session
-        self.garmin = garmin or GarminClient()
+        self.garmin = garmin
         self.activity_repo = ActivityRepository(session)
         self.metrics_repo = MetricsRepository(session)
 
@@ -39,24 +40,38 @@ class MetricsService:
         now = eastern_now()
         start_date = eastern_today() - timedelta(days=lookback_days - 1)
         cutoff_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=EASTERN_TZ)
-        if activities is None:
-            logger.info("Fetching Garmin activities since {}", cutoff_dt)
-            activities = self.garmin.fetch_recent_activities(cutoff_dt)
-        activities = self._filter_recent_activities(activities, cutoff_dt)
+        garmin = self.garmin or await GarminConnectionService(self.session).get_client(user_id)
+        try:
+            if activities is None:
+                logger.info("Fetching Garmin activities since {}", cutoff_dt)
+                activities = garmin.fetch_recent_activities(cutoff_dt)
+            activities = self._filter_recent_activities(activities, cutoff_dt)
 
-        ingested = await self.activity_repo.upsert_many(user_id, activities)
+            ingested = await self.activity_repo.upsert_many(user_id, activities)
 
-        end_date = eastern_today()
-        if hrv_payload is None:
-            hrv_payload = self.garmin.fetch_daily_hrv(start_date, end_date)
-        if rhr_payload is None:
-            rhr_payload = self.garmin.fetch_daily_rhr(start_date, end_date)
-        if sleep_payload is None:
-            sleep_payload = self.garmin.fetch_sleep(start_date, end_date)
-        if load_payload is None:
-            load_payload = self.garmin.fetch_training_loads(start_date, end_date)
-        if energy_payload is None:
-            energy_payload = self.garmin.fetch_daily_energy(start_date, end_date)
+            end_date = eastern_today()
+            if hrv_payload is None:
+                hrv_payload = garmin.fetch_daily_hrv(start_date, end_date)
+            if rhr_payload is None:
+                rhr_payload = garmin.fetch_daily_rhr(start_date, end_date)
+            if sleep_payload is None:
+                sleep_payload = garmin.fetch_sleep(start_date, end_date)
+            if load_payload is None:
+                load_payload = garmin.fetch_training_loads(start_date, end_date)
+            if energy_payload is None:
+                energy_payload = garmin.fetch_daily_energy(start_date, end_date)
+        except Exception:  # noqa: BLE001
+            if self.garmin is None:
+                await GarminConnectionService(self.session).mark_reauth_required(user_id, True)
+            raise
+
+        if self.garmin is None:
+            stmt = select(GarminConnection).where(GarminConnection.user_id == user_id)
+            result = await self.session.execute(stmt)
+            connection = result.scalar_one_or_none()
+            if connection:
+                connection.last_sync_at = eastern_now()
+                connection.requires_reauth = False
 
         hrv_map = self._map_hrv(hrv_payload)
         rhr_map = self._map_rhr(rhr_payload)

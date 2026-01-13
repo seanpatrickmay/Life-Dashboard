@@ -12,33 +12,46 @@ from app.core.config import settings
 
 
 class GarminClient:
-    def __init__(self) -> None:
-        candidate_paths = [
-            settings.garmin_tokens_dir_host,
-            settings.garmin_tokens_dir,
-        ]
-        for path_str in candidate_paths:
-            if not path_str:
-                continue
-            path = Path(path_str).expanduser()
-            try:
-                path.mkdir(parents=True, exist_ok=True)
-            except OSError as exc:
-                logger.debug("Unable to use Garmin tokens directory {}: {}", path, exc)
-                continue
+    def __init__(
+        self,
+        *,
+        tokens_dir: Path | str | None = None,
+        email: str | None = None,
+        password: str | None = None,
+    ) -> None:
+        self.email = email or settings.garmin_email
+        self.password = password or settings.garmin_password
+        if tokens_dir:
+            path = Path(tokens_dir).expanduser()
+            path.mkdir(parents=True, exist_ok=True)
             self.tokens_dir = path
-            break
         else:
-            raise RuntimeError("Unable to determine a writable Garmin tokens directory.")
+            candidate_paths = [
+                settings.garmin_tokens_dir_host,
+                settings.garmin_tokens_dir,
+            ]
+            for path_str in candidate_paths:
+                if not path_str:
+                    continue
+                path = Path(path_str).expanduser()
+                try:
+                    path.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:
+                    logger.debug("Unable to use Garmin tokens directory {}: {}", path, exc)
+                    continue
+                self.tokens_dir = path
+                break
+            else:
+                raise RuntimeError("Unable to determine a writable Garmin tokens directory.")
         self.client = Garmin()
 
     def authenticate(self) -> None:
         if self._load_tokens():
             return
-        if not settings.garmin_email or not settings.garmin_password:
+        if not self.email or not self.password:
             raise RuntimeError("Garmin email/password missing and tokens unavailable")
         logger.info("Logging into Garmin with provided credentials")
-        self.client = Garmin(email=settings.garmin_email, password=settings.garmin_password, return_on_mfa=True)
+        self.client = Garmin(email=self.email, password=self.password, return_on_mfa=True)
         res1, _ = self.client.login()
         if res1 == "needs_mfa":
             raise RuntimeError("Garmin MFA required. Please seed tokens manually.")

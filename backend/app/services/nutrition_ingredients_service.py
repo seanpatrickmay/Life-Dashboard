@@ -41,12 +41,13 @@ class NutritionIngredientsService:
         self,
         ingredient_id: int,
         *,
+        owner_user_id: int,
         name: str | None = None,
         default_unit: str | None = None,
         status: NutritionIngredientStatus | None = None,
         nutrient_values: dict[str, float | None] | None = None,
     ) -> dict[str, Any]:
-        ingredient = await self.repo.get_ingredient(ingredient_id)
+        ingredient = await self.repo.get_ingredient(ingredient_id, owner_user_id)
         if ingredient is None:
             raise ValueError("Ingredient not found")
         await self.repo.update_ingredient(
