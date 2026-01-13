@@ -11,7 +11,6 @@ from typing import Any
 from uuid import uuid4
 
 from dateutil import parser as date_parser
-from google import genai
 from google.genai.types import GenerateContentConfig
 
 try:  # google-genai < 0.5.0 ships HttpOptions elsewhere / omits it entirely
@@ -22,6 +21,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.clients.genai_client import build_genai_client
 from app.db.repositories.todo_repository import TodoRepository
 from app.prompts import CLAUDE_TODO_EXTRACTION_PROMPT
 from app.utils.timezone import eastern_now, ensure_eastern
@@ -44,8 +44,7 @@ class ClaudeTodoAgent:
     self.session = session
     self.repo = TodoRepository(session)
     http_options = HttpOptions(api_version="v1") if HttpOptions else None
-    client_kwargs = {"http_options": http_options} if http_options else {}
-    self.client = genai.Client(**client_kwargs)
+    self.client = build_genai_client(http_options=http_options)
     self.model_name = settings.vertex_model_name or "gemini-2.5-flash"
 
   async def respond(

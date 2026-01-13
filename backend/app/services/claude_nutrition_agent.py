@@ -11,7 +11,6 @@ from datetime import date
 from typing import Any
 from uuid import uuid4
 
-from google import genai
 from google.genai.types import GenerateContentConfig, GoogleSearch, Tool
 
 try:  # google-genai < 0.5.0 ships HttpOptions elsewhere / omits it entirely
@@ -22,6 +21,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.clients.genai_client import build_genai_client
 from app.prompts import (
     CLAUDE_FOOD_EXTRACTION_PROMPT,
     CLAUDE_NUTRIENT_PROFILE_PROMPT,
@@ -60,8 +60,7 @@ class ClaudeNutritionAgent:
         self.intake_repo = NutritionIntakeRepository(session)
         self.unit_normalizer = NutritionUnitNormalizer()
         http_options = HttpOptions(api_version="v1") if HttpOptions else None
-        client_kwargs = {"http_options": http_options} if http_options else {}
-        self.client = genai.Client(**client_kwargs)
+        self.client = build_genai_client(http_options=http_options)
         self.model_name = settings.vertex_model_name or "gemini-2.5-flash"
         self.search_tool = Tool(google_search=GoogleSearch())
 

@@ -6,11 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 import asyncio
 
-from google import genai
 from google.genai.types import GenerateContentConfig
 from loguru import logger
 
 from app.core.config import settings
+from app.clients.genai_client import build_genai_client
 from app.prompts import CLAUDE_RECIPE_SUGGESTION_PROMPT
 
 
@@ -22,7 +22,7 @@ class RecipeSuggestionResult:
 
 class ClaudeRecipeAgent:
     def __init__(self) -> None:
-        self.client = genai.Client()
+        self.client = build_genai_client()
         self.model_name = settings.vertex_model_name or "gemini-2.5-flash"
 
     async def suggest(self, description: str) -> RecipeSuggestionResult | None:

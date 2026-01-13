@@ -9,7 +9,6 @@ from textwrap import dedent
 from typing import Any, Protocol
 from uuid import uuid4
 
-from google import genai
 from google.genai.types import GenerateContentConfig
 
 try:
@@ -21,6 +20,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.clients.genai_client import build_genai_client
 from app.schemas.todos import TodoItemResponse
 from app.services.claude_nutrition_agent import ClaudeNutritionAgent
 from app.services.claude_todo_agent import ClaudeTodoAgent
@@ -165,8 +165,7 @@ class MonetAssistantAgent:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         http_options = HttpOptions(api_version="v1") if HttpOptions else None
-        kwargs = {"http_options": http_options} if http_options else {}
-        self.client = genai.Client(**kwargs)
+        self.client = build_genai_client(http_options=http_options)
         self.model_name = settings.vertex_model_name or "gemini-2.5-flash"
         self.context_builder = MonetContextBuilder(session)
         self.tool_registry = MonetToolRegistry(session)
