@@ -139,30 +139,6 @@ const ContentLayer = styled.div`
   width: 100%;
   height: 100%;
 
-  &::before {
-    content: '';
-    position: absolute;
-    left: clamp(6%, 9vw, 16%);
-    right: clamp(6%, 9vw, 16%);
-    top: clamp(80px, 10vh, 160px);
-    height: clamp(220px, 32vh, 420px);
-    background: radial-gradient(
-        ellipse at 50% 0%,
-        rgba(214, 230, 255, 0.32) 0%,
-        rgba(214, 230, 255, 0.14) 48%,
-        transparent 72%
-      ),
-      linear-gradient(
-        180deg,
-        rgba(120, 150, 210, 0.24) 0%,
-        transparent 70%
-      );
-    opacity: ${({ theme }) => (theme.mode === 'dark' ? 0.75 : 0.55)};
-    filter: blur(2px);
-    pointer-events: none;
-    z-index: 0;
-  }
-
   & > * {
     position: relative;
     z-index: 1;

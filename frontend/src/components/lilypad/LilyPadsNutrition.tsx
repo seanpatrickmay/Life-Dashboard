@@ -13,6 +13,33 @@ const Stage = styled.div`
   color: #ffffff;
 `;
 
+const NutritionSection = styled.section`
+  margin-top: clamp(40px, 6vh, 80px);
+  display: grid;
+  width: min(1200px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: clamp(28px, 5vw, 96px);
+  align-items: start;
+  @media (max-width: 1100px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const PadSlot = styled.div<{ $maxWidth: string; $align: 'start' | 'end' }>`
+  position: relative;
+  min-height: clamp(340px, 48vh, 520px);
+  width: 100%;
+  max-width: ${({ $maxWidth }) => $maxWidth};
+  justify-self: ${({ $align }) => $align};
+  --bridge-band-bottom: 0px;
+  @media (max-width: 1100px) {
+    justify-self: center;
+    max-width: min(720px, 100%);
+  }
+`;
+
 const SelectorStack = styled.div`
   display: flex;
   flex-direction: column;
@@ -85,31 +112,35 @@ const StatList = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
-  text-align: left;
+  text-align: center;
+  align-items: center;
 `;
 
 const StatItem = styled.div`
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: baseline;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
   padding-bottom: 6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  width: 100%;
   &:last-of-type {
     border-bottom: none;
   }
 `;
 
 const StatLabel = styled.span`
-  font-size: 0.75rem;
+  font-size: 0.9rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   opacity: 0.85;
+  text-shadow: 0 2px 10px rgba(4, 12, 24, 0.55);
 `;
 
 const StatValue = styled.span`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 1.1rem;
+  font-size: 1.45rem;
+  text-shadow: 0 2px 12px rgba(4, 12, 24, 0.65);
 `;
 
 const formatPercent = (value?: number | null) => {
@@ -179,101 +210,115 @@ export function LilyPadsNutrition() {
 
   return (
     <Stage>
-      <LilyPadCard
-        id="nutrition-group-selector"
-        side="left"
-        topOffsetPx={80}
-        scale={1.24}
-        title={selectedGroup ? GROUP_LABELS[selectedGroup] : 'Nutrient Groups'}
-        contentScale={0.87}
-        interactive
-        edgeOffsetPx={-20}
-        sideShiftPercent={30}
-        contentWidthPct={0.72}
-      >
-        <SelectorStack>
-          {showGroupPicker ? (
-            <>
-              <SectionTitle>Select a nutrient group</SectionTitle>
-              <GroupButtonGrid>
-                {GROUP_ORDER.map((group) => (
-                  <SelectorButton key={group} type="button" onClick={() => {
-                    setSelectedGroup(group);
-                    setSelectedNutrient(null);
-                  }}>
-                    {GROUP_LABELS[group]}
-                  </SelectorButton>
-                ))}
-              </GroupButtonGrid>
-            </>
-          ) : (
-            <>
-              <SectionHeader>
-                <SectionTitle>{GROUP_LABELS[selectedGroup]}</SectionTitle>
-                <BackButton type="button" onClick={() => {
-                  setSelectedGroup(null);
-                  setSelectedNutrient(null);
-                }}>
-                  Back
-                </BackButton>
-              </SectionHeader>
-              {goalsQuery.isLoading || summaryLoading ? (
-                <HelperText>Loading nutrients…</HelperText>
-              ) : nutrientOptions.length === 0 ? (
-                <HelperText>No nutrients available for this group yet.</HelperText>
+      <NutritionSection>
+        <PadSlot $align="start" $maxWidth="860px">
+          <LilyPadCard
+            id="nutrition-group-selector"
+            side="center"
+            topOffsetPx={238}
+            scale={1.26}
+            padWidth="100%"
+            title={selectedGroup ? GROUP_LABELS[selectedGroup] : 'Nutrient Groups'}
+            contentScale={0.87}
+            interactive
+            edgeOffsetPx={0}
+            sideShiftPercent={0}
+            contentWidthPct={0.78}
+          >
+            <SelectorStack>
+              {showGroupPicker ? (
+                <>
+                  <SectionTitle>Select a nutrient group</SectionTitle>
+                  <GroupButtonGrid>
+                    {GROUP_ORDER.map((group) => (
+                      <SelectorButton
+                        key={group}
+                        type="button"
+                        onClick={() => {
+                          setSelectedGroup(group);
+                          setSelectedNutrient(null);
+                        }}
+                      >
+                        {GROUP_LABELS[group]}
+                      </SelectorButton>
+                    ))}
+                  </GroupButtonGrid>
+                </>
               ) : (
-                <NutrientGrid>
-                  {nutrientOptions.map((option) => (
-                    <SelectorButton
-                      key={option.slug}
+                <>
+                  <SectionHeader>
+                    <SectionTitle>{GROUP_LABELS[selectedGroup]}</SectionTitle>
+                    <BackButton
                       type="button"
-                      $active={option.slug === selectedNutrient}
-                      onClick={() => setSelectedNutrient(option.slug)}
+                      onClick={() => {
+                        setSelectedGroup(null);
+                        setSelectedNutrient(null);
+                      }}
                     >
-                      {option.label}
-                    </SelectorButton>
-                  ))}
-                </NutrientGrid>
+                      Back
+                    </BackButton>
+                  </SectionHeader>
+                  {goalsQuery.isLoading || summaryLoading ? (
+                    <HelperText>Loading nutrients…</HelperText>
+                  ) : nutrientOptions.length === 0 ? (
+                    <HelperText>No nutrients available for this group yet.</HelperText>
+                  ) : (
+                    <NutrientGrid>
+                      {nutrientOptions.map((option) => (
+                        <SelectorButton
+                          key={option.slug}
+                          type="button"
+                          $active={option.slug === selectedNutrient}
+                          onClick={() => setSelectedNutrient(option.slug)}
+                        >
+                          {option.label}
+                        </SelectorButton>
+                      ))}
+                    </NutrientGrid>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </SelectorStack>
-      </LilyPadCard>
-
-      <LilyPadCard
-        id="nutrition-nutrient-detail"
-        side="right"
-        topOffsetPx={180}
-        scale={1.08}
-        title={detailTitle}
-        contentScale={0.87}
-        interactive
-        edgeOffsetPx={-20}
-        sideShiftPercent={30}
-        contentWidthPct={0.72}
-      >
-        {selectedNutrient ? (
-          <StatList>
-            <StatItem>
-              <StatLabel>Today</StatLabel>
-              <StatValue>{formatPercent(currentPercent)}</StatValue>
-            </StatItem>
-            <StatItem>
-              <StatLabel>{windowDays}-Day Avg</StatLabel>
-              <StatValue>{formatPercent(averagePercent)}</StatValue>
-            </StatItem>
-            <StatItem>
-              <StatLabel>Goal Today</StatLabel>
-              <StatValue>{formatAmount(goalAmount, goalUnit)}</StatValue>
-            </StatItem>
-            {summaryLoading || historyLoading ? (
-              <HelperText>Refreshing nutrient insights…</HelperText>
-            ) : null}
-          </StatList>
-        ) : (
-          <HelperText>Select a nutrient to see daily progress and averages.</HelperText>
-        )}
-      </LilyPadCard>
+            </SelectorStack>
+          </LilyPadCard>
+        </PadSlot>
+        <PadSlot $align="end" $maxWidth="560px">
+          <LilyPadCard
+            id="nutrition-nutrient-detail"
+            side="center"
+            topOffsetPx={326}
+            scale={1.12}
+            padWidth="100%"
+            title={detailTitle}
+            contentScale={0.87}
+            interactive
+            edgeOffsetPx={0}
+            sideShiftPercent={0}
+            contentWidthPct={0.72}
+          >
+            {selectedNutrient ? (
+              <StatList>
+                <StatItem>
+                  <StatLabel>Today</StatLabel>
+                  <StatValue>{formatPercent(currentPercent)}</StatValue>
+                </StatItem>
+                <StatItem>
+                  <StatLabel>{windowDays}-Day Avg</StatLabel>
+                  <StatValue>{formatPercent(averagePercent)}</StatValue>
+                </StatItem>
+                <StatItem>
+                  <StatLabel>Goal Today</StatLabel>
+                  <StatValue>{formatAmount(goalAmount, goalUnit)}</StatValue>
+                </StatItem>
+                {summaryLoading || historyLoading ? (
+                  <HelperText>Refreshing nutrient insights…</HelperText>
+                ) : null}
+              </StatList>
+            ) : (
+              <HelperText>Select a nutrient to see daily progress and averages.</HelperText>
+            )}
+          </LilyPadCard>
+        </PadSlot>
+      </NutritionSection>
     </Stage>
   );
 }

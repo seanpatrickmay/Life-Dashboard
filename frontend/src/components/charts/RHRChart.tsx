@@ -16,7 +16,14 @@ export function RHRChart({ variant = 'card' }: ChartProps) {
   const { data } = useMetricsOverview(14);
   const appTheme = useTheme() as MonetTheme;
   const chart = getChartTheme(appTheme.mode ?? 'light');
-  const axisLabelColor = appTheme.mode === 'dark' ? 'rgba(246, 240, 232, 0.92)' : 'rgba(30, 31, 46, 0.92)';
+  const axisLabelColor =
+    variant === 'bare'
+      ? 'rgba(245, 248, 255, 0.92)'
+      : appTheme.mode === 'dark'
+        ? 'rgba(246, 240, 232, 0.92)'
+        : 'rgba(30, 31, 46, 0.92)';
+  const tooltipLabelColor =
+    variant === 'bare' ? 'rgba(245, 248, 255, 0.95)' : appTheme.colors.textPrimary;
   const points = useMemo(() => data?.rhr_trend_bpm ?? [], [data]);
   const labelTicks = useMemo(() => {
     if (!points?.length) return [];
@@ -52,7 +59,7 @@ export function RHRChart({ variant = 'card' }: ChartProps) {
     if (!active || !payload?.length) return null;
     const value = payload[0].value;
     if (typeof value !== 'number') return null;
-    return <TooltipLabel>{`${value.toFixed(0)} bpm`}</TooltipLabel>;
+    return <TooltipLabel $color={tooltipLabelColor}>{`${value.toFixed(0)} bpm`}</TooltipLabel>;
   };
   const content = (
     <>
@@ -112,10 +119,10 @@ const ChartTitle = styled.h3`
   margin-bottom: 8px;
 `;
 
-const TooltipLabel = styled.div`
+const TooltipLabel = styled.div<{ $color: string }>`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 0.85rem;
   letter-spacing: 0.12em;
-  color: ${({ theme }) => theme.colors.textPrimary};
+  color: ${({ $color }) => $color};
   text-shadow: ${({ theme }) => theme.tokens?.halo?.body ?? '0 0 2px rgba(0,0,0,0.6)'};
 `;

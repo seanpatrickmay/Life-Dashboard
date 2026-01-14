@@ -25,7 +25,7 @@ const Subtitle = styled.span`
 `;
 
 const MetricSection = styled.section`
-  margin-top: clamp(80px, 12vh, 140px);
+  margin-top: clamp(120px, 18vh, 200px);
   display: grid;
   width: min(1200px, 100%);
   margin-left: auto;
@@ -35,7 +35,7 @@ const MetricSection = styled.section`
   align-items: start;
   @media (max-width: 1100px) {
     grid-template-columns: 1fr;
-    margin-top: clamp(60px, 10vh, 120px);
+    margin-top: clamp(90px, 14vh, 160px);
   }
 `;
 
@@ -222,7 +222,7 @@ export function LilyPadsInsights() {
           <LilyPadCard
             id={`insights-${activeMetric.key}`}
             side="center"
-            topOffsetPx={0}
+            topOffsetPx={40}
             scale={1.28}
             padWidth="clamp(420px, 56vw, 760px)"
             centerShiftPx={-40}

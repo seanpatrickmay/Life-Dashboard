@@ -25,6 +25,18 @@ class MetricsService:
         self.activity_repo = ActivityRepository(session)
         self.metrics_repo = MetricsRepository(session)
 
+    @staticmethod
+    def _empty_summary() -> dict[str, Any]:
+        return {
+            "activities": 0,
+            "hrv_entries": 0,
+            "rhr_entries": 0,
+            "sleep_entries": 0,
+            "training_load_entries": 0,
+            "energy_entries": 0,
+            "metric_changes": {},
+        }
+
     async def ingest(
         self,
         user_id: int,
@@ -40,7 +52,14 @@ class MetricsService:
         now = eastern_now()
         start_date = eastern_today() - timedelta(days=lookback_days - 1)
         cutoff_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=EASTERN_TZ)
-        garmin = self.garmin or await GarminConnectionService(self.session).get_client(user_id)
+        if self.garmin is not None:
+            garmin = self.garmin
+        else:
+            connection = await GarminConnectionService(self.session).get_connection(user_id)
+            if not connection:
+                logger.info("Skipping Garmin ingest for user {} (no connection).", user_id)
+                return self._empty_summary()
+            garmin = await GarminConnectionService(self.session).get_client(user_id)
         try:
             if activities is None:
                 logger.info("Fetching Garmin activities since {}", cutoff_dt)

@@ -13,7 +13,7 @@ class UserProfileData(BaseModel):
     height_cm: float | None = Field(default=None, ge=0)
     current_weight_kg: float | None = Field(default=None, ge=0)
     preferred_units: str = "metric"
-    daily_energy_delta_kcal: int = 0
+    daily_energy_delta_kcal: int | None = 0
 
 
 class MeasurementItem(BaseModel):
