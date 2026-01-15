@@ -6,7 +6,7 @@ const NUTRIENT_QUERY_KEY = ['nutrition', 'nutrients'];
 export function useNutritionNutrients() {
   return useQuery<NutritionNutrient[]>({
     queryKey: NUTRIENT_QUERY_KEY,
-    queryFn: fetchNutritionNutrients
+    queryFn: fetchNutritionNutrients,
+    staleTime: 1000 * 60 * 60 * 24
   });
 }
-

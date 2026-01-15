@@ -7,7 +7,15 @@ import App from './pages/App';
 import { GlobalStyle } from './theme/GlobalStyle';
 import { ThemeProvider as AppThemeProvider } from './theme/ThemeProvider';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false
+    }
+  }
+});
 
 
 function Root() {

@@ -107,5 +107,5 @@ _visit_refresh_controller: VisitRefreshController | None = None
 def get_visit_refresh_controller() -> VisitRefreshController:
     global _visit_refresh_controller  # noqa: PLW0603
     if _visit_refresh_controller is None:
-        _visit_refresh_controller = VisitRefreshController(cooldown=timedelta(minutes=5))
+        _visit_refresh_controller = VisitRefreshController(cooldown=timedelta(minutes=30))
     return _visit_refresh_controller

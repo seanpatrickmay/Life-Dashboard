@@ -12,12 +12,17 @@ const RECIPES_LIST_KEY = ['nutrition', 'recipes'];
 export function useNutritionRecipes(recipeId?: number) {
   const queryClient = useQueryClient();
 
-  const recipesQuery = useQuery({ queryKey: RECIPES_LIST_KEY, queryFn: fetchNutritionRecipes });
+  const recipesQuery = useQuery({
+    queryKey: RECIPES_LIST_KEY,
+    queryFn: fetchNutritionRecipes,
+    staleTime: 1000 * 60 * 60
+  });
 
   const recipeQuery = useQuery({
     queryKey: [...RECIPES_LIST_KEY, recipeId],
     queryFn: () => fetchNutritionRecipe(recipeId as number),
-    enabled: typeof recipeId === 'number'
+    enabled: typeof recipeId === 'number',
+    staleTime: 1000 * 60 * 60
   });
 
   const createMutation = useMutation({

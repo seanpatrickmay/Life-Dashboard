@@ -12,7 +12,8 @@ export function useUserProfile() {
   const queryClient = useQueryClient();
   const profileQuery = useQuery<UserProfileResponse>({
     queryKey: PROFILE_QUERY_KEY,
-    queryFn: fetchUserProfile
+    queryFn: fetchUserProfile,
+    staleTime: 1000 * 60 * 60
   });
 
   const updateMutation = useMutation({

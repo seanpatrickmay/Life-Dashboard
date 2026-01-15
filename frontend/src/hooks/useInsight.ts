@@ -6,6 +6,6 @@ export function useInsight() {
   return useQuery({
     queryKey: ['insight'],
     queryFn: fetchInsight,
-    refetchInterval: 1000 * 60 * 15
+    staleTime: 1000 * 60 * 60
   });
 }

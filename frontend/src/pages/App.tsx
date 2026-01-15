@@ -9,6 +9,7 @@ import { LoginPage } from './Login';
 import { PageShell } from '../components/layout/PageShell';
 import { PageBackground } from '../components/layout/PageBackground';
 import { useVisitRefresh } from '../hooks/useVisitRefresh';
+import { useLocalMidnightInvalidation } from '../hooks/useLocalMidnightInvalidation';
 import { RequireAuth } from '../components/auth/RequireAuth';
 
 const routes = [
@@ -21,6 +22,7 @@ const routes = [
 
 function ShellLayout() {
   useVisitRefresh();
+  useLocalMidnightInvalidation();
   return (
     <PageShell>
       <Outlet />

@@ -3,9 +3,10 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { triggerVisitRefresh, type RefreshStatusResponse } from '../services/api';
 
-const MIN_POLL_DELAY_MS = 5_000;
-const IN_PROGRESS_POLL_MS = 10_000;
-const ERROR_POLL_MS = 60_000;
+const MIN_POLL_DELAY_MS = 1000 * 60 * 30;
+const IN_PROGRESS_POLL_MS = 1000 * 30;
+const ERROR_POLL_MS = 1000 * 60 * 60;
+const HIDDEN_POLL_MS = 1000 * 60 * 60 * 2;
 
 export function useVisitRefresh() {
   const queryClient = useQueryClient();
@@ -14,6 +15,7 @@ export function useVisitRefresh() {
 
   useEffect(() => {
     let cancelled = false;
+    const isVisible = () => document.visibilityState !== 'hidden';
 
     const clearTimer = () => {
       if (timerRef.current !== null) {
@@ -30,10 +32,16 @@ export function useVisitRefresh() {
           delay = IN_PROGRESS_POLL_MS;
         } else if (status.next_allowed_at) {
           const msUntil = new Date(status.next_allowed_at).getTime() - Date.now();
-          delay = Math.max(msUntil, MIN_POLL_DELAY_MS);
+          delay = Math.max(msUntil, 0);
         } else {
-          delay = Math.max(status.cooldown_seconds * 1000, MIN_POLL_DELAY_MS);
+          delay = status.cooldown_seconds * 1000;
         }
+      }
+      if (!status?.running) {
+        delay = Math.max(delay, MIN_POLL_DELAY_MS);
+      }
+      if (!isVisible()) {
+        delay = Math.max(delay, HIDDEN_POLL_MS);
       }
       clearTimer();
       timerRef.current = window.setTimeout(ping, delay);
@@ -43,7 +51,6 @@ export function useVisitRefresh() {
       void queryClient.invalidateQueries({ queryKey: ['metrics-overview'] });
       void queryClient.invalidateQueries({ queryKey: ['readiness-summary'] });
       void queryClient.invalidateQueries({ queryKey: ['insight'] });
-      void queryClient.invalidateQueries({ queryKey: ['user', 'profile'] });
       void queryClient.invalidateQueries({ queryKey: ['nutrition', 'goals'] });
       void queryClient.invalidateQueries({ queryKey: ['nutrition', 'summary'] });
       void queryClient.invalidateQueries({ queryKey: ['nutrition', 'history'] });
@@ -70,10 +77,20 @@ export function useVisitRefresh() {
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (cancelled) return;
+      if (isVisible()) {
+        clearTimer();
+        void ping();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     ping();
 
     return () => {
       cancelled = true;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearTimer();
     };
   }, [queryClient]);

@@ -7,7 +7,11 @@ const HISTORY_QUERY_KEY = ['nutrition', 'history'];
 
 export function useNutritionGoals() {
   const queryClient = useQueryClient();
-  const goalsQuery = useQuery({ queryKey: GOALS_QUERY_KEY, queryFn: fetchNutritionGoals });
+  const goalsQuery = useQuery({
+    queryKey: GOALS_QUERY_KEY,
+    queryFn: fetchNutritionGoals,
+    staleTime: 1000 * 60 * 60
+  });
 
   const updateMutation = useMutation({
     mutationFn: ({ slug, goal }: { slug: string; goal: number }) => updateNutritionGoal(slug, goal),

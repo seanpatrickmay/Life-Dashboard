@@ -15,7 +15,8 @@ export function useNutritionMenu() {
 
   const menuQuery = useQuery<NutritionMenuResponse>({
     queryKey: MENU_QUERY_KEY,
-    queryFn: fetchNutritionMenu
+    queryFn: fetchNutritionMenu,
+    staleTime: 1000 * 60 * 10
   });
 
   const invalidateIntakeQueries = () => {

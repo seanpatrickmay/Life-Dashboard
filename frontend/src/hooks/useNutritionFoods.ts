@@ -10,7 +10,11 @@ const FOODS_QUERY_KEY = ['nutrition', 'foods'];
 
 export function useNutritionFoods() {
   const queryClient = useQueryClient();
-  const foodsQuery = useQuery({ queryKey: FOODS_QUERY_KEY, queryFn: fetchNutritionIngredients });
+  const foodsQuery = useQuery({
+    queryKey: FOODS_QUERY_KEY,
+    queryFn: fetchNutritionIngredients,
+    staleTime: 1000 * 60 * 60
+  });
 
   const createMutation = useMutation({
     mutationFn: (payload: Partial<NutritionIngredient>) => createNutritionIngredient(payload),

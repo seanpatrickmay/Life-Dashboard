@@ -6,6 +6,6 @@ export function useMetricSummary() {
   return useQuery({
     queryKey: ['readiness-summary'],
     queryFn: fetchReadinessSummary,
-    refetchInterval: 1000 * 60 * 15
+    staleTime: 1000 * 60 * 60
   });
 }

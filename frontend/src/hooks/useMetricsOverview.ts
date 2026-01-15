@@ -6,6 +6,6 @@ export function useMetricsOverview(rangeDays = 14) {
   return useQuery({
     queryKey: ['metrics-overview', rangeDays],
     queryFn: () => fetchMetricsOverview(rangeDays),
-    staleTime: 1000 * 60 * 5
+    staleTime: 1000 * 60 * 30
   });
 }
