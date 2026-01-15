@@ -1,7 +1,7 @@
 """Helpers for working with US Eastern time."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 EASTERN_TZ = ZoneInfo("America/New_York")
@@ -27,6 +27,26 @@ def ensure_eastern(dt: datetime) -> datetime:
 def eastern_midnight(day: date) -> datetime:
     """Return midnight Eastern for the provided date."""
     return datetime.combine(day, datetime.min.time(), tzinfo=EASTERN_TZ)
+
+
+def resolve_time_zone(time_zone: str | None) -> ZoneInfo:
+    """Return a ZoneInfo for the provided time zone string, defaulting to UTC."""
+    tz_name = (time_zone or "UTC").strip() or "UTC"
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:  # pragma: no cover - defensive fallback
+        return timezone.utc
+
+
+def local_now(time_zone: str | None) -> datetime:
+    """Return the current time for the provided time zone."""
+    zone = resolve_time_zone(time_zone)
+    return datetime.now(zone)
+
+
+def local_today(time_zone: str | None) -> date:
+    """Return today's date for the provided time zone."""
+    return local_now(time_zone).date()
 
 
 def to_naive_eastern(dt: datetime) -> datetime:

@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { LilyPadCard } from './LilyPadCard';
 import { useNutritionDailySummary, useNutritionHistory } from '../../hooks/useNutritionIntake';
 import { useNutritionGoals } from '../../hooks/useNutritionGoals';
+import { useNutritionMenu } from '../../hooks/useNutritionMenu';
 import { GROUP_LABELS, GROUP_ORDER, type GroupKey } from '../nutrition/NutrientGroupUI';
 import type { NutritionGoal } from '../../services/api';
 
@@ -27,6 +28,15 @@ const NutritionSection = styled.section`
   }
 `;
 
+const MenuSection = styled.section`
+  margin-top: clamp(140px, 18vh, 220px);
+  display: flex;
+  justify-content: center;
+  width: min(980px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+`;
+
 const PadSlot = styled.div<{ $maxWidth: string; $align: 'start' | 'end' }>`
   position: relative;
   min-height: clamp(340px, 48vh, 520px);
@@ -38,6 +48,14 @@ const PadSlot = styled.div<{ $maxWidth: string; $align: 'start' | 'end' }>`
     justify-self: center;
     max-width: min(720px, 100%);
   }
+`;
+
+const MenuPadSlot = styled.div`
+  position: relative;
+  min-height: clamp(260px, 38vh, 420px);
+  width: 100%;
+  max-width: min(720px, 100%);
+  --bridge-band-bottom: 0px;
 `;
 
 const SelectorStack = styled.div`
@@ -108,6 +126,80 @@ const HelperText = styled.p`
   opacity: 0.78;
 `;
 
+const MenuList = styled.ul`
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: clamp(140px, 20vh, 220px);
+  overflow-y: auto;
+  text-align: left;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.45) rgba(6, 12, 22, 0.2);
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.35);
+    border-radius: 999px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(6, 12, 22, 0.2);
+    border-radius: 999px;
+  }
+`;
+
+const MenuItem = styled.li`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 14px;
+  background: rgba(7, 13, 22, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+`;
+
+const MenuText = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.82rem;
+  text-align: left;
+`;
+
+const MenuMeta = styled.span`
+  font-size: 0.72rem;
+  opacity: 0.75;
+`;
+
+const RemoveButton = styled.button`
+  border: none;
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: background 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+  }
+`;
+
 const StatList = styled.div`
   display: flex;
   flex-direction: column;
@@ -164,10 +256,12 @@ export function LilyPadsNutrition() {
   const { data: summaryData, isLoading: summaryLoading } = useNutritionDailySummary();
   const { data: historyData, isLoading: historyLoading } = useNutritionHistory();
   const { goalsQuery } = useNutritionGoals();
+  const { menuQuery, deleteEntry } = useNutritionMenu();
   const [selectedGroup, setSelectedGroup] = useState<GroupKey | null>(null);
   const [selectedNutrient, setSelectedNutrient] = useState<string | null>(null);
 
   const goals = goalsQuery.data ?? [];
+  const menuEntries = menuQuery.data?.entries ?? [];
 
   const nutrientOptions = useMemo(() => {
     if (!selectedGroup) return [];
@@ -207,6 +301,10 @@ export function LilyPadsNutrition() {
   const windowDays = historyData?.window_days ?? 14;
 
   const showGroupPicker = selectedGroup === null;
+
+  const handleRemoveEntry = (id: number) => {
+    void deleteEntry(id);
+  };
 
   return (
     <Stage>
@@ -319,6 +417,53 @@ export function LilyPadsNutrition() {
           </LilyPadCard>
         </PadSlot>
       </NutritionSection>
+      <MenuSection>
+        <MenuPadSlot>
+          <LilyPadCard
+            id="nutrition-menu"
+            side="center"
+            topOffsetPx={120}
+            scale={1.04}
+            padWidth="clamp(360px, 52vw, 720px)"
+            title="Ate Today"
+            contentScale={0.86}
+            interactive
+            edgeOffsetPx={0}
+            sideShiftPercent={0}
+            contentWidthPct={0.82}
+          >
+            {menuQuery.isLoading ? (
+              <HelperText>Loading today&apos;s log…</HelperText>
+            ) : menuQuery.isError ? (
+              <HelperText>Could not load today&apos;s log.</HelperText>
+            ) : menuEntries.length === 0 ? (
+              <HelperText>No meals logged yet.</HelperText>
+            ) : (
+              <MenuList>
+                {menuEntries.map((entry) => {
+                  const name = entry.ingredient_name ?? 'Meal logged';
+                  const amount = formatAmount(entry.quantity, entry.unit);
+                  return (
+                    <MenuItem key={entry.id}>
+                      <MenuText>
+                        <strong>{name}</strong>
+                        <MenuMeta>{amount}</MenuMeta>
+                      </MenuText>
+                      <RemoveButton
+                        type="button"
+                        aria-label={`Remove ${name}`}
+                        onClick={() => handleRemoveEntry(entry.id)}
+                      >
+                        X
+                      </RemoveButton>
+                    </MenuItem>
+                  );
+                })}
+              </MenuList>
+            )}
+          </LilyPadCard>
+        </MenuPadSlot>
+      </MenuSection>
     </Stage>
   );
 }

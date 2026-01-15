@@ -10,6 +10,7 @@ Implements data-access helpers that encapsulate SQLAlchemy queries and mutations
 | `__init__.py` | Exports repository classes. |
 | `activity_repository.py` | CRUD helpers for user activities. |
 | `metrics_repository.py` | CRUD helpers for daily metrics and insight linkage. |
+| `journal_repository.py` | Persistence helpers for journal entries and daily summaries. |
 | `nutrition_ingredients_repository.py` | Nutrition ingredient/profile + recipe persistence helpers. |
 | `nutrition_goals_repository.py` | Accessor for nutrient definitions, goal snapshots, and scaling rule assignments. |
 | `nutrition_intake_repository.py` | Logging and querying of nutrition intake entries. |

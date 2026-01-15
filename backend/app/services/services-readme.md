@@ -21,3 +21,6 @@ Hosts business-logic modules that orchestrate repositories, clients, and other i
 | `user_profile_service.py` | Manages editable user demographics, measurements, and exposes profile payloads. |
 | `claude_nutrition_agent.py` | Placeholder Claude integration for nutrition chat logging. |
 | `claude_todo_agent.py` | Claude-style agent that turns natural language into structured to-do items. |
+| `journal_compiler.py` | LLM-driven extraction, deduplication, and grouping for journal summaries. |
+| `journal_service.py` | Orchestrates journal entry capture and daily summary compilation. |
+| `todo_accomplishment_agent.py` | Rewrites completed todos into neutral past-tense accomplishments. |

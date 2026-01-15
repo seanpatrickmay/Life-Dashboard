@@ -2,6 +2,7 @@ import { Outlet, Route, Routes } from 'react-router-dom';
 
 import { DashboardPage } from './Dashboard';
 import { InsightsPage } from './Insights';
+import { JournalPage } from './Journal';
 import { NutritionPage } from './Nutrition';
 import { UserPage } from './User';
 import { LoginPage } from './Login';
@@ -13,6 +14,7 @@ import { RequireAuth } from '../components/auth/RequireAuth';
 const routes = [
   { path: '/', element: <DashboardPage /> },
   { path: '/insights', element: <InsightsPage /> },
+  { path: '/journal', element: <JournalPage /> },
   { path: '/nutrition', element: <NutritionPage /> },
   { path: '/user', element: <UserPage /> }
 ];

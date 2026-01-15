@@ -11,5 +11,6 @@ Holds reusable React UI building blocks grouped by domain (charts, insights, lay
 | `charts/` | Data visualisations (Recharts-based components). |
 | `common/` | Shared primitives such as cards and surface components. |
 | `insights/` | Insight-specific UI elements. |
+| `journal/` | Book-style journal experience and weekly day selector UI. |
 | `layout/` | Layout wrappers and navigation shells. |
 | `todo/` | Dashboard to-do chat and scroll list components. |

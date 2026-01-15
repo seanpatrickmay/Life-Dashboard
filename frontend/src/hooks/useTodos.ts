@@ -1,14 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createTodo, deleteTodo, fetchTodos, updateTodo, type TodoItem } from '../services/api';
+import { getUserTimeZone } from '../utils/timeZone';
 
 const TODOS_QUERY_KEY = ['todos', 'list'];
 
 export function useTodos() {
   const queryClient = useQueryClient();
 
+  const timeZone = getUserTimeZone();
   const todosQuery = useQuery<TodoItem[]>({
-    queryKey: TODOS_QUERY_KEY,
-    queryFn: fetchTodos
+    queryKey: [...TODOS_QUERY_KEY, timeZone],
+    queryFn: () => fetchTodos(timeZone)
   });
 
   const createMutation = useMutation({
@@ -19,14 +21,23 @@ export function useTodos() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (payload: { id: number; text?: string; deadline_utc?: string | null; completed?: boolean }) =>
-      updateTodo(payload.id, {
+    mutationFn: (payload: {
+      id: number;
+      text?: string;
+      deadline_utc?: string | null;
+      completed?: boolean;
+    }) => {
+      const timeZone = payload.completed !== undefined ? getUserTimeZone() : undefined;
+      return updateTodo(payload.id, {
         text: payload.text,
         deadline_utc: payload.deadline_utc,
-        completed: payload.completed
-      }),
+        completed: payload.completed,
+        time_zone: timeZone
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TODOS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ['journal'] });
     }
   });
 
@@ -44,4 +55,3 @@ export function useTodos() {
     deleteTodo: deleteMutation.mutateAsync
   };
 }
-

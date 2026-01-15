@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { sendMonetMessage, type MonetChatResponse, type TodoItem } from '../services/api';
 import { getChatErrorMessage } from '../utils/chatErrors';
+import { getUserTimeZone } from '../utils/timeZone';
 
 export type MonetChatEntry = {
   id: string;
@@ -161,14 +162,3 @@ export function useMonetChat() {
     error: mutation.error
   };
 }
-
-const getUserTimeZone = () => {
-  if (typeof Intl !== 'undefined' && Intl.DateTimeFormat) {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
-    } catch {
-      return 'UTC';
-    }
-  }
-  return 'UTC';
-};

@@ -399,8 +399,8 @@ export type ClaudeTodoResponse = {
   raw_payload?: Record<string, unknown> | null;
 };
 
-export const fetchTodos = async (): Promise<TodoItem[]> => {
-  const { data } = await api.get('/api/todos');
+export const fetchTodos = async (time_zone?: string): Promise<TodoItem[]> => {
+  const { data } = await api.get('/api/todos', { params: { time_zone } });
   return data;
 };
 
@@ -411,7 +411,7 @@ export const createTodo = async (payload: { text: string; deadline_utc?: string 
 
 export const updateTodo = async (
   id: number,
-  payload: { text?: string; deadline_utc?: string | null; completed?: boolean }
+  payload: { text?: string; deadline_utc?: string | null; completed?: boolean; time_zone?: string }
 ) => {
   const { data } = await api.patch(`/api/todos/${id}`, payload);
   return data as TodoItem;
@@ -426,6 +426,72 @@ export const sendClaudeTodoMessage = async (
   session_id?: string
 ): Promise<ClaudeTodoResponse> => {
   const { data } = await api.post('/api/todos/claude/message', { message, session_id });
+  return data;
+};
+
+// Journal
+
+export type JournalEntry = {
+  id: number;
+  text: string;
+  created_at: string;
+};
+
+export type JournalCompletedItem = {
+  id: number;
+  text: string;
+  completed_at_utc: string | null;
+};
+
+export type JournalDaySummaryGroup = {
+  title: string;
+  items: string[];
+};
+
+export type JournalDaySummary = {
+  groups: JournalDaySummaryGroup[];
+};
+
+export type JournalDayResponse = {
+  local_date: string;
+  time_zone: string;
+  status: string;
+  entries: JournalEntry[];
+  completed_items: JournalCompletedItem[];
+  summary?: JournalDaySummary | null;
+};
+
+export type JournalWeekDayStatus = {
+  local_date: string;
+  has_entries: boolean;
+  has_summary: boolean;
+  completed_count: number;
+};
+
+export type JournalWeekResponse = {
+  week_start: string;
+  week_end: string;
+  days: JournalWeekDayStatus[];
+};
+
+export const createJournalEntry = async (payload: { text: string; time_zone: string }) => {
+  const { data } = await api.post('/api/journal/entries', payload);
+  return data as JournalEntry;
+};
+
+export const fetchJournalDay = async (
+  localDate: string,
+  timeZone: string
+): Promise<JournalDayResponse> => {
+  const { data } = await api.get(`/api/journal/day/${localDate}`, { params: { time_zone: timeZone } });
+  return data;
+};
+
+export const fetchJournalWeek = async (
+  weekStart: string,
+  timeZone: string
+): Promise<JournalWeekResponse> => {
+  const { data } = await api.get('/api/journal/week', { params: { week_start: weekStart, time_zone: timeZone } });
   return data;
 };
 

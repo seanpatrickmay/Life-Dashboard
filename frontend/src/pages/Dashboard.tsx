@@ -8,6 +8,7 @@ const Grid = styled.div`
   display: grid;
   gap: clamp(20px, 3vw, 32px);
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  margin-top: clamp(24px, 6vh, 84px);
 `;
 
 export function DashboardPage() {

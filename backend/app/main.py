@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.db.models import Base
 from app.db.session import engine
-from app.routers import admin, assistant, auth, garmin, insights, metrics, nutrition, system, time, user, todos
+from app.routers import admin, assistant, auth, garmin, insights, journal, metrics, nutrition, system, time, user, todos
 
 configure_logging(settings.debug)
 
@@ -37,6 +37,7 @@ app.include_router(user.router, prefix=settings.api_prefix)
 app.include_router(system.router, prefix=settings.api_prefix)
 app.include_router(todos.router, prefix=settings.api_prefix)
 app.include_router(assistant.router, prefix=settings.api_prefix)
+app.include_router(journal.router, prefix=settings.api_prefix)
 
 
 @app.on_event("startup")

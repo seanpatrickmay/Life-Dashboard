@@ -28,6 +28,7 @@ class TodoUpdateRequest(BaseModel):
   text: str | None = Field(default=None, min_length=1, max_length=512)
   deadline_utc: datetime | None = Field(default=None)
   completed: bool | None = None
+  time_zone: str | None = Field(default=None, max_length=64)
 
 
 class ClaudeTodoMessageRequest(BaseModel):

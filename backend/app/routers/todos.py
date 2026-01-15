@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -18,6 +19,8 @@ from app.schemas.todos import (
   TodoUpdateRequest,
 )
 from app.services.claude_todo_agent import ClaudeTodoAgent
+from app.services.todo_accomplishment_agent import TodoAccomplishmentAgent
+from app.utils.timezone import local_today, resolve_time_zone
 
 
 router = APIRouter(prefix="/todos", tags=["todos"])
@@ -27,9 +30,10 @@ router = APIRouter(prefix="/todos", tags=["todos"])
 async def list_todos(
   current_user: User = Depends(get_current_user),
   session: AsyncSession = Depends(get_session),
+  time_zone: str | None = Query(None),
 ) -> list[TodoItemResponse]:
   repo = TodoRepository(session)
-  items = await repo.list_for_user(current_user.id)
+  items = await repo.list_for_user(current_user.id, local_date=local_today(time_zone))
   now_utc = datetime.now(timezone.utc)
   return [
     TodoItemResponse(
@@ -94,7 +98,25 @@ async def update_todo(
     todo.deadline_utc = update_data["deadline_utc"]
 
   if "completed" in update_data and update_data["completed"] is not None:
+    was_completed = todo.completed
     todo.mark_completed(update_data["completed"])
+    if update_data["completed"] and not was_completed:
+      tz_name = (update_data.get("time_zone") or "UTC").strip() or "UTC"
+      todo.completed_time_zone = tz_name
+      if todo.completed_at_utc:
+        zone = resolve_time_zone(tz_name)
+        todo.completed_local_date = todo.completed_at_utc.astimezone(zone).date()
+      if not todo.accomplishment_text:
+        agent = TodoAccomplishmentAgent(session)
+        try:
+          todo.accomplishment_text = await agent.rewrite(todo.text)
+        except Exception as exc:  # noqa: BLE001
+          logger.warning("[todos] failed to generate accomplishment: {}", exc)
+          todo.accomplishment_text = f"Completed {todo.text}".strip()
+        todo.accomplishment_generated_at_utc = datetime.now(timezone.utc)
+    elif not update_data["completed"]:
+      todo.completed_local_date = None
+      todo.completed_time_zone = None
   await session.flush()
   await session.commit()
   now_utc = datetime.now(timezone.utc)

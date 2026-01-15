@@ -13,6 +13,7 @@ Contains FastAPI router modules that expose HTTP endpoints grouped by domain (me
 | `auth.py` | Google OAuth login, session management, and current-user endpoint. |
 | `garmin.py` | Per-user Garmin Connect credential + token management endpoints. |
 | `insights.py` | Insight retrieval API endpoints. |
+| `journal.py` | Journal entry capture, weekly status, and daily summary endpoints. |
 | `metrics.py` | Metrics retrieval API endpoints. |
 | `time.py` | Returns current US-Eastern time & moment for scene sync. |
 | `nutrition.py` | Nutrition ingredients, recipes, goals, scaling rules, intake endpoints, and Claude chat stub. |

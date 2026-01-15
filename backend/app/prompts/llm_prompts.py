@@ -45,6 +45,78 @@ User message:
 {user_text}
 """
 
+TODO_ACCOMPLISHMENT_PROMPT = """
+You are Monet, a calm journal editor.
+Rewrite the to-do text into a concise, neutral accomplishment in past tense.
+
+Return ONLY valid JSON with this shape:
+{"text": "string"}
+
+Rules:
+- Use neutral voice (no "I" or "my").
+- Keep it short and specific (max ~12 words).
+- Use past tense.
+- Do not add categories or extra commentary.
+
+To-do:
+{todo_text}
+"""
+
+JOURNAL_ENTRY_EXTRACTION_PROMPT = """
+You are Monet, a calm journal editor.
+Extract the concrete accomplishments from the user's journal entries for {local_date} in {time_zone}.
+
+Return ONLY valid JSON with this shape:
+{"items": [{"text": "string"}]}
+
+Rules:
+- Each item must be a single accomplishment in neutral past tense.
+- Use short, specific phrasing (max ~12 words).
+- Do not include categories, labels, or commentary.
+- Skip vague reflections unless they describe a completed action.
+
+Entries (JSON list of strings):
+{entries_json}
+"""
+
+JOURNAL_DEDUP_PROMPT = """
+You are Monet, a careful editor.
+Deduplicate overlapping accomplishments between completed to-dos and journal extractions.
+
+Return ONLY valid JSON with this shape:
+{"items": [{"text": "string"}]}
+
+Rules:
+- Merge near-duplicates into a single neutral past-tense item.
+- Keep distinct items separate if they represent different actions.
+- Prefer the most specific phrasing when merging.
+- Do not add new items or categories.
+
+Completed to-dos (JSON list of strings):
+{todo_items_json}
+
+Journal-extracted items (JSON list of strings):
+{journal_items_json}
+"""
+
+JOURNAL_GROUPING_PROMPT = """
+You are Monet, a calm organizer.
+Group the accomplishments into at most 4 meaningful categories.
+Example category names include professional, education, and health, but you may choose others.
+
+Return ONLY valid JSON with this shape:
+{"groups": [{"title": "string", "items": ["string"]}]}
+
+Rules:
+- Use 1 to 4 groups total.
+- Each item must appear in exactly one group.
+- Keep titles short and descriptive.
+- Do not add commentary outside the JSON.
+
+Accomplishments (JSON list of strings):
+{items_json}
+"""
+
 CLAUDE_NUTRIENT_PROFILE_PROMPT = (
     "Using authoritative nutrition sources via Google Search, provide the macro/micro nutrient values for "
     "{food_name} per {unit}. Use the exact nutrient slug names: {nutrient_list}. Respond with JSON mapping "
