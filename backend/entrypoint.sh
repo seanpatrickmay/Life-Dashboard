@@ -8,7 +8,7 @@ if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
     exit 1
   fi
 
-  SYNC_DB_URL="${DB_URL/+asyncpg/}"
+  SYNC_DB_URL=$(printf '%s' "$DB_URL" | sed 's/+asyncpg//')
   export DATABASE_URL_HOST="$SYNC_DB_URL"
 
   echo "Waiting for database..."
