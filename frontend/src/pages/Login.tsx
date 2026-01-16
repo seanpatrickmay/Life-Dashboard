@@ -76,8 +76,42 @@ const RememberRow = styled.label`
   gap: 10px;
   font-size: 0.85rem;
   color: ${({ theme }) => theme.colors.textSecondary};
-  input {
-    accent-color: ${palette.bloom['300']};
+  input[type='checkbox'] {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    border: 2px solid ${palette.bloom['300']};
+    background: rgba(8, 14, 28, 0.6);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
+  }
+
+  input[type='checkbox']::after {
+    content: '';
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    background: ${palette.bloom['300']};
+    opacity: 0;
+    transform: scale(0.4);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+
+  input[type='checkbox']:checked {
+    background: rgba(77, 160, 255, 0.25);
+  }
+
+  input[type='checkbox']:checked::after {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  input[type='checkbox']:focus-visible {
+    outline: 2px solid rgba(240, 210, 140, 0.7);
+    outline-offset: 2px;
   }
 `;
 
