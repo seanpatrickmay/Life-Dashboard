@@ -22,6 +22,7 @@ const SceneHeader = styled.div`
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  gap: 12px;
   min-height: 40px;
 `;
 
@@ -37,6 +38,24 @@ const SignOutButton = styled.button`
   font-size: 0.75rem;
   cursor: pointer;
   box-shadow: 0 10px 24px rgba(7, 9, 19, 0.35);
+`;
+
+const RefreshButton = styled.button`
+  border-radius: 999px;
+  padding: 10px 18px;
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: transparent;
+  color: ${({ theme }) => (theme.mode === 'light' ? '#F6F0E8' : theme.colors.textPrimary)};
+  font-family: ${({ theme }) => theme.fonts.heading};
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 `;
 
 const SectionGrid = styled.div`
@@ -232,6 +251,7 @@ export function UserProfileScene() {
   const [isEditing, setIsEditing] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [hasInitialized, setHasInitialized] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const saveTimerRef = useRef<number | null>(null);
 
   const hasProfileValues = Boolean(
@@ -347,6 +367,15 @@ export function UserProfileScene() {
     window.location.href = '/login';
   };
 
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([profileQuery.refetch(), garminStatusQuery.refetch()]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   if (profileQuery.isLoading) {
     return <span>Loading profile…</span>;
   }
@@ -358,6 +387,13 @@ export function UserProfileScene() {
   return (
     <SceneLayout>
       <SceneHeader>
+        <RefreshButton
+          type="button"
+          onClick={handleManualRefresh}
+          disabled={isRefreshing || profileQuery.isFetching || garminStatusQuery.isFetching}
+        >
+          {isRefreshing ? 'Refreshing…' : 'Refresh Data'}
+        </RefreshButton>
         <SignOutButton onClick={handleLogout}>Sign Out</SignOutButton>
       </SceneHeader>
       <SectionGrid>

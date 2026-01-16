@@ -50,7 +50,7 @@ You are Monet, a calm journal editor.
 Rewrite the to-do text into a concise, neutral accomplishment in past tense.
 
 Return ONLY valid JSON with this shape:
-{"text": "string"}
+{{"text": "string"}}
 
 Rules:
 - Use neutral voice (no "I" or "my").
@@ -67,7 +67,7 @@ You are Monet, a calm journal editor.
 Extract the concrete accomplishments from the user's journal entries for {local_date} in {time_zone}.
 
 Return ONLY valid JSON with this shape:
-{"items": [{"text": "string"}]}
+{{"items": [{{"text": "string"}}]}}
 
 Rules:
 - Each item must be a single accomplishment in neutral past tense.
@@ -84,7 +84,7 @@ You are Monet, a careful editor.
 Deduplicate overlapping accomplishments between completed to-dos and journal extractions.
 
 Return ONLY valid JSON with this shape:
-{"items": [{"text": "string"}]}
+{{"items": [{{"text": "string"}}]}}
 
 Rules:
 - Merge near-duplicates into a single neutral past-tense item.
@@ -105,7 +105,7 @@ Group the accomplishments into at most 4 meaningful categories.
 Example category names include professional, education, and health, but you may choose others.
 
 Return ONLY valid JSON with this shape:
-{"groups": [{"title": "string", "items": ["string"]}]}
+{{"groups": [{{"title": "string", "items": ["string"]}}]}}
 
 Rules:
 - Use 1 to 4 groups total.
