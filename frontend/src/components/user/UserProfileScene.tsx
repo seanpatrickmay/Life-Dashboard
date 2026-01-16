@@ -7,7 +7,8 @@ import {
   connectGarmin,
   fetchGarminStatus,
   logout,
-  reauthGarmin
+  reauthGarmin,
+  triggerVisitRefresh
 } from '../../services/api';
 import { useUserProfile } from '../../hooks/useUserProfile';
 
@@ -93,6 +94,19 @@ const SectionTitle = styled.h2`
   margin: 0;
 `;
 
+const CardHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+`;
+
+const CardActions = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+`;
+
 const FieldGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -147,6 +161,12 @@ const PadButton = styled.button<{ $variant?: 'primary' | 'ghost' }>`
     opacity: 0.6;
     cursor: not-allowed;
   }
+`;
+
+const CardActionButton = styled(PadButton)`
+  padding: 8px 14px;
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
 `;
 
 const SaveStatus = styled.span<{ $tone: 'neutral' | 'success' | 'error' }>`
@@ -226,6 +246,7 @@ const InlineForm = styled.div`
   gap: 12px;
 `;
 
+const GARMIN_REFRESH_POLL_MS = 8000;
 const KG_TO_LB = 2.20462;
 const CM_TO_IN = 0.393701;
 
@@ -253,7 +274,14 @@ export function UserProfileScene() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [hasInitialized, setHasInitialized] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [garminRefreshState, setGarminRefreshState] = useState<
+    'idle' | 'running' | 'success' | 'error' | 'cooldown'
+  >('idle');
   const saveTimerRef = useRef<number | null>(null);
+  const garminRefreshPollRef = useRef<number | null>(null);
+  const garminRefreshTimerRef = useRef<number | null>(null);
+  const garminRefreshBaselineRef = useRef<string | null>(null);
+  const isGarminRefreshRunning = garminRefreshState === 'running';
 
   const hasProfileValues = Boolean(
     profileQuery.data?.profile?.height_cm ||
@@ -309,6 +337,12 @@ export function UserProfileScene() {
       if (saveTimerRef.current) {
         window.clearTimeout(saveTimerRef.current);
       }
+      if (garminRefreshTimerRef.current) {
+        window.clearTimeout(garminRefreshTimerRef.current);
+      }
+      if (garminRefreshPollRef.current) {
+        window.clearTimeout(garminRefreshPollRef.current);
+      }
     };
   }, []);
 
@@ -354,6 +388,47 @@ export function UserProfileScene() {
     }));
   };
 
+  const clearGarminRefreshPoll = () => {
+    if (garminRefreshPollRef.current) {
+      window.clearTimeout(garminRefreshPollRef.current);
+      garminRefreshPollRef.current = null;
+    }
+  };
+
+  const setGarminRefreshFinalState = (state: 'success' | 'error' | 'cooldown') => {
+    setGarminRefreshState(state);
+    if (garminRefreshTimerRef.current) {
+      window.clearTimeout(garminRefreshTimerRef.current);
+    }
+    garminRefreshTimerRef.current = window.setTimeout(() => {
+      setGarminRefreshState('idle');
+    }, 2500);
+  };
+
+  const pollGarminRefresh = async () => {
+    try {
+      const status = await triggerVisitRefresh();
+      const completedAt = status.last_completed_at ?? null;
+      if (completedAt && completedAt !== garminRefreshBaselineRef.current) {
+        garminRefreshBaselineRef.current = completedAt;
+        clearGarminRefreshPoll();
+        setGarminRefreshFinalState('success');
+        void profileQuery.refetch();
+        void garminStatusQuery.refetch();
+        return;
+      }
+      if (status.running) {
+        garminRefreshPollRef.current = window.setTimeout(pollGarminRefresh, GARMIN_REFRESH_POLL_MS);
+        return;
+      }
+      clearGarminRefreshPoll();
+      setGarminRefreshFinalState('cooldown');
+    } catch {
+      clearGarminRefreshPoll();
+      setGarminRefreshFinalState('error');
+    }
+  };
+
   const onSaveProfile = async () => {
     const payload: UserProfileData = {
       ...formState,
@@ -383,6 +458,34 @@ export function UserProfileScene() {
     await logout();
     queryClient.clear();
     window.location.href = '/login';
+  };
+
+  const handleGarminRefresh = async () => {
+    if (isGarminRefreshRunning) return;
+    setGarminRefreshState('running');
+    clearGarminRefreshPoll();
+    if (garminRefreshTimerRef.current) {
+      window.clearTimeout(garminRefreshTimerRef.current);
+    }
+    try {
+      const status = await triggerVisitRefresh();
+      if (status.last_completed_at) {
+        garminRefreshBaselineRef.current = status.last_completed_at;
+      }
+      if (!status.running && !status.job_started) {
+        setGarminRefreshFinalState('cooldown');
+        return;
+      }
+      if (!status.running && status.job_started) {
+        setGarminRefreshFinalState('success');
+        void profileQuery.refetch();
+        void garminStatusQuery.refetch();
+        return;
+      }
+      garminRefreshPollRef.current = window.setTimeout(pollGarminRefresh, GARMIN_REFRESH_POLL_MS);
+    } catch {
+      setGarminRefreshFinalState('error');
+    }
   };
 
   const handleManualRefresh = async () => {
@@ -539,7 +642,26 @@ export function UserProfileScene() {
 
         <StackColumn>
           <LilyPadCard>
-            <SectionTitle>Latest Energy</SectionTitle>
+            <CardHeader>
+              <SectionTitle>Latest Energy</SectionTitle>
+              <CardActions>
+                {garminRefreshState === 'success' ? <SaveStatus $tone="success">Updated</SaveStatus> : null}
+                {garminRefreshState === 'error' ? (
+                  <SaveStatus $tone="error">Refresh failed</SaveStatus>
+                ) : null}
+                {garminRefreshState === 'cooldown' ? (
+                  <SaveStatus $tone="neutral">Cooldown</SaveStatus>
+                ) : null}
+                <CardActionButton
+                  $variant="primary"
+                  type="button"
+                  onClick={handleGarminRefresh}
+                  disabled={isGarminRefreshRunning}
+                >
+                  {isGarminRefreshRunning ? 'Refreshing…' : 'Refresh Garmin'}
+                </CardActionButton>
+              </CardActions>
+            </CardHeader>
             {profileQuery.data?.latest_energy ? (
               <>
                 <strong style={{ fontSize: '1.6rem' }}>
