@@ -423,6 +423,19 @@ export function UserProfileScene() {
               </select>
             </Field>
             <Field>
+              Units
+              <select
+                value={formState.preferred_units ?? 'metric'}
+                disabled={isReadOnly}
+                onChange={(event) =>
+                  handleInputChange('preferred_units', event.target.value as 'metric' | 'imperial')
+                }
+              >
+                <option value="metric">Metric</option>
+                <option value="imperial">Imperial</option>
+              </select>
+            </Field>
+            <Field>
               Height ({preferredUnits === 'imperial' ? 'in' : 'cm'})
               <input
                 type="number"
@@ -467,19 +480,6 @@ export function UserProfileScene() {
                   )
                 }
               />
-            </Field>
-            <Field>
-              Units
-              <select
-                value={formState.preferred_units ?? 'metric'}
-                disabled={isReadOnly}
-                onChange={(event) =>
-                  handleInputChange('preferred_units', event.target.value as 'metric' | 'imperial')
-                }
-              >
-                <option value="metric">Metric</option>
-                <option value="imperial">Imperial</option>
-              </select>
             </Field>
             <Field>
               Daily Calorie Delta
