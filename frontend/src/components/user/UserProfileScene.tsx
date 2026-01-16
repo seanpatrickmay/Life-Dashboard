@@ -247,6 +247,7 @@ export function UserProfileScene() {
   });
   const [garminEmail, setGarminEmail] = useState('');
   const [garminPassword, setGarminPassword] = useState('');
+  const [dailyEnergyDeltaInput, setDailyEnergyDeltaInput] = useState('');
   const preferredUnits = formState.preferred_units ?? profileQuery.data?.profile?.preferred_units ?? 'metric';
   const [isEditing, setIsEditing] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -291,6 +292,11 @@ export function UserProfileScene() {
         ...prev,
         ...profileQuery.data?.profile
       }));
+      setDailyEnergyDeltaInput(
+        profileQuery.data.profile.daily_energy_delta_kcal == null
+          ? ''
+          : String(profileQuery.data.profile.daily_energy_delta_kcal)
+      );
       if (!hasInitialized) {
         setIsEditing(!hasProfileValues);
         setHasInitialized(true);
@@ -333,6 +339,18 @@ export function UserProfileScene() {
     setFormState((prev) => ({
       ...prev,
       [key]: value === '' ? null : toMetric ? toMetric(Number(value)) : Number(value)
+    }));
+  };
+
+  const handleDailyEnergyDeltaChange = (value: string) => {
+    if (saveState === 'saved' || saveState === 'error') {
+      setSaveState('idle');
+    }
+    if (!/^-?\d*$/.test(value)) return;
+    setDailyEnergyDeltaInput(value);
+    setFormState((prev) => ({
+      ...prev,
+      daily_energy_delta_kcal: value === '' || value === '-' ? null : Number(value)
     }));
   };
 
@@ -484,11 +502,12 @@ export function UserProfileScene() {
             <Field>
               Daily Calorie Delta
               <input
-                type="number"
+                type="text"
                 inputMode="numeric"
-                value={formState.daily_energy_delta_kcal ?? 0}
+                pattern="-?\\d*"
+                value={dailyEnergyDeltaInput}
                 disabled={isReadOnly}
-                onChange={(event) => handleNumberChange('daily_energy_delta_kcal', event.target.value)}
+                onChange={(event) => handleDailyEnergyDeltaChange(event.target.value)}
               />
             </Field>
           </FieldGrid>
