@@ -1,8 +1,10 @@
 import { PropsWithChildren } from 'react';
 import styled, { css } from 'styled-components';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { composeLayers, getCardLayers, palette } from '../../theme/monetTheme';
 import { CloudNavShelf } from './CloudNavShelf';
+import { exitGuestMode, isGuestMode } from '../../demo/guest/guestMode';
+import { clearGuestState } from '../../demo/guest/guestStore';
 
 const paletteAccent = (mode: 'light' | 'dark', theme?: any) =>
   theme?.colors?.accent ?? (mode === 'dark' ? palette.bloom['300'] : palette.bloom['200']);
@@ -58,10 +60,58 @@ const Surface = styled.div`
   box-shadow: none;
 `;
 
+const GuestBanner = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+`;
+
+const GuestBannerText = styled.span`
+  opacity: 0.85;
+`;
+
+const GuestExitButton = styled.button`
+  border-radius: 999px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: ${({ theme }) => theme.colors.textPrimary};
+  font-family: ${({ theme }) => theme.fonts.heading};
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  cursor: pointer;
+`;
+
 export function PageShell({ children }: PropsWithChildren) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const guestMode = isGuestMode();
   return (
     <Frame>
+      {guestMode ? (
+        <GuestBanner>
+          <GuestBannerText>Guest mode - demo data only - sign in to save changes</GuestBannerText>
+          <GuestExitButton
+            type="button"
+            onClick={() => {
+              clearGuestState();
+              exitGuestMode();
+              navigate('/login', { replace: true });
+            }}
+          >
+            Exit Guest
+          </GuestExitButton>
+        </GuestBanner>
+      ) : null}
       <CloudNavShelf>
         <Nav>
           <Link className={pathname === '/' ? 'active' : ''} to="/">

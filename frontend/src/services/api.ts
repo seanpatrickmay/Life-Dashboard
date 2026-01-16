@@ -1,4 +1,34 @@
 import axios from 'axios';
+import { isGuestMode } from '../demo/guest/guestMode';
+import {
+  clearGuestState,
+  createGuestJournalEntry,
+  createGuestTodo,
+  deleteGuestNutritionEntry,
+  deleteGuestTodo,
+  getGuestAuthMe,
+  getGuestClaudeChatResponse,
+  getGuestClaudeTodoResponse,
+  getGuestGarminStatus,
+  getGuestInsight,
+  getGuestJournalDay,
+  getGuestJournalWeek,
+  getGuestMetricsOverview,
+  getGuestMonetChatResponse,
+  getGuestNutritionDailySummary,
+  getGuestNutritionGoals,
+  getGuestNutritionHistory,
+  getGuestNutritionMenu,
+  getGuestReadinessSummary,
+  getGuestRefreshStatus,
+  getGuestSceneTime,
+  getGuestTodos,
+  getGuestUserProfile,
+  updateGuestNutritionEntry,
+  updateGuestNutritionGoal,
+  updateGuestTodo,
+  updateGuestUserProfile
+} from '../demo/guest/guestStore';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
@@ -23,11 +53,18 @@ export type AuthMeResponse = {
 };
 
 export const fetchAuthMe = async (): Promise<AuthMeResponse> => {
+  if (isGuestMode()) {
+    return getGuestAuthMe();
+  }
   const { data } = await api.get('/api/auth/me');
   return data;
 };
 
 export const logout = async (): Promise<void> => {
+  if (isGuestMode()) {
+    clearGuestState();
+    return;
+  }
   await api.post('/api/auth/logout');
 };
 
@@ -54,16 +91,31 @@ export type GarminConnectResponse = {
 };
 
 export const fetchGarminStatus = async (): Promise<GarminStatusResponse> => {
+  if (isGuestMode()) {
+    return getGuestGarminStatus();
+  }
   const { data } = await api.get('/api/garmin/status');
   return data;
 };
 
 export const connectGarmin = async (payload: GarminConnectPayload): Promise<GarminConnectResponse> => {
+  if (isGuestMode()) {
+    const status = getGuestGarminStatus();
+    return {
+      connected: status.connected,
+      garmin_email: status.garmin_email ?? 'demo.garmin@life-dashboard.demo',
+      connected_at: status.connected_at ?? new Date().toISOString(),
+      requires_reauth: status.requires_reauth
+    };
+  }
   const { data } = await api.post('/api/garmin/connect', payload);
   return data;
 };
 
 export const reauthGarmin = async (): Promise<GarminStatusResponse> => {
+  if (isGuestMode()) {
+    return getGuestGarminStatus();
+  }
   const { data } = await api.post('/api/garmin/reauth');
   return data;
 };
@@ -140,26 +192,41 @@ export type RefreshStatusResponse = {
 };
 
 export const fetchInsight = async (): Promise<InsightResponse> => {
+  if (isGuestMode()) {
+    return getGuestInsight();
+  }
   const { data } = await api.get('/api/insights/daily');
   return data;
 };
 
 export const fetchMetricsOverview = async (rangeDays = 7): Promise<MetricsOverview> => {
+  if (isGuestMode()) {
+    return getGuestMetricsOverview(rangeDays);
+  }
   const { data } = await api.get('/api/metrics/overview', { params: { range_days: rangeDays } });
   return data;
 };
 
 export const fetchReadinessSummary = async (): Promise<ReadinessMetricsSummary> => {
+  if (isGuestMode()) {
+    return getGuestReadinessSummary();
+  }
   const { data } = await api.get('/api/metrics/readiness-summary');
   return data;
 };
 
 export const fetchSceneTime = async (): Promise<SceneTimeResponse> => {
+  if (isGuestMode()) {
+    return getGuestSceneTime();
+  }
   const { data } = await api.get('/api/time');
   return data;
 };
 
 export const triggerVisitRefresh = async (): Promise<RefreshStatusResponse> => {
+  if (isGuestMode()) {
+    return getGuestRefreshStatus();
+  }
   const { data } = await api.post('/api/system/refresh-today');
   return data;
 };
@@ -294,6 +361,9 @@ export type NutritionMenuResponse = {
 };
 
 export const fetchNutritionMenu = async (day?: string): Promise<NutritionMenuResponse> => {
+  if (isGuestMode()) {
+    return getGuestNutritionMenu(day);
+  }
   const { data } = await api.get('/api/nutrition/intake/menu', { params: { day } });
   return data;
 };
@@ -302,11 +372,18 @@ export const updateNutritionIntake = async (
   intakeId: number,
   payload: { quantity: number; unit: string }
 ) => {
+  if (isGuestMode()) {
+    return updateGuestNutritionEntry(intakeId, payload);
+  }
   const { data } = await api.patch(`/api/nutrition/intake/${intakeId}`, payload);
   return data;
 };
 
 export const deleteNutritionIntake = async (intakeId: number) => {
+  if (isGuestMode()) {
+    deleteGuestNutritionEntry(intakeId);
+    return;
+  }
   await api.delete(`/api/nutrition/intake/${intakeId}`);
 };
 
@@ -351,11 +428,17 @@ export const suggestNutritionRecipe = async (description: string): Promise<Recip
 };
 
 export const fetchNutritionGoals = async (): Promise<NutritionGoal[]> => {
+  if (isGuestMode()) {
+    return getGuestNutritionGoals();
+  }
   const { data } = await api.get('/api/nutrition/goals');
   return data;
 };
 
 export const updateNutritionGoal = async (slug: string, goal: number) => {
+  if (isGuestMode()) {
+    return updateGuestNutritionGoal(slug, goal);
+  }
   const { data } = await api.put(`/api/nutrition/goals/${slug}`, { goal });
   return data as NutritionGoal;
 };
@@ -366,16 +449,25 @@ export const logManualIntake = async (payload: { ingredient_id?: number; recipe_
 };
 
 export const fetchNutritionDailySummary = async (day?: string): Promise<NutritionSummary> => {
+  if (isGuestMode()) {
+    return getGuestNutritionDailySummary(day);
+  }
   const { data } = await api.get('/api/nutrition/intake/daily', { params: { day } });
   return data;
 };
 
 export const fetchNutritionHistory = async (days = 14): Promise<NutritionHistory> => {
+  if (isGuestMode()) {
+    return getGuestNutritionHistory(days);
+  }
   const { data } = await api.get('/api/nutrition/intake/history', { params: { days } });
   return data;
 };
 
 export const sendClaudeMessage = async (message: string, session_id?: string): Promise<ClaudeChatResponse> => {
+  if (isGuestMode()) {
+    return getGuestClaudeChatResponse({ message, session_id });
+  }
   const { data } = await api.post('/api/nutrition/claude/message', { message, session_id });
   return data;
 };
@@ -400,11 +492,17 @@ export type ClaudeTodoResponse = {
 };
 
 export const fetchTodos = async (time_zone?: string): Promise<TodoItem[]> => {
+  if (isGuestMode()) {
+    return getGuestTodos();
+  }
   const { data } = await api.get('/api/todos', { params: { time_zone } });
   return data;
 };
 
 export const createTodo = async (payload: { text: string; deadline_utc?: string | null }) => {
+  if (isGuestMode()) {
+    return createGuestTodo(payload);
+  }
   const { data } = await api.post('/api/todos', payload);
   return data as TodoItem;
 };
@@ -413,11 +511,18 @@ export const updateTodo = async (
   id: number,
   payload: { text?: string; deadline_utc?: string | null; completed?: boolean; time_zone?: string }
 ) => {
+  if (isGuestMode()) {
+    return updateGuestTodo(id, payload);
+  }
   const { data } = await api.patch(`/api/todos/${id}`, payload);
   return data as TodoItem;
 };
 
 export const deleteTodo = async (id: number) => {
+  if (isGuestMode()) {
+    deleteGuestTodo(id);
+    return;
+  }
   await api.delete(`/api/todos/${id}`);
 };
 
@@ -425,6 +530,9 @@ export const sendClaudeTodoMessage = async (
   message: string,
   session_id?: string
 ): Promise<ClaudeTodoResponse> => {
+  if (isGuestMode()) {
+    return getGuestClaudeTodoResponse({ message, session_id });
+  }
   const { data } = await api.post('/api/todos/claude/message', { message, session_id });
   return data;
 };
@@ -475,6 +583,9 @@ export type JournalWeekResponse = {
 };
 
 export const createJournalEntry = async (payload: { text: string; time_zone: string }) => {
+  if (isGuestMode()) {
+    return createGuestJournalEntry(payload.text);
+  }
   const { data } = await api.post('/api/journal/entries', payload);
   return data as JournalEntry;
 };
@@ -483,6 +594,9 @@ export const fetchJournalDay = async (
   localDate: string,
   timeZone: string
 ): Promise<JournalDayResponse> => {
+  if (isGuestMode()) {
+    return getGuestJournalDay(localDate, timeZone);
+  }
   const { data } = await api.get(`/api/journal/day/${localDate}`, { params: { time_zone: timeZone } });
   return data;
 };
@@ -491,6 +605,9 @@ export const fetchJournalWeek = async (
   weekStart: string,
   timeZone: string
 ): Promise<JournalWeekResponse> => {
+  if (isGuestMode()) {
+    return getGuestJournalWeek(weekStart, timeZone);
+  }
   const { data } = await api.get('/api/journal/week', { params: { week_start: weekStart, time_zone: timeZone } });
   return data;
 };
@@ -517,6 +634,9 @@ export const sendMonetMessage = async (payload: {
   window_days?: number;
   time_zone?: string;
 }): Promise<MonetChatResponse> => {
+  if (isGuestMode()) {
+    return getGuestMonetChatResponse(payload);
+  }
   const { data } = await api.post('/api/assistant/monet-message', payload);
   return data;
 };
@@ -580,11 +700,17 @@ export type UserProfileResponse = {
 };
 
 export const fetchUserProfile = async (): Promise<UserProfileResponse> => {
+  if (isGuestMode()) {
+    return getGuestUserProfile();
+  }
   const { data } = await api.get('/api/user/profile');
   return data;
 };
 
 export const updateUserProfile = async (payload: UserProfileData): Promise<UserProfileResponse> => {
+  if (isGuestMode()) {
+    return updateGuestUserProfile(payload);
+  }
   const { data } = await api.put('/api/user/profile', payload);
   return data;
 };

@@ -11,6 +11,8 @@ import {
   triggerVisitRefresh
 } from '../../services/api';
 import { useUserProfile } from '../../hooks/useUserProfile';
+import { exitGuestMode, isGuestMode } from '../../demo/guest/guestMode';
+import { clearGuestState } from '../../demo/guest/guestStore';
 
 const SceneLayout = styled.div`
   display: flex;
@@ -274,6 +276,7 @@ export function UserProfileScene() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [hasInitialized, setHasInitialized] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const isGuest = isGuestMode();
   const [garminRefreshState, setGarminRefreshState] = useState<
     'idle' | 'running' | 'success' | 'error' | 'cooldown'
   >('idle');
@@ -450,17 +453,26 @@ export function UserProfileScene() {
   };
 
   const handleGarminConnect = async () => {
+    if (isGuest) return;
     if (!garminEmail || !garminPassword) return;
     await connectMutation.mutateAsync();
   };
 
   const handleLogout = async () => {
+    if (isGuest) {
+      clearGuestState();
+      exitGuestMode();
+      queryClient.clear();
+      window.location.href = '/login';
+      return;
+    }
     await logout();
     queryClient.clear();
     window.location.href = '/login';
   };
 
   const handleGarminRefresh = async () => {
+    if (isGuest) return;
     if (isGarminRefreshRunning) return;
     setGarminRefreshState('running');
     clearGarminRefreshPoll();
@@ -489,6 +501,7 @@ export function UserProfileScene() {
   };
 
   const handleManualRefresh = async () => {
+    if (isGuest) return;
     setIsRefreshing(true);
     try {
       await Promise.all([profileQuery.refetch(), garminStatusQuery.refetch()]);
@@ -511,11 +524,11 @@ export function UserProfileScene() {
         <RefreshButton
           type="button"
           onClick={handleManualRefresh}
-          disabled={isRefreshing || profileQuery.isFetching || garminStatusQuery.isFetching}
+          disabled={isGuest || isRefreshing || profileQuery.isFetching || garminStatusQuery.isFetching}
         >
           {isRefreshing ? 'Refreshing…' : 'Refresh Data'}
         </RefreshButton>
-        <SignOutButton onClick={handleLogout}>Sign Out</SignOutButton>
+        <SignOutButton onClick={handleLogout}>{isGuest ? 'Exit Guest' : 'Sign Out'}</SignOutButton>
       </SceneHeader>
       <SectionGrid>
         <LilyPadCard>
@@ -656,7 +669,7 @@ export function UserProfileScene() {
                   $variant="primary"
                   type="button"
                   onClick={handleGarminRefresh}
-                  disabled={isGarminRefreshRunning}
+                  disabled={isGuest || isGarminRefreshRunning}
                 >
                   {isGarminRefreshRunning ? 'Refreshing…' : 'Refresh Garmin'}
                 </CardActionButton>
@@ -721,6 +734,7 @@ export function UserProfileScene() {
               <input
                 type="email"
                 value={garminEmail}
+                disabled={isGuest}
                 onChange={(event) => setGarminEmail(event.target.value)}
                 placeholder="you@example.com"
               />
@@ -730,6 +744,7 @@ export function UserProfileScene() {
               <input
                 type="password"
                 value={garminPassword}
+                disabled={isGuest}
                 onChange={(event) => setGarminPassword(event.target.value)}
                 placeholder="••••••••"
               />
@@ -739,21 +754,23 @@ export function UserProfileScene() {
             <PadButton
               $variant="primary"
               onClick={handleGarminConnect}
-              disabled={!garminEmail || !garminPassword || connectMutation.isPending}
+              disabled={isGuest || !garminEmail || !garminPassword || connectMutation.isPending}
             >
               {garminStatusQuery.data?.connected ? 'Update Credentials' : 'Connect Garmin'}
             </PadButton>
             {garminStatusQuery.data?.connected && (
               <PadButton
                 onClick={() => reauthMutation.mutate()}
-                disabled={reauthMutation.isPending}
+                disabled={isGuest || reauthMutation.isPending}
               >
                 Re-auth
               </PadButton>
             )}
           </PadButtonRow>
           <HelperText>
-            Credentials are stored encrypted and only used to refresh Garmin tokens.
+            {isGuest
+              ? 'Guest mode is local-only. Sign in to connect Garmin.'
+              : 'Credentials are stored encrypted and only used to refresh Garmin tokens.'}
           </HelperText>
         </LilyPadCard>
       </SectionGrid>

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { triggerVisitRefresh, type RefreshStatusResponse } from '../services/api';
+import { isGuestMode } from '../demo/guest/guestMode';
 
 const MIN_POLL_DELAY_MS = 1000 * 60 * 30;
 const IN_PROGRESS_POLL_MS = 1000 * 30;
@@ -14,6 +15,7 @@ export function useVisitRefresh() {
   const lastCompletionRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (isGuestMode()) return;
     let cancelled = false;
     const isVisible = () => document.visibilityState !== 'hidden';
 

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type { Location } from 'react-router-dom';
 import styled from 'styled-components';
 import { palette } from '../theme/monetTheme';
+import { enterGuestMode, exitGuestMode, isGuestDemoEnabled } from '../demo/guest/guestMode';
 
 const Wrap = styled.div`
   min-height: 70vh;
@@ -70,6 +71,25 @@ const GoogleButton = styled.button`
   }
 `;
 
+const GuestButton = styled.button`
+  width: 100%;
+  border-radius: 999px;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  padding: 14px 18px;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: ${({ theme }) => theme.colors.textPrimary};
+  background: rgba(16, 22, 36, 0.5);
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  &:hover {
+    opacity: 0.95;
+    transform: translateY(-1px);
+  }
+`;
+
 const RememberRow = styled.label`
   display: flex;
   align-items: center;
@@ -123,8 +143,10 @@ const Divider = styled.div`
 
 export function LoginPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const [remember, setRemember] = useState(true);
   const authError = new URLSearchParams(location.search).get('auth_error');
+  const guestEnabled = isGuestDemoEnabled();
 
   const loginUrl = useMemo(() => {
     const apiBase = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
@@ -138,7 +160,13 @@ export function LoginPage() {
   }, [location.state, remember]);
 
   const handleLogin = () => {
+    exitGuestMode();
     window.location.href = loginUrl;
+  };
+
+  const handleGuest = () => {
+    enterGuestMode();
+    navigate('/', { replace: true });
   };
 
   return (
@@ -153,6 +181,11 @@ export function LoginPage() {
           <GoogleButton type="button" onClick={handleLogin}>
             Continue with Google
           </GoogleButton>
+          {guestEnabled ? (
+            <GuestButton type="button" onClick={handleGuest}>
+              Continue as Guest
+            </GuestButton>
+          ) : null}
           <Divider />
           <RememberRow>
             <input
