@@ -11,14 +11,6 @@ const Panel = styled(Card)`
   height: clamp(340px, 45vh, 520px);
 `;
 
-const Heading = styled.h3`
-  margin: 0;
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: clamp(0.95rem, 2.2vw, 1.1rem);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-`;
-
 const History = styled.div`
   display: flex;
   flex-direction: column;
@@ -175,7 +167,6 @@ export function MonetChatPanel() {
 
   return (
     <Panel>
-      <Heading data-halo="heading">Monet • Today</Heading>
       <History>
         {history.length === 0 && (
           <Message $role="assistant">

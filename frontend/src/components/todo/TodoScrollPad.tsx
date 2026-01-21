@@ -191,7 +191,7 @@ export function TodoScrollPad(_props: Props) {
   return (
     <ScrollShell>
       <ScrollHeading>
-        <span data-halo="heading">Lily Pad To-Dos</span>
+        <span data-halo="heading">Task list</span>
         <Count>{activeCount} open</Count>
       </ScrollHeading>
       {todosQuery.error && (

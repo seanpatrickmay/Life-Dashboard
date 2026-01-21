@@ -120,7 +120,7 @@ export function DashboardNutritionSnapshot() {
 
   return (
     <Panel>
-      <Heading data-halo="heading">Today&apos;s Intake</Heading>
+      <Heading data-halo="heading">Daily Intake Goals</Heading>
       {missingAll && !summaryQuery.isLoading ? (
         <Note>No nutrition entries logged yet today.</Note>
       ) : null}
