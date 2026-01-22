@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { isGuestMode } from '../demo/guest/guestMode';
@@ -134,22 +134,53 @@ const buildFallbackReply = (response: MonetChatResponse) => {
 
 export function useMonetChat() {
   const guest = useMemo(() => isGuestMode(), []);
-  const dayKey = useMemo(() => formatLocalDayKey(new Date()), []);
+  const [dayKey, setDayKey] = useState(() => formatLocalDayKey(new Date()));
+  const activeDayKeyRef = useRef(dayKey);
+  useEffect(() => {
+    const now = new Date();
+    const nextMidnight = new Date(now);
+    nextMidnight.setHours(24, 0, 0, 0);
+    const delayMs = Math.max(0, nextMidnight.getTime() - now.getTime()) + 1000;
+    const timeout = window.setTimeout(() => {
+      setDayKey(formatLocalDayKey(new Date()));
+    }, delayMs);
+    return () => window.clearTimeout(timeout);
+  }, [dayKey]);
   const storageKey = guest ? STORAGE_KEY_GUEST : STORAGE_KEY_DEFAULT;
   const stored = useMemo(
-    () => loadStoredChat(storageKey, guest ? dayKey : undefined),
-    [storageKey, guest, dayKey]
+    () => loadStoredChat(storageKey, dayKey),
+    [storageKey, dayKey]
   );
   const initial = useMemo(() => {
     if (stored) return stored;
     if (guest) return buildGuestSeedChat(dayKey);
-    return { sessionId: undefined, history: [] } satisfies StoredChat;
+    return { sessionId: undefined, dayKey, history: [] } satisfies StoredChat;
   }, [stored, guest, dayKey]);
 
   const [sessionId, setSessionId] = useState<string | undefined>(() => initial.sessionId);
   const [history, setHistory] = useState<MonetChatEntry[]>(() => initial.history);
   const queryClient = useQueryClient();
   const timeZone = useMemo(() => getUserTimeZone(), []);
+
+  useEffect(() => {
+    if (activeDayKeyRef.current === dayKey) return;
+    if (stored) {
+      activeDayKeyRef.current = dayKey;
+      setSessionId(stored.sessionId);
+      setHistory(stored.history);
+      return;
+    }
+    if (guest) {
+      const seeded = buildGuestSeedChat(dayKey);
+      activeDayKeyRef.current = dayKey;
+      setSessionId(seeded.sessionId);
+      setHistory(seeded.history);
+      return;
+    }
+    activeDayKeyRef.current = dayKey;
+    setSessionId(undefined);
+    setHistory([]);
+  }, [dayKey, stored, guest]);
 
   const appendEntry = (entry: MonetChatEntry) => {
     setHistory((prev) => {
@@ -160,12 +191,18 @@ export function useMonetChat() {
 
   useEffect(() => {
     const stableHistory = history.filter((entry) => entry.status !== 'pending');
-    persistChat(storageKey, { sessionId, dayKey: guest ? dayKey : undefined, history: stableHistory });
-  }, [sessionId, history, storageKey, guest, dayKey]);
+    persistChat(storageKey, { sessionId, dayKey, history: stableHistory });
+  }, [sessionId, history, storageKey, dayKey]);
 
   const mutation = useMutation({
-    mutationFn: ({ message }: { message: string; pendingId: string }) =>
-      sendMonetMessage({ message, session_id: sessionId, time_zone: timeZone }),
+    mutationFn: ({
+      message,
+      sessionIdOverride
+    }: {
+      message: string;
+      pendingId: string;
+      sessionIdOverride?: string;
+    }) => sendMonetMessage({ message, session_id: sessionIdOverride, time_zone: timeZone }),
     onSuccess: (response, variables) => {
       const todoItems = response.todo_items ?? [];
       const nutritionEntries = response.nutrition_entries ?? [];
@@ -223,7 +260,28 @@ export function useMonetChat() {
   const sendMessage = async (message: string) => {
     const trimmed = message.trim();
     if (!trimmed) return;
+    const currentDayKey = formatLocalDayKey(new Date());
     const pendingId = crypto.randomUUID();
+    if (currentDayKey !== dayKey) {
+      const nextStored = loadStoredChat(storageKey, currentDayKey);
+      const baseState =
+        nextStored ??
+        (guest
+          ? buildGuestSeedChat(currentDayKey)
+          : ({ sessionId: undefined, dayKey: currentDayKey, history: [] } satisfies StoredChat));
+      const nextHistory = [
+        ...baseState.history,
+        { id: crypto.randomUUID(), role: 'user', text: trimmed },
+        { id: pendingId, role: 'assistant', text: '', status: 'pending' }
+      ].slice(-MAX_HISTORY);
+      activeDayKeyRef.current = currentDayKey;
+      setDayKey(currentDayKey);
+      setSessionId(baseState.sessionId);
+      setHistory(nextHistory);
+      await mutation.mutateAsync({ message: trimmed, pendingId, sessionIdOverride: baseState.sessionId });
+      return;
+    }
+
     setHistory((prev) => {
       const next = [
         ...prev,
@@ -232,7 +290,7 @@ export function useMonetChat() {
       ];
       return next.slice(-MAX_HISTORY);
     });
-    await mutation.mutateAsync({ message: trimmed, pendingId });
+    await mutation.mutateAsync({ message: trimmed, pendingId, sessionIdOverride: sessionId });
   };
 
   return {
