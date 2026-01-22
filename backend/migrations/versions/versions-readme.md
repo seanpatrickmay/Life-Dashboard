@@ -11,4 +11,4 @@ Stores Alembic migration scripts that evolve the backend schema over time.
 | `20260113_sync_user_sequence.py` | Aligns user ID sequence with existing data. |
 | `20260201_journal_entries.py` | Adds journal entry and summary tables. |
 | `20260310_calendar_sync.py` | Adds Google Calendar sync tables and todo date-only flag. |
-| `20260311_add_todo_deadline_date_only.py` | Ensures the todo date-only flag exists after sync migration. |
+| `20260311_todo_deadline.py` | Ensures the todo date-only flag exists after sync migration. |

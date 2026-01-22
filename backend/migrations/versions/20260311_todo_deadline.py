@@ -1,6 +1,6 @@
 """Ensure todo deadline_is_date_only column exists.
 
-Revision ID: 20260311_add_todo_deadline_date_only
+Revision ID: 20260311_todo_deadline
 Revises: 20260310_calendar_sync
 Create Date: 2026-03-11
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = "20260311_add_todo_deadline_date_only"
+revision = "20260311_todo_deadline"
 down_revision = "20260310_calendar_sync"
 branch_labels: tuple[str, ...] | None = None
 depends_on: tuple[str, ...] | None = None
