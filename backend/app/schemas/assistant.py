@@ -12,7 +12,7 @@ class MonetMessageRequest(BaseModel):
 
     message: str = Field(min_length=1)
     session_id: str | None = None
-    window_days: int = Field(default=14, ge=1, le=30)
+    window_days: int = Field(default=7, ge=1, le=30)
     time_zone: str | None = None
 
 

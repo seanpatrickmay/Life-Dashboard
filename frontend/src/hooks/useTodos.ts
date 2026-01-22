@@ -14,7 +14,16 @@ export function useTodos() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (payload: { text: string; deadline_utc?: string | null }) => createTodo(payload),
+    mutationFn: (payload: { text: string; deadline_utc?: string | null; deadline_is_date_only?: boolean }) => {
+      const shouldSendTimeZone = payload.deadline_utc !== undefined || payload.deadline_is_date_only !== undefined;
+      const timeZone = shouldSendTimeZone ? getUserTimeZone() : undefined;
+      return createTodo({
+        text: payload.text,
+        deadline_utc: payload.deadline_utc,
+        deadline_is_date_only: payload.deadline_is_date_only,
+        time_zone: timeZone
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TODOS_QUERY_KEY });
     }
@@ -25,12 +34,18 @@ export function useTodos() {
       id: number;
       text?: string;
       deadline_utc?: string | null;
+      deadline_is_date_only?: boolean;
       completed?: boolean;
     }) => {
-      const timeZone = payload.completed !== undefined ? getUserTimeZone() : undefined;
+      const shouldSendTimeZone =
+        payload.completed !== undefined ||
+        payload.deadline_utc !== undefined ||
+        payload.deadline_is_date_only !== undefined;
+      const timeZone = shouldSendTimeZone ? getUserTimeZone() : undefined;
       return updateTodo(payload.id, {
         text: payload.text,
         deadline_utc: payload.deadline_utc,
+        deadline_is_date_only: payload.deadline_is_date_only,
         completed: payload.completed,
         time_zone: timeZone
       });

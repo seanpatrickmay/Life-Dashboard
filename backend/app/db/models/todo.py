@@ -19,6 +19,7 @@ class TodoItem(Base):
   text: Mapped[str] = mapped_column(String(512))
   completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
   deadline_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+  deadline_is_date_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
   completed_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
   completed_local_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
   completed_time_zone: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -28,6 +29,9 @@ class TodoItem(Base):
   )
 
   user: Mapped[User] = relationship(back_populates="todos")
+  calendar_link: Mapped["TodoEventLink | None"] = relationship(
+    back_populates="todo", uselist=False
+  )
 
   def mark_completed(self, done: bool) -> None:
     """Set completion flag and timestamp."""

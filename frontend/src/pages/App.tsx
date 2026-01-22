@@ -3,6 +3,7 @@ import { Outlet, Route, Routes } from 'react-router-dom';
 import { DashboardPage } from './Dashboard';
 import { InsightsPage } from './Insights';
 import { JournalPage } from './Journal';
+import { CalendarPage } from './Calendar';
 import { NutritionPage } from './Nutrition';
 import { UserPage } from './User';
 import { LoginPage } from './Login';
@@ -16,6 +17,7 @@ const routes = [
   { path: '/', element: <DashboardPage /> },
   { path: '/insights', element: <InsightsPage /> },
   { path: '/journal', element: <JournalPage /> },
+  { path: '/calendar', element: <CalendarPage /> },
   { path: '/nutrition', element: <NutritionPage /> },
   { path: '/user', element: <UserPage /> }
 ];

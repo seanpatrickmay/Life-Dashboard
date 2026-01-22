@@ -64,6 +64,12 @@ class User(Base):
         back_populates="user", uselist=False
     )
     chat_usages: Mapped[list["ChatUsage"]] = relationship(back_populates="user")
+    calendar_connection: Mapped["GoogleCalendarConnection | None"] = relationship(
+        back_populates="user", uselist=False
+    )
+    calendars: Mapped[list["GoogleCalendar"]] = relationship(back_populates="user")
+    calendar_events: Mapped[list["CalendarEvent"]] = relationship(back_populates="user")
+    todo_event_links: Mapped[list["TodoEventLink"]] = relationship(back_populates="user")
 
 
 class Activity(Base):

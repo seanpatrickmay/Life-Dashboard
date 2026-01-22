@@ -176,7 +176,7 @@ class MonetAssistantAgent:
         *,
         message: str,
         session_id: str | None = None,
-        window_days: int = 14,
+        window_days: int = 7,
         time_zone: str | None = None,
     ) -> AssistantResult:
         session_key = session_id or str(uuid4())

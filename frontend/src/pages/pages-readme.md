@@ -11,5 +11,6 @@ Route-level components that compose domain-specific UI for the Life Dashboard.
 | `Dashboard.tsx` | Monet dashboard featuring assistant chat, lily pad to-dos, and nutrition snapshot cards. |
 | `Insights.tsx` | Insights history/overview page. |
 | `Journal.tsx` | Book-style journal page with weekly day selector and daily summaries. |
+| `Calendar.tsx` | Rolling week calendar view with events, todos, and detail drawer. |
 | `Nutrition.tsx` | Nutrition tracker page (chat, manual foods, goals, summaries). |
 | `User.tsx` | Personalized profile page for stats, nutrient targets, and scaling rules. |

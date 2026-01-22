@@ -11,6 +11,7 @@ Defines Pydantic models used for request validation and response serialization a
 | `assistant.py` | Request/response payloads for the Monet assistant chat endpoint. |
 | `admin.py` | Schemas for admin endpoints (health/readiness). |
 | `auth.py` | Schemas for Google OAuth session responses. |
+| `calendar.py` | Schemas for Google Calendar connection status, events, and updates. |
 | `garmin.py` | Schemas for Garmin connection requests and status responses. |
 | `insights.py` | Schemas for insight responses. |
 | `journal.py` | Schemas for journal entry input, day summaries, and week statuses. |

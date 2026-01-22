@@ -10,6 +10,7 @@ Holds reusable React UI building blocks grouped by domain (charts, insights, lay
 | `dashboard/` | Monet dashboard-specific panels (assistant chat, nutrition snapshot). |
 | `charts/` | Data visualisations (Recharts-based components). |
 | `common/` | Shared primitives such as cards and surface components. |
+| `calendar/` | Rolling week calendar view and detail drawer components. |
 | `insights/` | Insight-specific UI elements. |
 | `journal/` | Book-style journal experience and weekly day selector UI. |
 | `layout/` | Layout wrappers and navigation shells. |

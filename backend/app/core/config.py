@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from urllib.parse import urlparse, urlunparse
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,6 +32,21 @@ class Settings(BaseSettings):
     google_client_id_override: str | None = Field(None, env="GOOGLE_CLIENT_ID")
     google_client_secret_override: str | None = Field(None, env="GOOGLE_CLIENT_SECRET")
     google_redirect_uri_override: str | None = Field(None, env="GOOGLE_REDIRECT_URI")
+    google_calendar_redirect_uri_local: str | None = Field(
+        None, env="GOOGLE_CALENDAR_REDIRECT_URI_LOCAL"
+    )
+    google_calendar_redirect_uri_prod: str | None = Field(
+        None, env="GOOGLE_CALENDAR_REDIRECT_URI_PROD"
+    )
+    google_calendar_redirect_uri_override: str | None = Field(
+        None, env="GOOGLE_CALENDAR_REDIRECT_URI"
+    )
+    google_calendar_webhook_url_override: str | None = Field(
+        None, env="GOOGLE_CALENDAR_WEBHOOK_URL"
+    )
+    google_calendar_token_encryption_key: str | None = Field(
+        None, env="GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY"
+    )
     admin_email: str = Field(..., env="ADMIN_EMAIL")
     frontend_url: str = Field(..., env="FRONTEND_URL")
     session_cookie_name: str = Field("ld_session", env="SESSION_COOKIE_NAME")
@@ -80,6 +96,14 @@ class Settings(BaseSettings):
             return local
         raise ValueError(f"{label} is required for local environment.")
 
+    def _replace_path(self, url: str, new_path: str) -> str:
+        parsed = urlparse(url)
+        return urlunparse((parsed.scheme, parsed.netloc, new_path, "", "", ""))
+
+    def _base_origin(self, url: str) -> str:
+        parsed = urlparse(url)
+        return urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+
     @computed_field
     @property
     def google_client_id(self) -> str:
@@ -109,6 +133,30 @@ class Settings(BaseSettings):
             prod=self.google_redirect_uri_prod,
             label="GOOGLE_REDIRECT_URI",
         )
+
+    @computed_field
+    @property
+    def google_calendar_redirect_uri(self) -> str:
+        if (
+            self.google_calendar_redirect_uri_override
+            or self.google_calendar_redirect_uri_local
+            or self.google_calendar_redirect_uri_prod
+        ):
+            return self._select_google_value(
+                override=self.google_calendar_redirect_uri_override,
+                local=self.google_calendar_redirect_uri_local,
+                prod=self.google_calendar_redirect_uri_prod,
+                label="GOOGLE_CALENDAR_REDIRECT_URI",
+            )
+        return self._replace_path(self.google_redirect_uri, "/api/calendar/google/callback")
+
+    @computed_field
+    @property
+    def google_calendar_webhook_url(self) -> str:
+        if self.google_calendar_webhook_url_override:
+            return self.google_calendar_webhook_url_override
+        base = self._base_origin(self.google_calendar_redirect_uri)
+        return f"{base}/api/calendar/google/webhook"
 
 @lru_cache()
 def get_settings() -> Settings:

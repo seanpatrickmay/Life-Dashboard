@@ -20,6 +20,7 @@ from app.schemas.todos import (
 )
 from app.services.claude_todo_agent import ClaudeTodoAgent
 from app.services.todo_accomplishment_agent import TodoAccomplishmentAgent
+from app.services.todo_calendar_link_service import TodoCalendarLinkService
 from app.utils.timezone import local_today, resolve_time_zone
 
 
@@ -41,6 +42,7 @@ async def list_todos(
       text=item.text,
       completed=item.completed,
       deadline_utc=item.deadline_utc,
+      deadline_is_date_only=item.deadline_is_date_only,
       is_overdue=bool(
         not item.completed and item.deadline_utc is not None and item.deadline_utc < now_utc
       ),
@@ -58,15 +60,24 @@ async def create_todo(
   session: AsyncSession = Depends(get_session),
 ) -> TodoItemResponse:
   repo = TodoRepository(session)
-  todo = await repo.create_one(current_user.id, payload.text, payload.deadline_utc)
+  todo = await repo.create_one(
+    current_user.id,
+    payload.text,
+    payload.deadline_utc,
+    deadline_is_date_only=payload.deadline_is_date_only,
+  )
   await session.flush()
   await session.commit()
+  if todo.deadline_utc is not None and not todo.completed:
+    link_service = TodoCalendarLinkService(session)
+    await link_service.upsert_event_for_todo(todo, time_zone=payload.time_zone)
   now_utc = datetime.now(timezone.utc)
   return TodoItemResponse(
     id=todo.id,
     text=todo.text,
     completed=todo.completed,
     deadline_utc=todo.deadline_utc,
+    deadline_is_date_only=todo.deadline_is_date_only,
     is_overdue=bool(
       not todo.completed and todo.deadline_utc is not None and todo.deadline_utc < now_utc
     ),
@@ -92,10 +103,12 @@ async def update_todo(
   if "text" in update_data and update_data["text"] is not None:
     todo.text = update_data["text"].strip()
 
-  # Only touch the deadline if the field is present in the payload.
-  # This allows explicit null to mean "no deadline", while omitting the field keeps the existing deadline.
   if "deadline_utc" in update_data:
     todo.deadline_utc = update_data["deadline_utc"]
+    if update_data["deadline_utc"] is None:
+      todo.deadline_is_date_only = False
+  if "deadline_is_date_only" in update_data:
+    todo.deadline_is_date_only = bool(update_data["deadline_is_date_only"])
 
   if "completed" in update_data and update_data["completed"] is not None:
     was_completed = todo.completed
@@ -119,12 +132,20 @@ async def update_todo(
       todo.completed_time_zone = None
   await session.flush()
   await session.commit()
+  link_service = TodoCalendarLinkService(session)
+  if todo.completed:
+    await link_service.unlink_todo(todo, delete_event=True)
+  elif todo.deadline_utc is not None:
+    await link_service.upsert_event_for_todo(todo, time_zone=payload.time_zone)
+  else:
+    await link_service.unlink_todo(todo, delete_event=True)
   now_utc = datetime.now(timezone.utc)
   return TodoItemResponse(
     id=todo.id,
     text=todo.text,
     completed=todo.completed,
     deadline_utc=todo.deadline_utc,
+    deadline_is_date_only=todo.deadline_is_date_only,
     is_overdue=bool(
       not todo.completed and todo.deadline_utc is not None and todo.deadline_utc < now_utc
     ),
@@ -143,6 +164,8 @@ async def delete_todo(
   todo = await repo.get_for_user(current_user.id, todo_id)
   if todo is None:
     raise HTTPException(status_code=404, detail="Todo not found")
+  link_service = TodoCalendarLinkService(session)
+  await link_service.unlink_todo(todo, delete_event=True)
   await session.delete(todo)
   await session.commit()
   return Response(status_code=204)
@@ -163,6 +186,7 @@ async def claude_todo_message(
       text=item.text,
       completed=item.completed,
       deadline_utc=item.deadline_utc,
+      deadline_is_date_only=item.deadline_is_date_only,
       is_overdue=bool(
         not item.completed and item.deadline_utc is not None and item.deadline_utc < now_utc
       ),

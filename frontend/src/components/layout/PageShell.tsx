@@ -9,9 +9,10 @@ import { clearGuestState } from '../../demo/guest/guestStore';
 const paletteAccent = (mode: 'light' | 'dark', theme?: any) =>
   theme?.colors?.accent ?? (mode === 'dark' ? palette.bloom['300'] : palette.bloom['200']);
 
-const Frame = styled.div`
+const Frame = styled.div<{ $fullWidth?: boolean }>`
   padding: clamp(20px, 3vw, 36px);
-  max-width: 1200px;
+  max-width: ${({ $fullWidth }) => ($fullWidth ? '100%' : '1200px')};
+  width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -95,8 +96,9 @@ export function PageShell({ children }: PropsWithChildren) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const guestMode = isGuestMode();
+  const fullWidth = pathname.startsWith('/calendar');
   return (
-    <Frame>
+    <Frame $fullWidth={fullWidth}>
       {guestMode ? (
         <GuestBanner>
           <GuestBannerText>Guest mode - demo data only - sign in to save changes</GuestBannerText>
@@ -122,6 +124,9 @@ export function PageShell({ children }: PropsWithChildren) {
           </Link>
           <Link className={pathname.startsWith('/journal') ? 'active' : ''} to="/journal">
             Journal
+          </Link>
+          <Link className={pathname.startsWith('/calendar') ? 'active' : ''} to="/calendar">
+            Calendar
           </Link>
           <Link className={pathname.startsWith('/nutrition') ? 'active' : ''} to="/nutrition">
             Nutrition

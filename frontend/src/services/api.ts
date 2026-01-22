@@ -479,6 +479,7 @@ export type TodoItem = {
   text: string;
   completed: boolean;
   deadline_utc: string | null;
+  deadline_is_date_only: boolean;
   is_overdue: boolean;
   created_at: string;
   updated_at: string;
@@ -499,7 +500,12 @@ export const fetchTodos = async (time_zone?: string): Promise<TodoItem[]> => {
   return data;
 };
 
-export const createTodo = async (payload: { text: string; deadline_utc?: string | null }) => {
+export const createTodo = async (payload: {
+  text: string;
+  deadline_utc?: string | null;
+  deadline_is_date_only?: boolean;
+  time_zone?: string;
+}) => {
   if (isGuestMode()) {
     return createGuestTodo(payload);
   }
@@ -509,7 +515,13 @@ export const createTodo = async (payload: { text: string; deadline_utc?: string 
 
 export const updateTodo = async (
   id: number,
-  payload: { text?: string; deadline_utc?: string | null; completed?: boolean; time_zone?: string }
+  payload: {
+    text?: string;
+    deadline_utc?: string | null;
+    deadline_is_date_only?: boolean;
+    completed?: boolean;
+    time_zone?: string;
+  }
 ) => {
   if (isGuestMode()) {
     return updateGuestTodo(id, payload);
@@ -534,6 +546,114 @@ export const sendClaudeTodoMessage = async (
     return getGuestClaudeTodoResponse({ message, session_id });
   }
   const { data } = await api.post('/api/todos/claude/message', { message, session_id });
+  return data;
+};
+
+// Calendar
+
+export type CalendarStatus = {
+  connected: boolean;
+  account_email: string | null;
+  connected_at: string | null;
+  last_sync_at: string | null;
+  requires_reauth: boolean;
+};
+
+export type CalendarSummary = {
+  google_id: string;
+  summary: string;
+  selected: boolean;
+  primary: boolean;
+  is_life_dashboard: boolean;
+  color_id?: string | null;
+  time_zone?: string | null;
+};
+
+export type CalendarListResponse = {
+  calendars: CalendarSummary[];
+};
+
+export type CalendarEvent = {
+  id: number;
+  calendar_google_id: string;
+  calendar_summary: string;
+  calendar_primary: boolean;
+  calendar_is_life_dashboard: boolean;
+  google_event_id: string;
+  recurring_event_id?: string | null;
+  ical_uid?: string | null;
+  summary?: string | null;
+  description?: string | null;
+  location?: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  is_all_day: boolean;
+  status?: string | null;
+  visibility?: string | null;
+  transparency?: string | null;
+  hangout_link?: string | null;
+  conference_link?: string | null;
+  organizer?: Record<string, unknown> | null;
+  attendees?: Array<Record<string, unknown>> | null;
+};
+
+export type CalendarEventsResponse = {
+  events: CalendarEvent[];
+};
+
+export const fetchCalendarStatus = async (): Promise<CalendarStatus> => {
+  if (isGuestMode()) {
+    return {
+      connected: false,
+      account_email: null,
+      connected_at: null,
+      last_sync_at: null,
+      requires_reauth: false
+    };
+  }
+  const { data } = await api.get('/api/calendar/status');
+  return data;
+};
+
+export const fetchCalendars = async (): Promise<CalendarListResponse> => {
+  if (isGuestMode()) {
+    return { calendars: [] };
+  }
+  const { data } = await api.get('/api/calendar/calendars');
+  return data;
+};
+
+export const updateCalendarSelection = async (google_ids: string[]): Promise<CalendarListResponse> => {
+  if (isGuestMode()) {
+    return { calendars: [] };
+  }
+  const { data } = await api.post('/api/calendar/calendars/selection', { google_ids });
+  return data;
+};
+
+export const syncCalendar = async (): Promise<void> => {
+  if (isGuestMode()) {
+    return;
+  }
+  await api.post('/api/calendar/sync');
+};
+
+export const fetchCalendarEvents = async (start: string, end: string): Promise<CalendarEventsResponse> => {
+  if (isGuestMode()) {
+    return { events: [] };
+  }
+  const { data } = await api.get('/api/calendar/events', { params: { start, end } });
+  return data;
+};
+
+export const updateCalendarEvent = async (
+  id: number,
+  payload: { summary?: string; start_time?: string; end_time?: string; scope?: string; is_all_day?: boolean }
+): Promise<CalendarEvent> => {
+  if (isGuestMode()) {
+    throw new Error('Calendar editing is unavailable in guest mode.');
+  }
+  const { data } = await api.patch(`/api/calendar/events/${id}`, payload);
   return data;
 };
 

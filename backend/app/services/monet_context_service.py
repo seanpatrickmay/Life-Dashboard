@@ -4,15 +4,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import DailyMetric
+from app.db.models.calendar import CalendarEvent, GoogleCalendar
 from app.db.models.todo import TodoItem
 from app.db.repositories.metrics_repository import MetricsRepository
 from app.db.repositories.todo_repository import TodoRepository
 from app.services.nutrition_intake_service import NutritionIntakeService
 from app.services.user_profile_service import UserProfileService
-from app.utils.timezone import eastern_today
+from app.utils.timezone import eastern_today, local_now
 
 
 class MonetContextBuilder:
@@ -26,7 +28,7 @@ class MonetContextBuilder:
         self.profile_service = UserProfileService(session)
 
     async def build_context(
-        self, user_id: int, window_days: int = 14, time_zone: str | None = None
+        self, user_id: int, window_days: int = 7, time_zone: str | None = None
     ) -> dict[str, Any]:
         today = eastern_today()
         if window_days < 1:
@@ -45,6 +47,7 @@ class MonetContextBuilder:
 
         todos = await self.todo_repo.list_for_user(user_id)
         todo_payload = [self._serialize_todo(todo) for todo in todos]
+        calendar_payload = await self._serialize_calendar_events(user_id, window_days, time_zone)
 
         return {
             "window_days": window_days,
@@ -65,6 +68,7 @@ class MonetContextBuilder:
             },
             "profile": self._convert_dates(profile_payload),
             "todos": todo_payload,
+            "calendar_events": calendar_payload,
         }
 
     def _serialize_metric(self, metric: DailyMetric) -> dict[str, Any]:
@@ -117,10 +121,66 @@ class MonetContextBuilder:
             "text": todo.text,
             "completed": todo.completed,
             "deadline_utc": deadline,
+            "deadline_is_date_only": todo.deadline_is_date_only,
             "is_overdue": is_overdue,
             "created_at": todo.created_at.isoformat() if todo.created_at else None,
             "updated_at": todo.updated_at.isoformat() if todo.updated_at else None,
         }
+
+    async def _serialize_calendar_events(
+        self, user_id: int, window_days: int, time_zone: str | None
+    ) -> list[dict[str, Any]]:
+        now_local = local_now(time_zone)
+        window_end = now_local + timedelta(days=window_days)
+        start_utc = now_local.astimezone(timezone.utc)
+        end_utc = window_end.astimezone(timezone.utc)
+        stmt = (
+            select(CalendarEvent, GoogleCalendar)
+            .join(GoogleCalendar, CalendarEvent.calendar_id == GoogleCalendar.id)
+            .where(
+                CalendarEvent.user_id == user_id,
+                CalendarEvent.status != "cancelled",
+                CalendarEvent.start_time.is_not(None),
+                CalendarEvent.end_time.is_not(None),
+                CalendarEvent.start_time <= end_utc,
+                CalendarEvent.end_time >= start_utc,
+                GoogleCalendar.selected.is_(True),
+            )
+        )
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        events = []
+        for event, calendar in rows:
+            if _is_declined_attendee(event.attendees):
+                continue
+            events.append(
+                {
+                    "id": event.id,
+                    "calendar": {
+                        "id": calendar.google_id,
+                        "summary": calendar.summary,
+                        "primary": calendar.primary,
+                        "is_life_dashboard": calendar.is_life_dashboard,
+                    },
+                    "google_event_id": event.google_event_id,
+                    "recurring_event_id": event.recurring_event_id,
+                    "ical_uid": event.ical_uid,
+                    "summary": event.summary,
+                    "description": _cap_words(event.description, 100),
+                    "location": event.location,
+                    "start_time": event.start_time.isoformat() if event.start_time else None,
+                    "end_time": event.end_time.isoformat() if event.end_time else None,
+                    "is_all_day": event.is_all_day,
+                    "status": event.status,
+                    "visibility": event.visibility,
+                    "transparency": event.transparency,
+                    "hangout_link": event.hangout_link,
+                    "conference_link": event.conference_link,
+                    "organizer": event.organizer,
+                    "attendees": event.attendees,
+                }
+            )
+        return _dedupe_events(events)
 
     def _convert_dates(self, value: Any) -> Any:
         if isinstance(value, list):
@@ -152,3 +212,42 @@ def _compute_local_time(time_zone: str | None) -> dict[str, Any]:
         "now_local": now_local.isoformat(),
         "offset_minutes": offset_minutes,
     }
+
+
+def _cap_words(text: str | None, max_words: int) -> str | None:
+    if not text:
+        return text
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    return " ".join(words[:max_words])
+
+
+def _dedupe_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    for event in events:
+        key_source = event.get("ical_uid") or event.get("google_event_id") or str(event.get("id"))
+        start_key = event.get("start_time") or ""
+        key = (key_source, start_key)
+        candidate = by_key.get(key)
+        if candidate is None or _event_priority(event) < _event_priority(candidate):
+            by_key[key] = event
+    return list(by_key.values())
+
+
+def _event_priority(event: dict[str, Any]) -> int:
+    calendar = event.get("calendar") or {}
+    if calendar.get("is_life_dashboard"):
+        return 0
+    if calendar.get("primary") or (event.get("organizer") or {}).get("self"):
+        return 1
+    return 2
+
+
+def _is_declined_attendee(attendees: list[dict[str, Any]] | None) -> bool:
+    if not attendees:
+        return False
+    for attendee in attendees:
+        if attendee.get("self") and attendee.get("responseStatus") == "declined":
+            return True
+    return False

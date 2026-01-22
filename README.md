@@ -88,6 +88,14 @@ All configuration lives in `.env`. The most important variables are grouped belo
 | `SESSION_TTL_HOURS` / `SESSION_TTL_DAYS` | Session lifetime in hours/days |
 | `CORS_ORIGINS` | Comma-delimited list of allowed frontend origins |
 
+### Google Calendar
+
+| Variable | Purpose |
+| --- | --- |
+| `GOOGLE_CALENDAR_REDIRECT_URI_*` | OAuth redirect URL for Calendar scopes |
+| `GOOGLE_CALENDAR_WEBHOOK_URL` | Public URL to receive Calendar webhook notifications |
+| `GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY` | Symmetric key used to encrypt Calendar tokens |
+
 ### Garmin
 
 | Variable | Purpose |

@@ -24,6 +24,7 @@ from app.core.config import settings
 from app.clients.genai_client import build_genai_client
 from app.db.repositories.todo_repository import TodoRepository
 from app.prompts import CLAUDE_TODO_EXTRACTION_PROMPT
+from app.services.todo_calendar_link_service import TodoCalendarLinkService
 from app.utils.timezone import eastern_now, ensure_eastern
 
 
@@ -87,6 +88,10 @@ class ClaudeTodoAgent:
     created = await self.repo.create_many(user_id=user_id, items=todo_specs)
     await self.session.flush()
     await self.session.commit()
+    link_service = TodoCalendarLinkService(self.session)
+    for todo in created:
+      if todo.deadline_utc is not None and not todo.completed:
+        await link_service.upsert_event_for_todo(todo)
 
     reply = parsed.get("summary") if isinstance(parsed, dict) else None
     if not reply:

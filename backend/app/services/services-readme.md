@@ -21,6 +21,12 @@ Hosts business-logic modules that orchestrate repositories, clients, and other i
 | `user_profile_service.py` | Manages editable user demographics, measurements, and exposes profile payloads. |
 | `claude_nutrition_agent.py` | Placeholder Claude integration for nutrition chat logging. |
 | `claude_todo_agent.py` | Claude-style agent that turns natural language into structured to-do items. |
+| `google_calendar_constants.py` | Shared constants for Google Calendar integration. |
+| `google_calendar_connection_service.py` | Stores OAuth tokens, refreshes access, and tracks Calendar account state. |
+| `google_calendar_event_service.py` | Applies user-driven updates to Google Calendar events and refreshes cache. |
+| `google_calendar_sync_service.py` | Syncs Google calendars/events into the local cache and manages webhooks. |
 | `journal_compiler.py` | LLM-driven extraction, deduplication, and grouping for journal summaries. |
 | `journal_service.py` | Orchestrates journal entry capture and daily summary compilation. |
 | `todo_accomplishment_agent.py` | Rewrites completed todos into neutral past-tense accomplishments. |
+| `todo_calendar_link_service.py` | Maintains 1:1 todo-to-event links and creates calendar events for dated todos. |
+| `todo_calendar_title_agent.py` | Generates succinct calendar event titles from todo text. |

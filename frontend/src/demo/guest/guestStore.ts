@@ -210,6 +210,7 @@ const buildGuestState = (today: Date): GuestState => {
     }
   ].map((item) => ({
     ...item,
+    deadline_is_date_only: item.deadline_is_date_only ?? false,
     is_overdue:
       !item.completed && item.deadline_utc
         ? new Date(item.deadline_utc).getTime() < Date.now()
@@ -689,7 +690,12 @@ export const getGuestSceneTime = (): SceneTimeResponse => {
 
 export const getGuestTodos = (): TodoItem[] => getGuestState().todos;
 
-export const createGuestTodo = (payload: { text: string; deadline_utc?: string | null }): TodoItem => {
+export const createGuestTodo = (payload: {
+  text: string;
+  deadline_utc?: string | null;
+  deadline_is_date_only?: boolean;
+  time_zone?: string;
+}): TodoItem => {
   const state = getGuestState();
   const nowIso = new Date().toISOString();
   const nextId = state.next_todo_id;
@@ -699,6 +705,7 @@ export const createGuestTodo = (payload: { text: string; deadline_utc?: string |
     text: payload.text,
     completed: false,
     deadline_utc: payload.deadline_utc ?? null,
+    deadline_is_date_only: payload.deadline_is_date_only ?? false,
     is_overdue: payload.deadline_utc
       ? new Date(payload.deadline_utc).getTime() < Date.now()
       : false,
@@ -712,7 +719,13 @@ export const createGuestTodo = (payload: { text: string; deadline_utc?: string |
 
 export const updateGuestTodo = (
   id: number,
-  payload: { text?: string; deadline_utc?: string | null; completed?: boolean }
+  payload: {
+    text?: string;
+    deadline_utc?: string | null;
+    deadline_is_date_only?: boolean;
+    completed?: boolean;
+    time_zone?: string;
+  }
 ): TodoItem => {
   const state = getGuestState();
   const nowIso = new Date().toISOString();
@@ -726,6 +739,7 @@ export const updateGuestTodo = (
       text: payload.text ?? item.text,
       completed,
       deadline_utc: deadline,
+      deadline_is_date_only: payload.deadline_is_date_only ?? item.deadline_is_date_only,
       is_overdue: isOverdue,
       updated_at: nowIso
     };

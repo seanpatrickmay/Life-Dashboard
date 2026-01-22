@@ -9,6 +9,7 @@ Defines the SQLAlchemy ORM base and entity classes representing database tables.
 | --- | --- |
 | `__init__.py` | Exports model classes. |
 | `base.py` | Declarative base class used by all models. |
+| `calendar.py` | Google Calendar connection, calendar metadata, event cache, and todo links. |
 | `entities.py` | Core entities (User, Activity, DailyMetric) plus profile, measurement, and daily energy tables. |
 | `journal.py` | Daily journal entries and compiled journal summaries. |
 | `nutrition.py` | Nutrition-specific ORM models, including nutrient definitions, goals, scaling rules, and intake data. |

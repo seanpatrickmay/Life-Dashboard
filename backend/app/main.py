@@ -8,7 +8,21 @@ from app.core.config import settings
 from app.core.logging import configure_logging
 from app.db.models import Base
 from app.db.session import engine
-from app.routers import admin, assistant, auth, garmin, insights, journal, metrics, nutrition, system, time, user, todos
+from app.routers import (
+  admin,
+  assistant,
+  auth,
+  calendar,
+  garmin,
+  insights,
+  journal,
+  metrics,
+  nutrition,
+  system,
+  time,
+  user,
+  todos,
+)
 
 configure_logging(settings.debug)
 
@@ -36,6 +50,7 @@ app.include_router(nutrition.router, prefix=settings.api_prefix)
 app.include_router(user.router, prefix=settings.api_prefix)
 app.include_router(system.router, prefix=settings.api_prefix)
 app.include_router(todos.router, prefix=settings.api_prefix)
+app.include_router(calendar.router, prefix=settings.api_prefix)
 app.include_router(assistant.router, prefix=settings.api_prefix)
 app.include_router(journal.router, prefix=settings.api_prefix)
 
@@ -48,6 +63,15 @@ async def startup_event() -> None:
 async def _init_database() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Guard against older databases that predate the todo date-only flag migration.
+        await conn.execute(
+            text(
+                """
+                ALTER TABLE todo_item
+                ADD COLUMN IF NOT EXISTS deadline_is_date_only BOOLEAN NOT NULL DEFAULT false
+                """
+            )
+        )
         await conn.execute(
             text(
                 """

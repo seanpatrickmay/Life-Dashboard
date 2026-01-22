@@ -11,6 +11,7 @@ Contains FastAPI router modules that expose HTTP endpoints grouped by domain (me
 | `assistant.py` | Monet assistant chat endpoint that orchestrates Claude-based tools. |
 | `admin.py` | Admin/internal endpoints (e.g., readiness checks). |
 | `auth.py` | Google OAuth login, session management, and current-user endpoint. |
+| `calendar.py` | Google Calendar OAuth, sync, event listing, and update endpoints. |
 | `garmin.py` | Per-user Garmin Connect credential + token management endpoints. |
 | `insights.py` | Insight retrieval API endpoints. |
 | `journal.py` | Journal entry capture, weekly status, and daily summary endpoints. |

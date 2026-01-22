@@ -21,8 +21,9 @@ const pageReveal = keyframes`
 const BookShell = styled.div`
   position: relative;
   display: grid;
-  gap: clamp(16px, 2.5vw, 28px);
-  grid-template-columns: minmax(240px, 0.95fr) minmax(320px, 1.2fr);
+  --book-gap: clamp(16px, 2.5vw, 28px);
+  gap: 0;
+  grid-template-columns: minmax(240px, 0.95fr) var(--book-gap) minmax(320px, 1.2fr);
   padding: clamp(16px, 3vw, 28px);
   border-radius: 36px;
   background: linear-gradient(160deg, rgba(22, 18, 26, 0.92), rgba(10, 10, 16, 0.96));
@@ -42,16 +43,17 @@ const BookShell = styled.div`
   }
 
   @media (max-width: 980px) {
+    gap: var(--book-gap);
     grid-template-columns: 1fr;
   }
 `;
 
 const Spine = styled.div`
-  position: absolute;
-  left: calc(50% - 8px);
-  top: 12px;
-  bottom: 12px;
+  grid-column: 2;
+  align-self: center;
+  justify-self: center;
   width: 16px;
+  height: calc(100% - 24px);
   border-radius: 999px;
   background: ${({ theme }) =>
     theme.mode === 'dark'
@@ -504,7 +506,6 @@ export function JournalBook() {
 
   return (
     <BookShell>
-      <Spine />
       <Page>
         <PageContent>
           <PageHeader>
@@ -586,6 +587,7 @@ export function JournalBook() {
           )}
         </PageContent>
       </Page>
+      <Spine />
       <Page>
         <PageContent>
           <PageHeader>
