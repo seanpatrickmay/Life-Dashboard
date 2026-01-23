@@ -137,8 +137,8 @@ class GoogleCalendarEventService:
 
     async def _refresh_calendar(self, calendar: GoogleCalendar, start_time: datetime | None) -> None:
         now = datetime.now(timezone.utc)
-        window_start = (start_time or now) - timedelta(days=365)
-        window_end = (start_time or now) + timedelta(days=365)
+        window_start = (start_time or now) - timedelta(days=7)
+        window_end = (start_time or now) + timedelta(days=30)
         await self.sync_service.sync_events_for_calendar(
             calendar.user_id,
             calendar,

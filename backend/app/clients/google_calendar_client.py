@@ -37,7 +37,7 @@ class GoogleCalendarClient:
             payload = await self._request(
                 "GET",
                 "/users/me/calendarList",
-                params={"pageToken": page_token} if page_token else None,
+                params={"pageToken": page_token, "showHidden": True} if page_token else {"showHidden": True},
             )
             items.extend(payload.get("items", []))
             page_token = payload.get("nextPageToken")

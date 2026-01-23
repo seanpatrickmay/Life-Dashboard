@@ -215,6 +215,7 @@ class GoogleCalendarSyncService:
         google_id = payload.get("id")
         if not google_id:
             raise ValueError("Google Calendar id missing.")
+        display_name = payload.get("summaryOverride") or payload.get("summary") or "Untitled"
         stmt = select(GoogleCalendar).where(
             GoogleCalendar.user_id == user_id, GoogleCalendar.google_id == google_id
         )
@@ -225,7 +226,7 @@ class GoogleCalendarSyncService:
                 user_id=user_id,
                 connection_id=connection.id,
                 google_id=google_id,
-                summary=payload.get("summary") or "Untitled",
+                summary=display_name,
                 description=payload.get("description"),
                 time_zone=payload.get("timeZone"),
                 access_role=payload.get("accessRole"),
@@ -237,7 +238,7 @@ class GoogleCalendarSyncService:
             self.session.add(calendar)
         else:
             calendar.connection_id = connection.id
-            calendar.summary = payload.get("summary") or calendar.summary
+            calendar.summary = display_name or calendar.summary
             calendar.description = payload.get("description")
             calendar.time_zone = payload.get("timeZone")
             calendar.access_role = payload.get("accessRole")

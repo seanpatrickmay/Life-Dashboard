@@ -237,8 +237,8 @@ async def sync_calendar(
     await sync_service.sync_calendars(current_user.id)
     await sync_service.ensure_life_dashboard_calendar(current_user.id)
     now = datetime.now(timezone.utc)
-    window_start = now - timedelta(days=365)
-    window_end = now + timedelta(days=365)
+    window_start = now - timedelta(days=7)
+    window_end = now + timedelta(days=30)
     await sync_service.sync_selected_events(
         current_user.id,
         window_start=window_start,
@@ -395,8 +395,8 @@ async def google_calendar_webhook(
         return response
     sync_service = GoogleCalendarSyncService(session)
     now = datetime.now(timezone.utc)
-    window_start = now - timedelta(days=365)
-    window_end = now + timedelta(days=365)
+    window_start = now - timedelta(days=7)
+    window_end = now + timedelta(days=30)
     await sync_service.sync_events_for_calendar(
         calendar.user_id,
         calendar,
