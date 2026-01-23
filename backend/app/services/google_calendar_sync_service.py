@@ -121,6 +121,13 @@ class GoogleCalendarSyncService:
                     time_min=window_start.isoformat(),
                     time_max=window_end.isoformat(),
                 )
+            elif exc.status_code in {403, 404}:
+                logger.warning(
+                    "Skipping calendar {} during sync (status {}).",
+                    calendar.google_id,
+                    exc.status_code,
+                )
+                return
             else:
                 raise
 

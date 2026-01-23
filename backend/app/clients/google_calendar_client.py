@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -73,13 +74,15 @@ class GoogleCalendarClient:
                 params["timeMin"] = time_min
             if time_max:
                 params["timeMax"] = time_max
+        calendar_path = _encode_path_segment(calendar_id)
         return await self._request(
-            "GET", f"/calendars/{calendar_id}/events", params=params
+            "GET", f"/calendars/{calendar_path}/events", params=params
         )
 
     async def insert_event(self, calendar_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Insert a new event into the specified calendar."""
-        return await self._request("POST", f"/calendars/{calendar_id}/events", json=payload)
+        calendar_path = _encode_path_segment(calendar_id)
+        return await self._request("POST", f"/calendars/{calendar_path}/events", json=payload)
 
     async def patch_event(
         self,
@@ -90,26 +93,33 @@ class GoogleCalendarClient:
         send_updates: str | None = None,
     ) -> dict[str, Any]:
         """Patch an existing event and return the updated payload."""
+        calendar_path = _encode_path_segment(calendar_id)
+        event_path = _encode_path_segment(event_id)
         params = {"sendUpdates": send_updates} if send_updates else None
         return await self._request(
             "PATCH",
-            f"/calendars/{calendar_id}/events/{event_id}",
+            f"/calendars/{calendar_path}/events/{event_path}",
             params=params,
             json=payload,
         )
 
     async def get_event(self, calendar_id: str, event_id: str) -> dict[str, Any]:
         """Fetch a single event by id."""
-        return await self._request("GET", f"/calendars/{calendar_id}/events/{event_id}")
+        calendar_path = _encode_path_segment(calendar_id)
+        event_path = _encode_path_segment(event_id)
+        return await self._request("GET", f"/calendars/{calendar_path}/events/{event_path}")
 
     async def delete_event(self, calendar_id: str, event_id: str) -> None:
         """Delete an event from the specified calendar."""
-        await self._request("DELETE", f"/calendars/{calendar_id}/events/{event_id}")
+        calendar_path = _encode_path_segment(calendar_id)
+        event_path = _encode_path_segment(event_id)
+        await self._request("DELETE", f"/calendars/{calendar_path}/events/{event_path}")
 
     async def watch_events(
         self, calendar_id: str, *, channel_id: str, address: str, token: str | None = None
     ) -> dict[str, Any]:
         """Create a webhook channel for calendar event changes."""
+        calendar_path = _encode_path_segment(calendar_id)
         body: dict[str, Any] = {
             "id": channel_id,
             "type": "web_hook",
@@ -117,7 +127,7 @@ class GoogleCalendarClient:
         }
         if token:
             body["token"] = token
-        return await self._request("POST", f"/calendars/{calendar_id}/events/watch", json=body)
+        return await self._request("POST", f"/calendars/{calendar_path}/events/watch", json=body)
 
     async def _request(
         self,
@@ -141,3 +151,8 @@ class GoogleCalendarClient:
         if not response.text:
             return {}
         return response.json()
+
+
+def _encode_path_segment(value: str) -> str:
+    """Encode path segments so calendar/event IDs with # or @ do not break URLs."""
+    return quote(value, safe="")
