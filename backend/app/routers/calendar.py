@@ -9,7 +9,7 @@ from dateutil import parser as date_parser
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Query, Response, status
 from fastapi.responses import RedirectResponse
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -272,7 +272,7 @@ async def list_events(
         )
         .where(
             CalendarEvent.user_id == current_user.id,
-            CalendarEvent.status != "cancelled",
+            or_(CalendarEvent.status.is_(None), CalendarEvent.status != "cancelled"),
             CalendarEvent.start_time.is_not(None),
             CalendarEvent.end_time.is_not(None),
             CalendarEvent.start_time <= end_dt,

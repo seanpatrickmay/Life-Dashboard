@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import DailyMetric
@@ -139,7 +139,7 @@ class MonetContextBuilder:
             .join(GoogleCalendar, CalendarEvent.calendar_id == GoogleCalendar.id)
             .where(
                 CalendarEvent.user_id == user_id,
-                CalendarEvent.status != "cancelled",
+                or_(CalendarEvent.status.is_(None), CalendarEvent.status != "cancelled"),
                 CalendarEvent.start_time.is_not(None),
                 CalendarEvent.end_time.is_not(None),
                 CalendarEvent.start_time <= end_utc,
