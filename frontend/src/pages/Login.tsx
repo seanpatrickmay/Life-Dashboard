@@ -4,6 +4,7 @@ import type { Location } from 'react-router-dom';
 import styled from 'styled-components';
 import { palette } from '../theme/monetTheme';
 import { enterGuestMode, exitGuestMode, isGuestDemoEnabled } from '../demo/guest/guestMode';
+import { getApiBaseUrl } from '../services/api';
 
 const Wrap = styled.div`
   min-height: 70vh;
@@ -149,7 +150,7 @@ export function LoginPage() {
   const guestEnabled = isGuestDemoEnabled();
 
   const loginUrl = useMemo(() => {
-    const apiBase = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
+    const apiBase = getApiBaseUrl();
     const fromPath = (location.state as { from?: Location })?.from?.pathname ?? '/';
     const redirectTarget = `${window.location.origin}${fromPath}`;
     const params = new URLSearchParams({

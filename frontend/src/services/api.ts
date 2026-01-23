@@ -30,7 +30,24 @@ import {
   updateGuestUserProfile
 } from '../demo/guest/guestStore';
 
-const baseURL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
+const resolveApiBaseUrl = () => {
+  const envBase = import.meta.env.VITE_API_BASE_URL;
+  if (envBase) {
+    return envBase;
+  }
+  if (typeof window === 'undefined') {
+    return 'http://localhost:8000';
+  }
+  const { hostname, origin } = window.location;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:8000';
+  }
+  return origin;
+};
+
+const baseURL = resolveApiBaseUrl();
+
+export const getApiBaseUrl = () => baseURL;
 
 export const api = axios.create({
   baseURL,
