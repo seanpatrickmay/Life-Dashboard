@@ -6,6 +6,7 @@ from typing import Any
 
 from loguru import logger
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.google_calendar_client import GoogleCalendarClient, GoogleCalendarError
@@ -195,9 +196,14 @@ class TodoCalendarLinkService:
     async def _get_link_by_event(
         self, calendar_id: int, google_event_id: str
     ) -> TodoEventLink | None:
-        stmt = select(TodoEventLink).where(
-            TodoEventLink.calendar_id == calendar_id,
-            TodoEventLink.google_event_id == google_event_id,
+        """Fetch the todo link and eagerly load the todo to avoid async lazy-load."""
+        stmt = (
+            select(TodoEventLink)
+            .options(selectinload(TodoEventLink.todo))
+            .where(
+                TodoEventLink.calendar_id == calendar_id,
+                TodoEventLink.google_event_id == google_event_id,
+            )
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
