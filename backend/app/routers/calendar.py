@@ -234,6 +234,8 @@ async def sync_calendar(
 ) -> Response:
     """Trigger a manual sync for selected calendars."""
     sync_service = GoogleCalendarSyncService(session)
+    await sync_service.sync_calendars(current_user.id)
+    await sync_service.ensure_life_dashboard_calendar(current_user.id)
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(days=365)
     window_end = now + timedelta(days=365)
