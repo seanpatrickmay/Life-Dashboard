@@ -455,6 +455,48 @@ const StatusMessage = styled.div`
   color: var(--page-ink-muted);
 `;
 
+const PageNav = styled.div`
+  margin-top: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 12px;
+`;
+
+const PageNavButton = styled.button`
+  width: 44px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--page-border);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 6px 12px rgba(44, 30, 22, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--page-ink);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 8px 16px rgba(44, 30, 22, 0.22);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+  }
+`;
+
+const ArrowIcon = styled.span<{ $direction: 'left' | 'right' }>`
+  width: 10px;
+  height: 10px;
+  border-top: 2px solid var(--page-ink);
+  border-right: 2px solid var(--page-ink);
+  transform: ${({ $direction }) => ($direction === 'left' ? 'rotate(-135deg)' : 'rotate(45deg)')};
+`;
+
 export function JournalBook() {
   const today = useMemo(() => startOfDay(new Date()), []);
   const [leftMode, setLeftMode] = useState<'completed' | 'calendar'>('completed');
@@ -493,6 +535,7 @@ export function JournalBook() {
   const todayCompletedItems = todayData?.completed_items ?? [];
   const entries = dayData?.entries ?? [];
   const summaryGroups = dayData?.summary?.groups ?? [];
+  const canGoNextDay = selectedKey < todayKey;
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -500,6 +543,25 @@ export function JournalBook() {
     if (!trimmed) return;
     await createEntry(trimmed);
     setEntryText('');
+  };
+
+  const handleNavigateDay = (delta: number) => {
+    const nextDate = addDays(selectedDate, delta);
+    const nextKey = formatDateKey(nextDate);
+    if (delta > 0 && nextKey > todayKey) return;
+
+    setSelectedDate(nextDate);
+
+    const nextWeekStart = getWeekStart(nextDate);
+    if (formatDateKey(nextWeekStart) !== weekStartKey) {
+      setWeekStart(nextWeekStart);
+    }
+
+    if (nextKey === todayKey) {
+      setLeftMode('completed');
+    } else if (leftMode === 'completed') {
+      setLeftMode('calendar');
+    }
   };
 
   const showNextWeek = weekStart < getWeekStart(today);
@@ -668,6 +730,19 @@ export function JournalBook() {
               )}
             </>
           )}
+          <PageNav>
+            <PageNavButton type="button" onClick={() => handleNavigateDay(-1)} aria-label="Previous day">
+              <ArrowIcon $direction="left" />
+            </PageNavButton>
+            <PageNavButton
+              type="button"
+              onClick={() => handleNavigateDay(1)}
+              aria-label="Next day"
+              disabled={!canGoNextDay}
+            >
+              <ArrowIcon $direction="right" />
+            </PageNavButton>
+          </PageNav>
         </PageContent>
       </Page>
     </BookShell>
