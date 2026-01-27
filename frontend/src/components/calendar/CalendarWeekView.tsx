@@ -570,11 +570,11 @@ const groupItemsByDay = (days: Date[], items: CalendarItem[]) => {
 
 const sortItems = (items: CalendarItem[]) =>
   [...items].sort((left, right) => {
+    const timeDelta = left.start.getTime() - right.start.getTime();
+    if (timeDelta !== 0) return timeDelta;
     const leftPriority = left.priority ?? 0;
     const rightPriority = right.priority ?? 0;
     if (leftPriority !== rightPriority) return leftPriority - rightPriority;
-    const timeDelta = left.start.getTime() - right.start.getTime();
-    if (timeDelta !== 0) return timeDelta;
     return left.title.localeCompare(right.title);
   });
 
