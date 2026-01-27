@@ -62,6 +62,23 @@ To-do:
 {todo_text}
 """
 
+TODO_CALENDAR_TITLE_PROMPT = """
+You are a concise editor. Shorten the todo into a clear calendar title.
+
+Return ONLY valid JSON with this shape:
+{"title": "string", "details": "string"}
+
+Rules:
+- title must be <= {max_length} characters, no ellipses.
+- details is optional; include only essential context that does not fit in the title.
+- details must be <= {max_details} characters, no ellipses.
+- Prefer concrete nouns/verbs, drop filler words.
+- Do not include quotes or backticks outside the JSON.
+
+Todo:
+{todo_text}
+"""
+
 JOURNAL_ENTRY_EXTRACTION_PROMPT = """
 You are Monet, a calm journal editor.
 Extract the concrete accomplishments from the user's journal entries for {local_date} in {time_zone}.

@@ -12,3 +12,5 @@ Stores Alembic migration scripts that evolve the backend schema over time.
 | `20260201_journal_entries.py` | Adds journal entry and summary tables. |
 | `20260310_calendar_sync.py` | Adds Google Calendar sync tables and todo date-only flag. |
 | `20260311_todo_deadline.py` | Ensures the todo date-only flag exists after sync migration. |
+| `20260312_todo_event_title_hash.py` | Adds todo text hash to todo_event_link. |
+| `20260313_ensure_todo_text_hash.py` | Ensures todo_event_link.todo_text_hash exists. |

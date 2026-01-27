@@ -238,15 +238,17 @@ export function CalendarPage() {
     }
   }, [selectedItem]);
 
-  const todoItems = useMemo(() => {
-    const todos = (todosQuery.data ?? []).filter((todo) => !todo.completed && todo.deadline_utc);
-    return buildTodoItems(todos);
-  }, [todosQuery.data]);
+  const todoEntries = useMemo(
+    () => (todosQuery.data ?? []).filter((todo) => !todo.completed && todo.deadline_utc),
+    [todosQuery.data]
+  );
+  const todoItems = useMemo(() => buildTodoItems(todoEntries), [todoEntries]);
 
   const eventItems = useMemo(() => {
-    const events = eventsQuery.data?.events ?? [];
-    return buildEventItems(events);
-  }, [eventsQuery.data]);
+    const events = eventsQuery.eventsQuery.data?.events ?? [];
+    const deduped = events.filter((event) => !event.todo_id);
+    return buildEventItems(deduped);
+  }, [eventsQuery.eventsQuery.data]);
 
   const timedItems = [...todoItems.timed, ...eventItems.timed];
   const allDayItems = [...todoItems.allDay, ...eventItems.allDay];

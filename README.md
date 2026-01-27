@@ -75,6 +75,7 @@ All configuration lives in `.env`. The most important variables are grouped belo
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | Core Postgres credentials |
 | `DATABASE_URL` | Internal DB URL used by the backend container |
 | `DATABASE_URL_HOST` | Local DB URL used by scripts and local tools |
+| `DATABASE_URL_MIGRATIONS` | Explicit DB URL used by Alembic migrations |
 
 ### Auth and Sessions
 

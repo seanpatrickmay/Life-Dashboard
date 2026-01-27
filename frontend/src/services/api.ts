@@ -30,19 +30,31 @@ import {
   updateGuestUserProfile
 } from '../demo/guest/guestStore';
 
-const resolveApiBaseUrl = () => {
-  const envBase = import.meta.env.VITE_API_BASE_URL;
+type ApiLocation = {
+  hostname: string;
+  origin: string;
+  protocol: string;
+};
+
+export const resolveApiBaseUrl = (options: { envBase?: string; location?: ApiLocation } = {}) => {
+  const envBase = options.envBase ?? import.meta.env.VITE_API_BASE_URL;
+  const location = options.location ?? (typeof window !== 'undefined' ? window.location : undefined);
   if (envBase) {
+    if (location && location.protocol === 'https:' && envBase.startsWith('http://')) {
+      if (envBase.includes('localhost') || envBase.includes('127.0.0.1')) {
+        return location.origin;
+      }
+      return `https://${envBase.slice('http://'.length)}`;
+    }
     return envBase;
   }
-  if (typeof window === 'undefined') {
+  if (!location) {
     return 'http://localhost:8000';
   }
-  const { hostname, origin } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+  if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
     return 'http://localhost:8000';
   }
-  return origin;
+  return location.origin;
 };
 
 const baseURL = resolveApiBaseUrl();
@@ -592,6 +604,7 @@ export type CalendarListResponse = {
 
 export type CalendarEvent = {
   id: number;
+  todo_id?: number | null;
   calendar_google_id: string;
   calendar_summary: string;
   calendar_primary: boolean;

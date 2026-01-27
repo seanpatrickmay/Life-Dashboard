@@ -112,6 +112,7 @@ class TodoEventLink(Base):
     calendar_id: Mapped[int] = mapped_column(ForeignKey("google_calendar.id"), nullable=False)
     google_event_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     ical_uid: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    todo_text_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     event_start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     event_end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

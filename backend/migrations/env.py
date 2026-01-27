@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from logging.config import fileConfig
+from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import engine_from_config, pool
 import sqlalchemy as sa
@@ -15,25 +16,46 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BASE_DIR / ".env")
 
-db_url = os.getenv("DATABASE_URL_HOST") or os.getenv("DATABASE_URL")
+IN_DOCKER = os.path.exists("/.dockerenv")
+env_db_url = os.getenv("DATABASE_URL")
+env_db_url_host = os.getenv("DATABASE_URL_HOST")
+env_db_url_migrations = os.getenv("DATABASE_URL_MIGRATIONS")
+docker_db_host = os.getenv("POSTGRES_HOST") or "life_db"
+if docker_db_host in ("localhost", "127.0.0.1"):
+    docker_db_host = "life_db"
+
+
+def _rewrite_host(url: str, host: str) -> str:
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        return url
+    netloc = ""
+    if parsed.username:
+        netloc += parsed.username
+        if parsed.password:
+            netloc += f":{parsed.password}"
+        netloc += "@"
+    netloc += host
+    if parsed.port:
+        netloc += f":{parsed.port}"
+    return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+
+# Prefer the explicit migrations URL when provided.
+if env_db_url_migrations:
+    db_url = env_db_url_migrations
+else:
+    # Prefer the container-friendly URL when running inside Docker.
+    db_url = (env_db_url or env_db_url_host) if IN_DOCKER else (env_db_url_host or env_db_url)
 if db_url and "+asyncpg" in db_url:
     sync_db_url = db_url.replace("+asyncpg", "")
 else:
     sync_db_url = db_url
 
-
-def _rewrite_localhost_if_in_container(url: str | None) -> str | None:
-    if not url:
-        return url
-    # If running inside docker-compose, localhost will not reach the db service. Rewrite to 'db'.
-    if os.path.exists("/.dockerenv") and ("localhost" in url or "127.0.0.1" in url):
-        return url.replace("localhost", "db").replace("127.0.0.1", "db")
-    return url
-
-
-db_url = _rewrite_localhost_if_in_container(sync_db_url)
+db_url = sync_db_url
+if IN_DOCKER and db_url:
+    db_url = _rewrite_host(db_url, docker_db_host)
 if not db_url:
-    raise RuntimeError("DATABASE_URL or DATABASE_URL_HOST must be set for Alembic migrations.")
+    raise RuntimeError("DATABASE_URL, DATABASE_URL_HOST, or DATABASE_URL_MIGRATIONS must be set for Alembic migrations.")
 
 from app.db.models import entities  # noqa: F401
 from app.db.models.base import Base
@@ -45,20 +67,18 @@ if config.config_file_name is not None:
 
 def _build_candidates(url: str) -> list[str]:
     # If we're inside a container, allow 'db' rewrite. Host runs should stick to the provided URL.
-    if not os.path.exists("/.dockerenv"):
+    if not IN_DOCKER:
         return [url]
 
     candidates: list[str] = []
     try:
-        from urllib.parse import urlparse, urlunparse
-
         parsed = urlparse(url)
         if parsed.hostname:
             hosts = [parsed.hostname]
-            if parsed.hostname in ("localhost", "127.0.0.1"):
-                hosts.append("db")
-            if parsed.hostname == "db":
-                hosts.extend(["localhost", "127.0.0.1"])
+            for host in ("life_db", "life-db", "db"):
+                if host not in hosts:
+                    hosts.append(host)
+            hosts = [host for host in hosts if host not in ("localhost", "127.0.0.1")]
 
             seen: set[str] = set()
 
@@ -132,10 +152,16 @@ def run_migrations_online() -> None:
                 poolclass=pool.NullPool,
             )
             with connectable.connect() as connection:
-                _ensure_version_table_supports_long_ids(connection)
-                context.configure(connection=connection, target_metadata=target_metadata)
+                context.configure(
+                    connection=connection,
+                    target_metadata=target_metadata,
+                    version_table_schema="public",
+                )
 
                 with context.begin_transaction():
+                    if connection.dialect.name == "postgresql":
+                        connection.execute(sa.text("SET search_path TO public"))
+                    _ensure_version_table_supports_long_ids(connection)
                     context.run_migrations()
                 return
         except Exception as exc:  # pragma: no cover - fallback handling

@@ -34,6 +34,7 @@ class CalendarSelectionRequest(BaseModel):
 
 class CalendarEventResponse(BaseModel):
     id: int
+    todo_id: int | None = None
     calendar_google_id: str
     calendar_summary: str
     calendar_primary: bool

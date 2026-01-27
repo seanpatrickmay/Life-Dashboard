@@ -16,7 +16,7 @@ services:
     env_file:
       - ../.env
     environment:
-      DATABASE_URL_HOST: ""
+      RUN_MIGRATIONS: "1"
     depends_on:
       - life_db
     volumes:

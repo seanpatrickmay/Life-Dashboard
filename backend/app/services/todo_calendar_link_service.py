@@ -1,6 +1,7 @@
 """Link todos with Google Calendar events."""
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
@@ -20,6 +21,7 @@ from app.utils.timezone import resolve_time_zone
 
 GOOGLE_TODO_COLOR_ID = "3"
 TODO_DESCRIPTION_TAG = "Life Dashboard Todo"
+TODO_DETAILS_HEADER = "Life Dashboard Details:"
 
 
 class TodoCalendarLinkService:
@@ -41,23 +43,38 @@ class TodoCalendarLinkService:
             return
         calendar = await self._ensure_life_dashboard_calendar(todo.user_id)
         link = await self._get_link(todo.id)
+        existing_event = None
         existing_description = None
+        existing_summary = None
         if link and link.google_event_id:
-            event = await self._get_event(calendar.id, link.google_event_id)
-            existing_description = event.description if event else None
+            existing_event = await self._get_event(calendar.id, link.google_event_id)
+            if existing_event:
+                existing_description = existing_event.description
+                existing_summary = existing_event.summary
 
         start_time, end_time, is_all_day = _compute_event_times(
             todo.deadline_utc, time_zone, date_only=todo.deadline_is_date_only
         )
-        title = self.title_agent.build_title(todo.text)
+        normalized_text = self.title_agent.normalize_text(todo.text) or "Todo"
+        text_hash = _hash_text(normalized_text)
+        text_changed = link is None or link.todo_text_hash != text_hash
+        needs_text_update = text_changed or existing_event is None
+        if needs_text_update:
+            title_result = await self.title_agent.build_title(todo.text, allow_llm=text_changed)
+            title = title_result.title
+            description = _build_todo_description(existing_description, title_result.details)
+        else:
+            title = existing_summary or normalized_text
+            description = existing_description
         payload = _build_todo_event_payload(
             todo,
             title=title,
+            description=description,
             start_time=start_time,
             end_time=end_time,
             time_zone=time_zone,
             is_all_day=is_all_day,
-            existing_description=existing_description,
+            include_text=needs_text_update,
         )
         client = GoogleCalendarClient(token)
         try:
@@ -76,6 +93,7 @@ class TodoCalendarLinkService:
             ical_uid=event.get("iCalUID"),
             start_time=start_time,
             end_time=end_time,
+            todo_text_hash=text_hash,
         )
         await self.session.commit()
 
@@ -116,6 +134,7 @@ class TodoCalendarLinkService:
                 todo = await self.session.get(TodoItem, todo_id)
                 calendar = await self.session.get(GoogleCalendar, calendar_id)
                 if todo and calendar:
+                    normalized_text = self.title_agent.normalize_text(todo.text) or "Todo"
                     await self._upsert_link(
                         todo,
                         calendar,
@@ -123,6 +142,7 @@ class TodoCalendarLinkService:
                         ical_uid=event_payload.get("iCalUID"),
                         start_time=start_time,
                         end_time=end_time,
+                        todo_text_hash=_hash_text(normalized_text),
                     )
                     await self.session.commit()
             link = await self._get_link_by_event(calendar_id, google_event_id)
@@ -134,6 +154,8 @@ class TodoCalendarLinkService:
         summary = event_payload.get("summary")
         if summary:
             todo.text = summary.strip()
+            normalized_text = self.title_agent.normalize_text(todo.text) or "Todo"
+            link.todo_text_hash = _hash_text(normalized_text)
         is_date_only = _is_date_only_todo_event(event_payload)
         if is_date_only:
             deadline = _all_day_deadline(start_time, end_time, time_zone)
@@ -225,6 +247,7 @@ class TodoCalendarLinkService:
         ical_uid: str | None,
         start_time: datetime | None,
         end_time: datetime | None,
+        todo_text_hash: str | None,
     ) -> None:
         link = await self._get_link(todo.id)
         if link is None:
@@ -239,6 +262,7 @@ class TodoCalendarLinkService:
         link.ical_uid = ical_uid
         link.event_start_time = start_time
         link.event_end_time = end_time
+        link.todo_text_hash = todo_text_hash
         link.last_synced_at = datetime.now(timezone.utc)
 
     async def _unlink_todo(self, todo: TodoItem, *, delete_event: bool) -> None:
@@ -275,14 +299,14 @@ def _compute_event_times(
 def _build_todo_event_payload(
     todo: TodoItem,
     *,
-    title: str,
+    title: str | None,
+    description: str | None,
     start_time: datetime,
     end_time: datetime,
     time_zone: str | None,
     is_all_day: bool,
-    existing_description: str | None,
+    include_text: bool,
 ) -> dict[str, Any]:
-    description = _ensure_description_tag(existing_description)
     tz_name = (time_zone or "UTC").strip() or "UTC"
     if is_all_day:
         start_payload = {"date": start_time.date().isoformat()}
@@ -290,14 +314,27 @@ def _build_todo_event_payload(
     else:
         start_payload = {"dateTime": start_time.isoformat(), "timeZone": tz_name}
         end_payload = {"dateTime": end_time.isoformat(), "timeZone": tz_name}
-    return {
-        "summary": title,
-        "description": description,
+    payload: dict[str, Any] = {
         "start": start_payload,
         "end": end_payload,
-        "colorId": GOOGLE_TODO_COLOR_ID,
-        "extendedProperties": {"private": {"life_dashboard_todo": "true", "todo_id": str(todo.id)}},
     }
+    if include_text:
+        payload["summary"] = title or "Todo"
+        payload["description"] = description or TODO_DESCRIPTION_TAG
+        payload["colorId"] = GOOGLE_TODO_COLOR_ID
+        payload["extendedProperties"] = {
+            "private": {"life_dashboard_todo": "true", "todo_id": str(todo.id)}
+        }
+    return payload
+
+
+def _build_todo_description(existing: str | None, details: str | None) -> str:
+    base = _strip_details_block(existing or "")
+    base = _ensure_description_tag(base)
+    details_text = (details or "").strip()
+    if not details_text:
+        return base
+    return f"{base}\n\n{TODO_DETAILS_HEADER}\n{details_text}"
 
 
 def _ensure_description_tag(existing: str | None) -> str:
@@ -306,6 +343,17 @@ def _ensure_description_tag(existing: str | None) -> str:
     if TODO_DESCRIPTION_TAG in existing:
         return existing
     return f"{existing}\n{TODO_DESCRIPTION_TAG}"
+
+
+def _strip_details_block(description: str) -> str:
+    if not description or TODO_DETAILS_HEADER not in description:
+        return description
+    prefix, _ = description.split(TODO_DETAILS_HEADER, 1)
+    return prefix.rstrip()
+
+
+def _hash_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _is_date_only_todo_event(payload: dict[str, Any]) -> bool:

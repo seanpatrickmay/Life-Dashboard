@@ -263,7 +263,7 @@ async def list_events(
         raise HTTPException(status_code=400, detail="Invalid start/end format.") from exc
 
     stmt = (
-        select(CalendarEvent, GoogleCalendar)
+        select(CalendarEvent, GoogleCalendar, TodoEventLink)
         .join(GoogleCalendar, CalendarEvent.calendar_id == GoogleCalendar.id)
         .outerjoin(
             TodoEventLink,
@@ -278,19 +278,19 @@ async def list_events(
             CalendarEvent.start_time <= end_dt,
             CalendarEvent.end_time >= start_dt,
             GoogleCalendar.selected.is_(True),
-            TodoEventLink.id.is_(None),
         )
     )
     result = await session.execute(stmt)
     rows = result.all()
 
     events = []
-    for event, calendar in rows:
+    for event, calendar, link in rows:
         if _is_declined_attendee(event.attendees):
             continue
         events.append(
             CalendarEventResponse(
                 id=event.id,
+                todo_id=link.todo_id if link else None,
                 calendar_google_id=calendar.google_id,
                 calendar_summary=calendar.summary,
                 calendar_primary=calendar.primary,
