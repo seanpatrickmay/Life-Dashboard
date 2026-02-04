@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
+import re
 from urllib.parse import urlencode
 
 import httpx
@@ -409,11 +411,11 @@ async def google_calendar_webhook(
 
 
 def _dedupe_events(events: list[CalendarEventResponse]) -> list[CalendarEventResponse]:
-    """Collapse duplicate events using iCalUID and start time priority rules."""
+    """Collapse duplicate events using iCalUID and fuzzy title/time matching."""
     by_key: dict[tuple[str, str], CalendarEventResponse] = {}
     for event in events:
         key_source = event.ical_uid or event.google_event_id
-        start_key = event.start_time.isoformat() if event.start_time else ""
+        start_key = _start_time_key(event.start_time)
         key = (key_source, start_key)
         candidate = by_key.get(key)
         if candidate is None:
@@ -421,10 +423,106 @@ def _dedupe_events(events: list[CalendarEventResponse]) -> list[CalendarEventRes
             continue
         if _priority(event) < _priority(candidate):
             by_key[key] = event
+    return _dedupe_events_by_similarity(list(by_key.values()))
+
+
+FUZZY_DEDUPE_TIME_TOLERANCE = timedelta(minutes=5)
+FUZZY_DEDUPE_TITLE_THRESHOLD = 0.9
+FUZZY_DEDUPE_TOKEN_THRESHOLD = 0.8
+
+
+def _start_time_key(start_time: datetime | None) -> str:
+    if not start_time:
+        return ""
+    return start_time.replace(microsecond=0).isoformat()
+
+
+def _dedupe_events_by_similarity(events: list[CalendarEventResponse]) -> list[CalendarEventResponse]:
+    """Collapse duplicates when titles + start/end times look equivalent."""
+    sorted_events = sorted(
+        events,
+        key=lambda item: (
+            item.start_time or datetime.min.replace(tzinfo=timezone.utc),
+            _priority(item),
+            item.id,
+        ),
+    )
+
+    kept: list[CalendarEventResponse] = []
+    for event in sorted_events:
+        duplicate_index = _find_fuzzy_duplicate_index(event, kept)
+        if duplicate_index is None:
+            kept.append(event)
+            continue
+        if _priority(event) < _priority(kept[duplicate_index]):
+            kept[duplicate_index] = event
+
     return sorted(
-        by_key.values(),
+        kept,
         key=lambda item: item.start_time or datetime.min.replace(tzinfo=timezone.utc),
     )
+
+
+def _find_fuzzy_duplicate_index(
+    event: CalendarEventResponse, candidates: list[CalendarEventResponse]
+) -> int | None:
+    for idx, candidate in enumerate(candidates):
+        if _is_fuzzy_duplicate(event, candidate):
+            return idx
+    return None
+
+
+def _is_fuzzy_duplicate(left: CalendarEventResponse, right: CalendarEventResponse) -> bool:
+    if left.todo_id or right.todo_id:
+        return False
+    if not left.start_time or not left.end_time or not right.start_time or not right.end_time:
+        return False
+    if left.is_all_day != right.is_all_day:
+        return False
+
+    start_delta = abs((left.start_time - right.start_time).total_seconds())
+    if start_delta > FUZZY_DEDUPE_TIME_TOLERANCE.total_seconds():
+        return False
+
+    end_delta = abs((left.end_time - right.end_time).total_seconds())
+    if end_delta > FUZZY_DEDUPE_TIME_TOLERANCE.total_seconds():
+        return False
+
+    return _are_summaries_similar(left.summary, right.summary)
+
+
+def _are_summaries_similar(left: str | None, right: str | None) -> bool:
+    left_norm = _normalize_summary(left)
+    right_norm = _normalize_summary(right)
+    if not left_norm or not right_norm:
+        return False
+    if left_norm == right_norm:
+        return True
+    if left_norm in right_norm or right_norm in left_norm:
+        return True
+    ratio = SequenceMatcher(None, left_norm, right_norm).ratio()
+    if ratio >= FUZZY_DEDUPE_TITLE_THRESHOLD:
+        return True
+    return _token_similarity(left_norm, right_norm) >= FUZZY_DEDUPE_TOKEN_THRESHOLD
+
+
+def _normalize_summary(summary: str | None) -> str:
+    if not summary:
+        return ""
+    normalized = summary.casefold()
+    normalized = re.sub(r"[\W_]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _token_similarity(left: str, right: str) -> float:
+    left_tokens = set(left.split())
+    right_tokens = set(right.split())
+    if not left_tokens or not right_tokens:
+        return 0.0
+    intersection = left_tokens & right_tokens
+    union = left_tokens | right_tokens
+    return len(intersection) / len(union)
 
 
 def _priority(event: CalendarEventResponse) -> int:
