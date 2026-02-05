@@ -96,9 +96,27 @@ Entries (JSON list of strings):
 {entries_json}
 """
 
+JOURNAL_CALENDAR_EVENT_EXTRACTION_PROMPT = """
+You are Monet, a calm journal editor.
+Convert the user's calendar events for {local_date} in {time_zone} into concrete, neutral past-tense items.
+
+Return ONLY valid JSON with this shape:
+{{"items": [{{"text": "string"}}]}}
+
+Rules:
+- Each item must describe what happened, based only on the event details.
+- Use short, specific phrasing (max ~12 words).
+- Do not invent outcomes or accomplishments beyond what the event implies.
+- Skip events that look like placeholders (e.g., "Busy", "Hold", "Block") unless clearly meaningful.
+- Do not include categories, labels, or commentary.
+
+Events (JSON list of objects):
+{events_json}
+"""
+
 JOURNAL_DEDUP_PROMPT = """
 You are Monet, a careful editor.
-Deduplicate overlapping accomplishments between completed to-dos and journal extractions.
+Deduplicate overlapping accomplishments between completed to-dos and extracted journal/calendar items.
 
 Return ONLY valid JSON with this shape:
 {{"items": [{{"text": "string"}}]}}

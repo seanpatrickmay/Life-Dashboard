@@ -5,6 +5,7 @@ import styled, { keyframes } from 'styled-components';
 import edgeBleedLight from '../../assets/textures/edge_bleed_light.png';
 import mistWashLight from '../../assets/textures/mist_wash_light.png';
 import paperFiberLight from '../../assets/textures/paper_fiber_light.png';
+import { useCalendarEvents } from '../../hooks/useCalendar';
 import { useJournal } from '../../hooks/useJournal';
 import { fetchJournalDay } from '../../services/api';
 
@@ -519,6 +520,8 @@ export function JournalBook() {
     enabled: selectedKey !== todayKey
   });
 
+  const todayEventsQuery = useCalendarEvents(today.toISOString(), endOfDay(today).toISOString());
+
   const weekDays = useMemo(() => buildWeekDays(weekStart), [weekStart]);
   const dayStatusMap = useMemo(() => {
     const map = new Map<string, { has_entries: boolean; has_summary: boolean; completed_count: number }>();
@@ -533,6 +536,26 @@ export function JournalBook() {
   const todayData = isTodaySelected ? dayData : todayQuery.data;
   const completedItems = dayData?.completed_items ?? [];
   const todayCompletedItems = todayData?.completed_items ?? [];
+  const endedCalendarEvents = useMemo(() => {
+    const events = todayEventsQuery.eventsQuery.data?.events ?? [];
+    const startBoundary = today.getTime();
+    const endBoundary = addDays(today, 1).getTime();
+    const now = Date.now();
+    return events
+      .filter((event) => Boolean(event.start_time && event.end_time))
+      .filter((event) => !event.todo_id)
+      .filter((event) => {
+        const startTime = new Date(event.start_time as string).getTime();
+        const endTime = new Date(event.end_time as string).getTime();
+        if (Number.isNaN(startTime) || Number.isNaN(endTime)) return false;
+        if (startTime < startBoundary || startTime >= endBoundary) return false;
+        return endTime <= now;
+      })
+      .sort(
+        (left, right) =>
+          new Date(left.start_time as string).getTime() - new Date(right.start_time as string).getTime()
+      );
+  }, [todayEventsQuery.eventsQuery.data, today]);
   const entries = dayData?.entries ?? [];
   const summaryGroups = dayData?.summary?.groups ?? [];
   const canGoNextDay = selectedKey < todayKey;
@@ -583,21 +606,45 @@ export function JournalBook() {
             </ToggleButton>
           </ToggleRow>
           {leftMode === 'completed' ? (
-            <Section>
-              <SectionHeaderRow>
-                <SectionTitle>Completed Today</SectionTitle>
-                <CountPill>{todayCompletedItems.length} done</CountPill>
-              </SectionHeaderRow>
-              {todayCompletedItems.length === 0 ? (
-                <EmptyText>No completed to-dos yet.</EmptyText>
-              ) : (
-                <TaskList>
-                  {todayCompletedItems.map((item) => (
-                    <TaskItem key={item.id}>{item.text}</TaskItem>
-                  ))}
-                </TaskList>
-              )}
-            </Section>
+            <>
+              <Section>
+                <SectionHeaderRow>
+                  <SectionTitle>Completed Today</SectionTitle>
+                  <CountPill>{todayCompletedItems.length} done</CountPill>
+                </SectionHeaderRow>
+                {todayCompletedItems.length === 0 ? (
+                  <EmptyText>No completed to-dos yet.</EmptyText>
+                ) : (
+                  <TaskList>
+                    {todayCompletedItems.map((item) => (
+                      <TaskItem key={item.id}>{item.text}</TaskItem>
+                    ))}
+                  </TaskList>
+                )}
+              </Section>
+              <Section>
+                <SectionHeaderRow>
+                  <SectionTitle>Calendar (Ended)</SectionTitle>
+                  <CountPill>{endedCalendarEvents.length} events</CountPill>
+                </SectionHeaderRow>
+                {todayEventsQuery.eventsQuery.isLoading ? (
+                  <EmptyText>Loading calendar...</EmptyText>
+                ) : endedCalendarEvents.length === 0 ? (
+                  <EmptyText>No calendar events have ended yet.</EmptyText>
+                ) : (
+                  <TaskList>
+                    {endedCalendarEvents.map((event) => (
+                      <TaskItem key={event.id}>
+                        {event.is_all_day
+                          ? 'All day'
+                          : `${formatTime(event.start_time as string)} - ${formatTime(event.end_time as string)}`}
+                        {event.summary ? ` · ${event.summary}` : null}
+                      </TaskItem>
+                    ))}
+                  </TaskList>
+                )}
+              </Section>
+            </>
           ) : (
             <Section>
               <WeekNav>
@@ -775,6 +822,12 @@ const formatTime = (value: string) =>
 const startOfDay = (date: Date) => {
   const next = new Date(date);
   next.setHours(0, 0, 0, 0);
+  return next;
+};
+
+const endOfDay = (date: Date) => {
+  const next = new Date(date);
+  next.setHours(23, 59, 59, 999);
   return next;
 };
 

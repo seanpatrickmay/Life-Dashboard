@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.clients.genai_client import build_genai_client
 from app.core.config import settings
 from app.prompts import (
+  JOURNAL_CALENDAR_EVENT_EXTRACTION_PROMPT,
   JOURNAL_DEDUP_PROMPT,
   JOURNAL_ENTRY_EXTRACTION_PROMPT,
   JOURNAL_GROUPING_PROMPT,
@@ -28,7 +29,7 @@ from app.prompts import (
 class JournalCompiler:
   """Runs LLM extraction, deduplication, and grouping for journal summaries."""
 
-  VERSION = "v1"
+  VERSION = "v2"
 
   def __init__(self, session: AsyncSession) -> None:
     self.session = session
@@ -43,12 +44,15 @@ class JournalCompiler:
     time_zone: str,
     entries: list[str],
     todo_items: list[str],
+    calendar_events: list[dict[str, Any]] | None = None,
   ) -> dict[str, Any]:
-    if not entries and not todo_items:
+    calendar_events = calendar_events or []
+    if not entries and not todo_items and not calendar_events:
       return {"groups": []}
 
     journal_items = await self._extract_entries(local_date, time_zone, entries)
-    merged_items = await self._dedupe_items(todo_items, journal_items)
+    calendar_items = await self._extract_calendar_events(local_date, time_zone, calendar_events)
+    merged_items = await self._dedupe_items(todo_items, [*journal_items, *calendar_items])
     grouped = await self._group_items(merged_items)
     return grouped
 
@@ -65,6 +69,32 @@ class JournalCompiler:
     response = await self._call_model(prompt)
     payload = self._safe_parse_json(response)
     return self._parse_text_items(payload)
+
+  async def _extract_calendar_events(
+    self, local_date: date, time_zone: str, events: list[dict[str, Any]]
+  ) -> list[str]:
+    if not events:
+      return []
+    prompt = JOURNAL_CALENDAR_EVENT_EXTRACTION_PROMPT.format(
+      local_date=local_date.isoformat(),
+      time_zone=time_zone,
+      events_json=json.dumps(events, ensure_ascii=False),
+    )
+    try:
+      response = await self._call_model(prompt)
+      payload = self._safe_parse_json(response)
+      extracted = self._parse_text_items(payload)
+      if extracted:
+        return extracted
+    except Exception as exc:  # noqa: BLE001
+      logger.warning("[journal] calendar event extraction failed: {}", exc)
+
+    fallback: list[str] = []
+    for event in events:
+      summary = str(event.get("summary") or "").strip()
+      if summary:
+        fallback.append(summary)
+    return fallback
 
   async def _dedupe_items(self, todo_items: list[str], journal_items: list[str]) -> list[str]:
     if not todo_items and not journal_items:

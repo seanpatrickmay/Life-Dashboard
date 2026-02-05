@@ -5,12 +5,14 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from loguru import logger
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.calendar import CalendarEvent, GoogleCalendar, TodoEventLink
 from app.db.repositories.journal_repository import JournalRepository
 from app.db.repositories.todo_repository import TodoRepository
 from app.services.journal_compiler import JournalCompiler
-from app.utils.timezone import local_today
+from app.utils.timezone import local_today, resolve_time_zone
 
 
 class JournalService:
@@ -115,6 +117,11 @@ class JournalService:
       effective_time_zone = entries[0].time_zone
     todo_items = [item.accomplishment_text or item.text for item in completed]
     entry_texts = [entry.text for entry in entries]
+    calendar_events = await self._list_calendar_events_for_day(
+      user_id=user_id,
+      local_date=local_date,
+      time_zone=effective_time_zone,
+    )
 
     now_utc = datetime.now(timezone.utc)
     summary_payload = {"groups": []}
@@ -126,6 +133,7 @@ class JournalService:
         time_zone=effective_time_zone,
         entries=entry_texts,
         todo_items=todo_items,
+        calendar_events=calendar_events,
       )
       model_name = self.compiler.model_name
     except Exception as exc:  # noqa: BLE001
@@ -161,3 +169,75 @@ class JournalService:
     if status == "final":
       await self.journal_repo.delete_entries_for_day(user_id, local_date)
     return summary
+
+  async def _list_calendar_events_for_day(
+    self,
+    *,
+    user_id: int,
+    local_date: date,
+    time_zone: str,
+  ) -> list[dict[str, Any]]:
+    zone = resolve_time_zone(time_zone)
+    start_local = datetime.combine(local_date, datetime.min.time(), tzinfo=zone)
+    end_local = start_local + timedelta(days=1)
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
+
+    stmt = (
+      select(CalendarEvent, GoogleCalendar, TodoEventLink)
+      .join(GoogleCalendar, CalendarEvent.calendar_id == GoogleCalendar.id)
+      .outerjoin(
+        TodoEventLink,
+        (TodoEventLink.calendar_id == CalendarEvent.calendar_id)
+        & (TodoEventLink.google_event_id == CalendarEvent.google_event_id),
+      )
+      .where(
+        CalendarEvent.user_id == user_id,
+        or_(CalendarEvent.status.is_(None), CalendarEvent.status != "cancelled"),
+        CalendarEvent.start_time.is_not(None),
+        CalendarEvent.end_time.is_not(None),
+        CalendarEvent.start_time >= start_utc,
+        CalendarEvent.start_time < end_utc,
+        GoogleCalendar.selected.is_(True),
+        TodoEventLink.todo_id.is_(None),
+      )
+      .order_by(CalendarEvent.start_time.asc())
+    )
+    result = await self.session.execute(stmt)
+    rows = result.all()
+
+    events: list[dict[str, Any]] = []
+    for event, calendar, link in rows:
+      if link and link.todo_id:
+        continue
+      if _is_declined_attendee(event.attendees):
+        continue
+      summary = (event.summary or "").strip()
+      if not summary:
+        continue
+      start_time_local = event.start_time.astimezone(zone) if event.start_time else None
+      end_time_local = event.end_time.astimezone(zone) if event.end_time else None
+      events.append(
+        {
+          "summary": summary,
+          "location": event.location,
+          "calendar": {
+            "summary": calendar.summary,
+            "primary": calendar.primary,
+            "is_life_dashboard": calendar.is_life_dashboard,
+          },
+          "start_time_local": start_time_local.isoformat() if start_time_local else None,
+          "end_time_local": end_time_local.isoformat() if end_time_local else None,
+          "is_all_day": event.is_all_day,
+        }
+      )
+    return events
+
+
+def _is_declined_attendee(attendees: list[dict[str, object]] | None) -> bool:
+  if not attendees:
+    return False
+  for attendee in attendees:
+    if attendee.get("self") and attendee.get("responseStatus") == "declined":
+      return True
+  return False
