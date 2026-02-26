@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+import asyncio
 import json
 
 from loguru import logger
@@ -22,7 +23,7 @@ from app.utils.timezone import eastern_today
 class InsightService:
     def __init__(self, session: AsyncSession, vertex: VertexClient | None = None) -> None:
         self.session = session
-        self.vertex = vertex or VertexClient()
+        self._vertex = vertex
 
     async def refresh_daily_insight(self, user_id: int, metric_date: date | None = None) -> VertexInsight:
         metric_date = metric_date or eastern_today()
@@ -43,7 +44,8 @@ class InsightService:
         prompt = self._build_prompt(metric, history)
         logger.debug("Vertex prompt for {}:\n{}", metric_date, prompt)
         try:
-            narrative, tokens = await self.vertex.generate_text(prompt)
+            vertex = await self._get_vertex()
+            narrative, tokens = await vertex.generate_text(prompt)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Vertex insight generation failed: {}. Storing placeholder.", exc)
             narrative = fallback_narrative or (
@@ -133,6 +135,13 @@ class InsightService:
         )
         logger.info("Stored Vertex insight for {}", metric_date)
         return insight
+
+    async def _get_vertex(self) -> VertexClient:
+        # Vertex client initialization (credentials + vertexai.init) is synchronous and can be slow.
+        # Keep InsightService lightweight for read-only endpoints by initializing lazily in a thread.
+        if self._vertex is None:
+            self._vertex = await asyncio.to_thread(VertexClient)
+        return self._vertex
 
     async def _fetch_metric(self, user_id: int, metric_date: date) -> DailyMetric | None:
         stmt = select(DailyMetric).where(DailyMetric.user_id == user_id, DailyMetric.metric_date == metric_date)

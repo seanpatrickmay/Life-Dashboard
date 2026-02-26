@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 from typing import Any
@@ -102,6 +103,12 @@ def _verify_id_token(token: str) -> dict[str, Any]:
     return payload
 
 
+async def _verify_id_token_async(token: str) -> dict[str, Any]:
+    # google-auth token verification uses synchronous HTTP under the hood
+    # (cert discovery / refresh) and can block the event loop if called directly.
+    return await asyncio.to_thread(_verify_id_token, token)
+
+
 async def _upsert_user(session: AsyncSession, payload: dict[str, Any]) -> User:
     subject = payload.get("sub")
     email = payload.get("email")
@@ -165,7 +172,7 @@ async def google_callback(
     if not id_token_value:
         return RedirectResponse(url=f"{redirect_url}?auth_error=missing_token")
     try:
-        payload = _verify_id_token(id_token_value)
+        payload = await _verify_id_token_async(id_token_value)
     except Exception:
         return RedirectResponse(url=f"{redirect_url}?auth_error=invalid_token")
 

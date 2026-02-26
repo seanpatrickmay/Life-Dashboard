@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -84,7 +86,7 @@ async def reauth_garmin(
             detail="Stored Garmin credentials could not be decrypted.",
         ) from exc
     try:
-        client.authenticate()
+        await asyncio.to_thread(client.authenticate)
     except Exception as exc:  # noqa: BLE001
         await service.mark_reauth_required(current_user.id, True)
         raise HTTPException(

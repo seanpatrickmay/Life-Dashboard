@@ -1,6 +1,7 @@
 """Manage per-user Garmin credential storage and client creation."""
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from loguru import logger
@@ -32,7 +33,7 @@ class GarminConnectionService:
             email=garmin_email,
             password=garmin_password,
         )
-        client.authenticate()
+        await asyncio.to_thread(client.authenticate)
         encrypted_password = encrypt_secret(garmin_password)
         now = eastern_now()
 
