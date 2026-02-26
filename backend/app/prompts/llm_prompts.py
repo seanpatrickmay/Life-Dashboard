@@ -62,6 +62,44 @@ To-do:
 {todo_text}
 """
 
+TODO_PROJECT_MAPPING_PROMPT = """
+You are Monet, an assistant that maps todos into project buckets.
+Given project names and todo items, return JSON only.
+
+Output shape:
+{{
+  "assignments": [
+    {{
+      "todo_id": number,
+      "project_name": string,
+      "confidence": number,
+      "reason": string
+    }}
+  ]
+}}
+
+Rules:
+- Prefer matching existing projects when clearly appropriate.
+- If no existing project fits, suggest a concise broad project name that can hold many related tasks.
+- Avoid creating narrow personal sub-groups. Do not create one-off names like
+  "Personal Appointments", "Self Care", "Groceries", "Daily Routines", or similar variants.
+- For personal-life chores, errands, routines, appointments, and self-maintenance items, use "Personal".
+- Keep project names reusable and stable over time (broad buckets over micro-categories).
+- Keep confidence between 0 and 1.
+- If uncertain, use lower confidence.
+
+Examples:
+- "Schedule dentist appointment", "Buy groceries", "Morning routine reset", "Self-care tasks" -> "Personal"
+- "Submit reimbursement" -> "Finance"
+- "Study for exam" -> "School Work"
+
+Existing projects:
+{project_names_json}
+
+Todos:
+{todos_json}
+"""
+
 TODO_CALENDAR_TITLE_PROMPT = """
 You are a concise editor. Shorten the todo into a clear calendar title.
 

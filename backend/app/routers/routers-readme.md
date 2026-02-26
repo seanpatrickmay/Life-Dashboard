@@ -18,6 +18,7 @@ Contains FastAPI router modules that expose HTTP endpoints grouped by domain (me
 | `metrics.py` | Metrics retrieval API endpoints. |
 | `time.py` | Returns current US-Eastern time & moment for scene sync. |
 | `nutrition.py` | Nutrition ingredients, recipes, goals, scaling rules, intake endpoints, and Claude chat stub. |
+| `projects.py` | Project board, project CRUD, and todo-project suggestion management endpoints. |
 | `todos.py` | To-do item APIs and Claude-powered creation endpoint. |
 | `user.py` | User profile endpoints for demographics and personal settings. |
 | `system.py` | Visit-triggered refresh endpoint and status checks. |

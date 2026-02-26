@@ -15,6 +15,9 @@ import type {
   NutritionHistory,
   NutritionMenuResponse,
   NutritionSummary,
+  ProjectBoardResponse,
+  ProjectItem,
+  ProjectSuggestion,
   RefreshStatusResponse,
   TodoItem,
   UserProfileData,
@@ -67,8 +70,13 @@ const getMoment = (hour: number): SceneTimeResponse['moment'] => {
 const includesAny = (value: string, needles: string[]) =>
   needles.some((needle) => value.includes(needle));
 
+const normalizeProjectName = (value: string) => value.trim().toLowerCase();
+
 type GuestState = {
   base_date: string;
+  projects: ProjectItem[];
+  project_suggestions: ProjectSuggestion[];
+  next_project_id: number;
   todos: TodoItem[];
   next_todo_id: number;
   journal_entries: Record<string, JournalEntry[]>;
@@ -122,6 +130,7 @@ const buildGuestState = (today: Date): GuestState => {
   const todos: TodoItem[] = [
     {
       id: 101,
+      project_id: 2,
       text:
         "Run intervals (track): 15' easy warm-up + drills; 6x800m @ ~3:10-3:15 (5K pace / RPE 8) w/ 400m jog (~2:30); 4x200m relaxed-fast @ ~40-42s w/ 200m walk; 10' cooldown (total ~7-8 mi).",
       completed: true,
@@ -132,6 +141,7 @@ const buildGuestState = (today: Date): GuestState => {
     },
     {
       id: 102,
+      project_id: 2,
       text:
         'Meal prep (3 lunches + 2 dinners): cook rice, roast 2 sheet pans of veggies, bake salmon; pre-wash greens; prep 3 yogurt + berry jars; portion everything into containers.',
       completed: true,
@@ -142,6 +152,7 @@ const buildGuestState = (today: Date): GuestState => {
     },
     {
       id: 103,
+      project_id: 3,
       text:
         'Finance admin: reconcile checking + credit cards; categorize last 30 days; adjust budget targets; schedule $250/week automatic savings transfer.',
       completed: true,
@@ -152,6 +163,7 @@ const buildGuestState = (today: Date): GuestState => {
     },
     {
       id: 104,
+      project_id: 1,
       text:
         'Home reset: deep clean kitchen, clear fridge, restock staples, and set up a grab-and-go snack shelf for the week.',
       completed: true,
@@ -162,6 +174,7 @@ const buildGuestState = (today: Date): GuestState => {
     },
     {
       id: 105,
+      project_id: 1,
       text:
         'Weekly planning: review calendar, pick top 3 outcomes, block 2x90m deep-work sessions, and schedule workouts + grocery run.',
       completed: true,
@@ -172,6 +185,7 @@ const buildGuestState = (today: Date): GuestState => {
     },
     {
       id: 106,
+      project_id: 4,
       text:
         'Record Loom: Dashboard → Insights → Nutrition → Journal → User (2–3 min walkthrough + what each screen solves).',
       completed: false,
@@ -182,6 +196,7 @@ const buildGuestState = (today: Date): GuestState => {
     },
     {
       id: 107,
+      project_id: 2,
       text: 'Health: schedule annual physical + labs (request lipid panel + A1C).',
       completed: false,
       deadline_utc: isoAt(baseDate, 7, 10, 0),
@@ -191,6 +206,7 @@ const buildGuestState = (today: Date): GuestState => {
     },
     {
       id: 108,
+      project_id: 3,
       text:
         'Admin: submit expense reimbursement (Dec/Jan receipts) with PDFs attached; update reimbursements tracker.',
       completed: false,
@@ -201,6 +217,7 @@ const buildGuestState = (today: Date): GuestState => {
     },
     {
       id: 109,
+      project_id: 2,
       text: 'Call insurance tomorrow morning: confirm labs coverage (lipid panel + A1C) and any pre-auth requirements.',
       completed: false,
       deadline_utc: isoAt(baseDate, 1, 9, 30),
@@ -626,8 +643,58 @@ const buildGuestState = (today: Date): GuestState => {
     sleep_trend_hours: buildTrends(baseDate, SLEEP_VALUES)
   };
 
+  const projects: ProjectItem[] = [
+    {
+      id: 1,
+      name: 'Inbox',
+      notes: 'Default project for unmapped todos.',
+      archived: false,
+      sort_order: -100,
+      created_at: nowIso,
+      updated_at: nowIso,
+      open_count: 0,
+      completed_count: 0
+    },
+    {
+      id: 2,
+      name: 'Health',
+      notes: 'Training, recovery, and medical tasks.',
+      archived: false,
+      sort_order: 1,
+      created_at: nowIso,
+      updated_at: nowIso,
+      open_count: 0,
+      completed_count: 0
+    },
+    {
+      id: 3,
+      name: 'Finance',
+      notes: 'Budgeting, reimbursements, and money admin.',
+      archived: false,
+      sort_order: 2,
+      created_at: nowIso,
+      updated_at: nowIso,
+      open_count: 0,
+      completed_count: 0
+    },
+    {
+      id: 4,
+      name: 'Capital One Onboarding',
+      notes: 'Onboarding and project setup tasks.',
+      archived: false,
+      sort_order: 3,
+      created_at: nowIso,
+      updated_at: nowIso,
+      open_count: 0,
+      completed_count: 0
+    }
+  ];
+
   return {
     base_date: baseKey,
+    projects,
+    project_suggestions: [],
+    next_project_id: 5,
     todos,
     next_todo_id: 110,
     journal_entries: journalEntries,
@@ -652,6 +719,21 @@ const getGuestState = () => {
     const fresh = buildGuestState(new Date());
     saveState(fresh);
     return fresh;
+  }
+  if (!stored.projects || !stored.next_project_id || !stored.project_suggestions) {
+    const fresh = buildGuestState(new Date());
+    const upgraded: GuestState = {
+      ...stored,
+      projects: stored.projects ?? fresh.projects,
+      project_suggestions: stored.project_suggestions ?? [],
+      next_project_id: stored.next_project_id ?? fresh.next_project_id,
+      todos: (stored.todos ?? []).map((todo) => ({
+        ...todo,
+        project_id: todo.project_id ?? 1
+      }))
+    };
+    saveState(upgraded);
+    return upgraded;
   }
   return stored;
 };
@@ -690,8 +772,15 @@ export const getGuestSceneTime = (): SceneTimeResponse => {
 
 export const getGuestTodos = (): TodoItem[] => getGuestState().todos;
 
+const resolveGuestInboxProjectId = (state: GuestState): number => {
+  const inbox = state.projects.find((project) => normalizeProjectName(project.name) === 'inbox');
+  if (inbox) return inbox.id;
+  return state.projects[0]?.id ?? 1;
+};
+
 export const createGuestTodo = (payload: {
   text: string;
+  project_id?: number;
   deadline_utc?: string | null;
   deadline_is_date_only?: boolean;
   time_zone?: string;
@@ -699,9 +788,15 @@ export const createGuestTodo = (payload: {
   const state = getGuestState();
   const nowIso = new Date().toISOString();
   const nextId = state.next_todo_id;
+  const inboxProjectId = resolveGuestInboxProjectId(state);
+  const projectId =
+    payload.project_id && state.projects.some((project) => project.id === payload.project_id)
+      ? payload.project_id
+      : inboxProjectId;
   state.next_todo_id += 1;
   const item: TodoItem = {
     id: nextId,
+    project_id: projectId,
     text: payload.text,
     completed: false,
     deadline_utc: payload.deadline_utc ?? null,
@@ -721,6 +816,7 @@ export const updateGuestTodo = (
   id: number,
   payload: {
     text?: string;
+    project_id?: number;
     deadline_utc?: string | null;
     deadline_is_date_only?: boolean;
     completed?: boolean;
@@ -729,6 +825,7 @@ export const updateGuestTodo = (
 ): TodoItem => {
   const state = getGuestState();
   const nowIso = new Date().toISOString();
+  const projectIds = new Set(state.projects.map((project) => project.id));
   const nextTodos = state.todos.map((item) => {
     if (item.id !== id) return item;
     const completed = payload.completed ?? item.completed;
@@ -737,6 +834,10 @@ export const updateGuestTodo = (
     return {
       ...item,
       text: payload.text ?? item.text,
+      project_id:
+        payload.project_id !== undefined && projectIds.has(payload.project_id)
+          ? payload.project_id
+          : item.project_id,
       completed,
       deadline_utc: deadline,
       deadline_is_date_only: payload.deadline_is_date_only ?? item.deadline_is_date_only,
@@ -754,6 +855,99 @@ export const updateGuestTodo = (
 export const deleteGuestTodo = (id: number) => {
   const state = getGuestState();
   state.todos = state.todos.filter((item) => item.id !== id);
+  saveState(state);
+};
+
+export const getGuestProjectBoard = (): ProjectBoardResponse => {
+  const state = getGuestState();
+  const counts = new Map<number, { open: number; completed: number }>();
+  for (const todo of state.todos) {
+    const current = counts.get(todo.project_id) ?? { open: 0, completed: 0 };
+    if (todo.completed) {
+      current.completed += 1;
+    } else {
+      current.open += 1;
+    }
+    counts.set(todo.project_id, current);
+  }
+  const projects = state.projects
+    .filter((project) => !project.archived)
+    .map((project) => {
+      const count = counts.get(project.id) ?? { open: 0, completed: 0 };
+      return {
+        ...project,
+        open_count: count.open,
+        completed_count: count.completed
+      };
+    })
+    .sort((left, right) => left.sort_order - right.sort_order);
+  return {
+    projects,
+    todos: state.todos,
+    suggestions: state.project_suggestions
+  };
+};
+
+export const createGuestProject = (payload: {
+  name: string;
+  notes?: string | null;
+  sort_order?: number;
+}): ProjectItem => {
+  const state = getGuestState();
+  const nowIso = new Date().toISOString();
+  const normalized = normalizeProjectName(payload.name);
+  const existing = state.projects.find((project) => normalizeProjectName(project.name) === normalized);
+  if (existing) {
+    return existing;
+  }
+  const project: ProjectItem = {
+    id: state.next_project_id,
+    name: payload.name.trim(),
+    notes: payload.notes ?? null,
+    archived: false,
+    sort_order: payload.sort_order ?? state.projects.length,
+    created_at: nowIso,
+    updated_at: nowIso,
+    open_count: 0,
+    completed_count: 0
+  };
+  state.next_project_id += 1;
+  state.projects = [...state.projects, project];
+  saveState(state);
+  return project;
+};
+
+export const updateGuestProject = (
+  id: number,
+  payload: {
+    name?: string;
+    notes?: string | null;
+    archived?: boolean;
+    sort_order?: number;
+  }
+): ProjectItem => {
+  const state = getGuestState();
+  const nowIso = new Date().toISOString();
+  let updated: ProjectItem | undefined;
+  state.projects = state.projects.map((project) => {
+    if (project.id !== id) return project;
+    updated = {
+      ...project,
+      name: payload.name?.trim() || project.name,
+      notes: payload.notes === undefined ? project.notes : payload.notes,
+      archived: payload.archived ?? project.archived,
+      sort_order: payload.sort_order ?? project.sort_order,
+      updated_at: nowIso
+    };
+    return updated;
+  });
+  saveState(state);
+  return updated ?? state.projects[0];
+};
+
+export const deleteGuestProjectSuggestion = (todo_id: number) => {
+  const state = getGuestState();
+  state.project_suggestions = state.project_suggestions.filter((item) => item.todo_id !== todo_id);
   saveState(state);
 };
 

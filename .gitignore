@@ -34,3 +34,7 @@ db_data/
 
 # Misc
 coverage.xml
+
+# Playwright artifacts
+.playwright-cli/
+output/playwright/

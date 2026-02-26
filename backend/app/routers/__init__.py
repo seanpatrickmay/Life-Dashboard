@@ -8,6 +8,7 @@ from . import (
   journal,
   metrics,
   nutrition,
+  projects,
   system,
   time,
   user,

@@ -51,6 +51,10 @@ class User(Base):
 
     activities: Mapped[list["Activity"]] = relationship(back_populates="user")
     todos: Mapped[list["TodoItem"]] = relationship(back_populates="user")
+    projects: Mapped[list["Project"]] = relationship(back_populates="user")
+    todo_project_suggestions: Mapped[list["TodoProjectSuggestion"]] = relationship(
+        back_populates="user"
+    )
     journal_entries: Mapped[list["JournalEntry"]] = relationship(back_populates="user")
     journal_summaries: Mapped[list["JournalDaySummary"]] = relationship(back_populates="user")
     daily_metrics: Mapped[list["DailyMetric"]] = relationship(back_populates="user")

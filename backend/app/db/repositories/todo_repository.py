@@ -45,6 +45,7 @@ class TodoRepository:
   async def create_many(
     self,
     user_id: int,
+    project_id: int,
     items: Iterable[tuple[str, datetime | None] | tuple[str, datetime | None, bool]],
   ) -> list[TodoItem]:
     """Create multiple todo items."""
@@ -57,6 +58,7 @@ class TodoRepository:
         date_only = False
       todo = TodoItem(
         user_id=user_id,
+        project_id=project_id,
         text=text.strip(),
         deadline_utc=_to_utc(deadline),
         deadline_is_date_only=bool(date_only),
@@ -68,12 +70,14 @@ class TodoRepository:
   async def create_one(
     self,
     user_id: int,
+    project_id: int,
     text: str,
     deadline: datetime | None,
     deadline_is_date_only: bool = False,
   ) -> TodoItem:
     todo = TodoItem(
       user_id=user_id,
+      project_id=project_id,
       text=text.strip(),
       deadline_utc=_to_utc(deadline),
       deadline_is_date_only=deadline_is_date_only,

@@ -5,6 +5,7 @@ import { InsightsPage } from './Insights';
 import { JournalPage } from './Journal';
 import { CalendarPage } from './Calendar';
 import { NutritionPage } from './Nutrition';
+import { ProjectsPage } from './Projects';
 import { UserPage } from './User';
 import { LoginPage } from './Login';
 import { PageShell } from '../components/layout/PageShell';
@@ -18,6 +19,7 @@ const routes = [
   { path: '/insights', element: <InsightsPage /> },
   { path: '/journal', element: <JournalPage /> },
   { path: '/calendar', element: <CalendarPage /> },
+  { path: '/projects', element: <ProjectsPage /> },
   { path: '/nutrition', element: <NutritionPage /> },
   { path: '/user', element: <UserPage /> }
 ];

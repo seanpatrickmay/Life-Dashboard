@@ -4,7 +4,9 @@ import {
   clearGuestState,
   createGuestJournalEntry,
   createGuestTodo,
+  createGuestProject,
   deleteGuestNutritionEntry,
+  deleteGuestProjectSuggestion,
   deleteGuestTodo,
   getGuestAuthMe,
   getGuestClaudeChatResponse,
@@ -19,6 +21,7 @@ import {
   getGuestNutritionGoals,
   getGuestNutritionHistory,
   getGuestNutritionMenu,
+  getGuestProjectBoard,
   getGuestReadinessSummary,
   getGuestRefreshStatus,
   getGuestSceneTime,
@@ -26,6 +29,7 @@ import {
   getGuestUserProfile,
   updateGuestNutritionEntry,
   updateGuestNutritionGoal,
+  updateGuestProject,
   updateGuestTodo,
   updateGuestUserProfile
 } from '../demo/guest/guestStore';
@@ -505,6 +509,7 @@ export const sendClaudeMessage = async (message: string, session_id?: string): P
 
 export type TodoItem = {
   id: number;
+  project_id: number;
   text: string;
   completed: boolean;
   deadline_utc: string | null;
@@ -531,6 +536,7 @@ export const fetchTodos = async (time_zone?: string): Promise<TodoItem[]> => {
 
 export const createTodo = async (payload: {
   text: string;
+  project_id?: number;
   deadline_utc?: string | null;
   deadline_is_date_only?: boolean;
   time_zone?: string;
@@ -546,6 +552,7 @@ export const updateTodo = async (
   id: number,
   payload: {
     text?: string;
+    project_id?: number;
     deadline_utc?: string | null;
     deadline_is_date_only?: boolean;
     completed?: boolean;
@@ -576,6 +583,100 @@ export const sendClaudeTodoMessage = async (
   }
   const { data } = await api.post('/api/todos/claude/message', { message, session_id });
   return data;
+};
+
+// Projects
+
+export type ProjectItem = {
+  id: number;
+  name: string;
+  notes: string | null;
+  archived: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  open_count: number;
+  completed_count: number;
+};
+
+export type ProjectSuggestion = {
+  todo_id: number;
+  suggested_project_name: string;
+  confidence: number;
+  reason: string | null;
+};
+
+export type ProjectBoardResponse = {
+  projects: ProjectItem[];
+  todos: TodoItem[];
+  suggestions: ProjectSuggestion[];
+};
+
+export const fetchProjectBoard = async (): Promise<ProjectBoardResponse> => {
+  if (isGuestMode()) {
+    return getGuestProjectBoard();
+  }
+  const { data } = await api.get('/api/projects/board');
+  return data as ProjectBoardResponse;
+};
+
+export const createProject = async (payload: {
+  name: string;
+  notes?: string | null;
+  sort_order?: number;
+}): Promise<ProjectItem> => {
+  if (isGuestMode()) {
+    return createGuestProject(payload);
+  }
+  const { data } = await api.post('/api/projects', payload);
+  return data as ProjectItem;
+};
+
+export const updateProject = async (
+  id: number,
+  payload: {
+    name?: string;
+    notes?: string | null;
+    archived?: boolean;
+    sort_order?: number;
+  }
+): Promise<ProjectItem> => {
+  if (isGuestMode()) {
+    return updateGuestProject(id, payload);
+  }
+  const { data } = await api.patch(`/api/projects/${id}`, payload);
+  return data as ProjectItem;
+};
+
+export const recomputeProjectSuggestions = async (payload: {
+  scope?: 'inbox' | 'all';
+  todo_ids?: number[];
+}): Promise<{ scheduled_count: number }> => {
+  if (isGuestMode()) {
+    const board = getGuestProjectBoard();
+    if (payload.todo_ids?.length) {
+      return { scheduled_count: payload.todo_ids.length };
+    }
+    if ((payload.scope ?? 'inbox') === 'all') {
+      return { scheduled_count: board.todos.length };
+    }
+    const inboxId =
+      board.projects.find((project) => project.name.trim().toLowerCase() === 'inbox')?.id ??
+      board.projects[0]?.id;
+    return {
+      scheduled_count: board.todos.filter((todo) => todo.project_id === inboxId).length
+    };
+  }
+  const { data } = await api.post('/api/projects/suggestions/recompute', payload);
+  return data as { scheduled_count: number };
+};
+
+export const dismissProjectSuggestion = async (todo_id: number): Promise<void> => {
+  if (isGuestMode()) {
+    deleteGuestProjectSuggestion(todo_id);
+    return;
+  }
+  await api.delete(`/api/projects/suggestions/${todo_id}`);
 };
 
 // Calendar

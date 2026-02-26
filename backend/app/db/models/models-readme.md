@@ -13,4 +13,5 @@ Defines the SQLAlchemy ORM base and entity classes representing database tables.
 | `entities.py` | Core entities (User, Activity, DailyMetric) plus profile, measurement, and daily energy tables. |
 | `journal.py` | Daily journal entries and compiled journal summaries. |
 | `nutrition.py` | Nutrition-specific ORM models, including nutrient definitions, goals, scaling rules, and intake data. |
+| `project.py` | Per-user projects plus low-confidence todo project suggestions. |
 | `todo.py` | Per-user to-do item model with optional UTC deadline. |

@@ -14,4 +14,5 @@ Implements data-access helpers that encapsulate SQLAlchemy queries and mutations
 | `nutrition_ingredients_repository.py` | Nutrition ingredient/profile + recipe persistence helpers. |
 | `nutrition_goals_repository.py` | Accessor for nutrient definitions, goal snapshots, and scaling rule assignments. |
 | `nutrition_intake_repository.py` | Logging and querying of nutrition intake entries. |
+| `project_repository.py` | CRUD helpers for projects and pending todo-project suggestions. |
 | `todo_repository.py` | CRUD helpers for per-user to-do items with deadline-aware ordering. |

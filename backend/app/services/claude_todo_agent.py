@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.clients.genai_client import build_genai_client
+from app.db.repositories.project_repository import ProjectRepository
 from app.db.repositories.todo_repository import TodoRepository
 from app.prompts import CLAUDE_TODO_EXTRACTION_PROMPT
 from app.services.todo_calendar_link_service import TodoCalendarLinkService
@@ -85,7 +86,9 @@ class ClaudeTodoAgent:
         raw_payload=parsed if isinstance(parsed, dict) else None,
       )
 
-    created = await self.repo.create_many(user_id=user_id, items=todo_specs)
+    project_repo = ProjectRepository(self.session)
+    inbox = await project_repo.ensure_inbox_project(user_id)
+    created = await self.repo.create_many(user_id=user_id, project_id=inbox.id, items=todo_specs)
     await self.session.flush()
     await self.session.commit()
     link_service = TodoCalendarLinkService(self.session)

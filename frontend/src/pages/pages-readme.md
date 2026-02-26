@@ -12,5 +12,6 @@ Route-level components that compose domain-specific UI for the Life Dashboard.
 | `Insights.tsx` | Insights history/overview page. |
 | `Journal.tsx` | Book-style journal page with weekly day selector and daily summaries. |
 | `Calendar.tsx` | Rolling week calendar view with events, todos, and detail drawer. |
+| `Projects.tsx` | Project-centered todo management page with suggestions and assignment workflows. |
 | `Nutrition.tsx` | Nutrition tracker page (chat, manual foods, goals, summaries). |
 | `User.tsx` | Personalized profile page for stats, nutrient targets, and scaling rules. |

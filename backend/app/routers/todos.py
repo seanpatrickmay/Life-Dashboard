@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
 from app.core.quotas import enforce_chat_quota
+from app.db.repositories.project_repository import ProjectRepository, TodoProjectSuggestionRepository
 from app.db.repositories.todo_repository import TodoRepository
-from app.db.session import get_session
+from app.db.session import AsyncSessionLocal, get_session
 from app.db.models.entities import User
 from app.schemas.todos import (
   ClaudeTodoMessageRequest,
@@ -21,10 +22,33 @@ from app.schemas.todos import (
 from app.services.claude_todo_agent import ClaudeTodoAgent
 from app.services.todo_accomplishment_agent import TodoAccomplishmentAgent
 from app.services.todo_calendar_link_service import TodoCalendarLinkService
+from app.services.todo_project_suggestion_service import TodoProjectSuggestionService
 from app.utils.timezone import local_today, resolve_time_zone
 
 
 router = APIRouter(prefix="/todos", tags=["todos"])
+
+
+def _todo_response(item, now_utc: datetime) -> TodoItemResponse:
+  return TodoItemResponse(
+    id=item.id,
+    project_id=item.project_id,
+    text=item.text,
+    completed=item.completed,
+    deadline_utc=item.deadline_utc,
+    deadline_is_date_only=item.deadline_is_date_only,
+    is_overdue=bool(
+      not item.completed and item.deadline_utc is not None and item.deadline_utc < now_utc
+    ),
+    created_at=item.created_at,
+    updated_at=item.updated_at,
+  )
+
+
+async def _run_project_suggestions(user_id: int, todo_ids: list[int]) -> None:
+  async with AsyncSessionLocal() as session:
+    service = TodoProjectSuggestionService(session)
+    await service.process_todo_ids(user_id=user_id, todo_ids=todo_ids)
 
 
 @router.get("", response_model=list[TodoItemResponse])
@@ -36,32 +60,26 @@ async def list_todos(
   repo = TodoRepository(session)
   items = await repo.list_for_user(current_user.id, local_date=local_today(time_zone))
   now_utc = datetime.now(timezone.utc)
-  return [
-    TodoItemResponse(
-      id=item.id,
-      text=item.text,
-      completed=item.completed,
-      deadline_utc=item.deadline_utc,
-      deadline_is_date_only=item.deadline_is_date_only,
-      is_overdue=bool(
-        not item.completed and item.deadline_utc is not None and item.deadline_utc < now_utc
-      ),
-      created_at=item.created_at,
-      updated_at=item.updated_at,
-    )
-    for item in items
-  ]
+  return [_todo_response(item, now_utc) for item in items]
 
 
 @router.post("", response_model=TodoItemResponse)
 async def create_todo(
   payload: TodoCreateRequest,
+  background_tasks: BackgroundTasks,
   current_user: User = Depends(get_current_user),
   session: AsyncSession = Depends(get_session),
 ) -> TodoItemResponse:
   repo = TodoRepository(session)
+  project_repo = ProjectRepository(session)
+  inbox = await project_repo.ensure_inbox_project(current_user.id)
+  project_id = payload.project_id if payload.project_id is not None else inbox.id
+  project = await project_repo.get_for_user(current_user.id, project_id)
+  if project is None:
+    raise HTTPException(status_code=404, detail="Project not found")
   todo = await repo.create_one(
     current_user.id,
+    project_id,
     payload.text,
     payload.deadline_utc,
     deadline_is_date_only=payload.deadline_is_date_only,
@@ -71,29 +89,22 @@ async def create_todo(
   if todo.deadline_utc is not None and not todo.completed:
     link_service = TodoCalendarLinkService(session)
     await link_service.upsert_event_for_todo(todo, time_zone=payload.time_zone)
+  background_tasks.add_task(_run_project_suggestions, current_user.id, [todo.id])
   now_utc = datetime.now(timezone.utc)
-  return TodoItemResponse(
-    id=todo.id,
-    text=todo.text,
-    completed=todo.completed,
-    deadline_utc=todo.deadline_utc,
-    deadline_is_date_only=todo.deadline_is_date_only,
-    is_overdue=bool(
-      not todo.completed and todo.deadline_utc is not None and todo.deadline_utc < now_utc
-    ),
-    created_at=todo.created_at,
-    updated_at=todo.updated_at,
-  )
+  return _todo_response(todo, now_utc)
 
 
 @router.patch("/{todo_id}", response_model=TodoItemResponse)
 async def update_todo(
   todo_id: int,
   payload: TodoUpdateRequest,
+  background_tasks: BackgroundTasks,
   current_user: User = Depends(get_current_user),
   session: AsyncSession = Depends(get_session),
 ) -> TodoItemResponse:
   repo = TodoRepository(session)
+  project_repo = ProjectRepository(session)
+  suggestion_repo = TodoProjectSuggestionRepository(session)
   todo = await repo.get_for_user(current_user.id, todo_id)
   if todo is None:
     raise HTTPException(status_code=404, detail="Todo not found")
@@ -102,6 +113,13 @@ async def update_todo(
 
   if "text" in update_data and update_data["text"] is not None:
     todo.text = update_data["text"].strip()
+
+  if "project_id" in update_data and update_data["project_id"] is not None:
+    project = await project_repo.get_for_user(current_user.id, int(update_data["project_id"]))
+    if project is None:
+      raise HTTPException(status_code=404, detail="Project not found")
+    todo.project_id = project.id
+    await suggestion_repo.delete_for_todo(current_user.id, todo.id)
 
   if "deadline_utc" in update_data:
     todo.deadline_utc = update_data["deadline_utc"]
@@ -139,19 +157,10 @@ async def update_todo(
     await link_service.upsert_event_for_todo(todo, time_zone=payload.time_zone)
   else:
     await link_service.unlink_todo(todo, delete_event=True)
+  if "text" in update_data and update_data["text"] is not None:
+    background_tasks.add_task(_run_project_suggestions, current_user.id, [todo.id])
   now_utc = datetime.now(timezone.utc)
-  return TodoItemResponse(
-    id=todo.id,
-    text=todo.text,
-    completed=todo.completed,
-    deadline_utc=todo.deadline_utc,
-    deadline_is_date_only=todo.deadline_is_date_only,
-    is_overdue=bool(
-      not todo.completed and todo.deadline_utc is not None and todo.deadline_utc < now_utc
-    ),
-    created_at=todo.created_at,
-    updated_at=todo.updated_at,
-  )
+  return _todo_response(todo, now_utc)
 
 
 @router.delete("/{todo_id}", status_code=204, response_class=Response)
@@ -174,27 +183,18 @@ async def delete_todo(
 @router.post("/claude/message", response_model=ClaudeTodoMessageResponse)
 async def claude_todo_message(
   payload: ClaudeTodoMessageRequest,
+  background_tasks: BackgroundTasks,
   current_user: User = Depends(enforce_chat_quota),
   session: AsyncSession = Depends(get_session),
 ) -> ClaudeTodoMessageResponse:
   agent = ClaudeTodoAgent(session)
   response = await agent.respond(current_user.id, payload.message, payload.session_id)
   now_utc = datetime.now(timezone.utc)
-  created_items = [
-    TodoItemResponse(
-      id=item.id,
-      text=item.text,
-      completed=item.completed,
-      deadline_utc=item.deadline_utc,
-      deadline_is_date_only=item.deadline_is_date_only,
-      is_overdue=bool(
-        not item.completed and item.deadline_utc is not None and item.deadline_utc < now_utc
-      ),
-      created_at=item.created_at,
-      updated_at=item.updated_at,
+  created_items = [_todo_response(item, now_utc) for item in response.items]
+  if response.items:
+    background_tasks.add_task(
+      _run_project_suggestions, current_user.id, [item.id for item in response.items]
     )
-    for item in response.items
-  ]
   return ClaudeTodoMessageResponse(
     session_id=response.session_id,
     reply=response.reply,

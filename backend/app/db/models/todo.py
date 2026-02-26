@@ -16,6 +16,7 @@ class TodoItem(Base):
   __tablename__ = "todo_item"
 
   user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+  project_id: Mapped[int] = mapped_column(ForeignKey("project.id"), nullable=False, index=True)
   text: Mapped[str] = mapped_column(String(512))
   completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
   deadline_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
@@ -29,7 +30,11 @@ class TodoItem(Base):
   )
 
   user: Mapped[User] = relationship(back_populates="todos")
+  project: Mapped["Project"] = relationship(back_populates="todos")
   calendar_link: Mapped["TodoEventLink | None"] = relationship(
+    back_populates="todo", uselist=False
+  )
+  project_suggestion: Mapped["TodoProjectSuggestion | None"] = relationship(
     back_populates="todo", uselist=False
   )
 
