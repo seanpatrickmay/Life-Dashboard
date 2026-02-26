@@ -17,13 +17,21 @@ This folder contains scripts intended to run on your production EC2 host.
 
 - `git fetch --prune origin`
 - `git reset --hard origin/main` (branch/remote configurable)
-- `docker compose -f docker/docker-compose.prod.yml up -d --build`
+- `docker compose --env-file .env -f docker/docker-compose.prod.yml up -d --build`
 
 Environment variables:
 
 - `DEPLOY_REMOTE` (default: `origin`)
 - `DEPLOY_BRANCH` (default: `main`)
 - `DEPLOY_PRUNE_IMAGES` (default: `1`)
+
+## Important note about `.env` with Compose
+
+`docker compose` loads `.env` from the "project directory" (which is often the directory containing the
+compose file). Because the prod compose file lives in `docker/`, you can otherwise end up with compose
+warnings like `The "POSTGRES_USER" variable is not set` even if the repo root has a valid `.env`.
+
+`deploy/deploy_prod.sh` avoids this by passing `--env-file <repo_root>/.env` explicitly.
 
 ## GitHub Actions → SSM (recommended)
 

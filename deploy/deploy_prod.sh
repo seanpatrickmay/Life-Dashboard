@@ -50,11 +50,10 @@ if [ "${#compose_cmd[@]}" -eq 0 ]; then
   exit 1
 fi
 
-"${compose_cmd[@]}" -f docker/docker-compose.prod.yml up -d --build
+"${compose_cmd[@]}" --env-file "$repo_root/.env" -f docker/docker-compose.prod.yml up -d --build
 
 if [ "${DEPLOY_PRUNE_IMAGES:-1}" = "1" ]; then
   "${docker_cmd[@]}" image prune -f
 fi
 
 echo "Deploy complete."
-
