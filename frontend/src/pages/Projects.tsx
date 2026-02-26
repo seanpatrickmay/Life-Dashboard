@@ -8,6 +8,8 @@ import type { ProjectItem, TodoItem } from '../services/api';
 const Page = styled.div`
   display: grid;
   gap: 16px;
+  min-width: 0;
+  overflow-x: hidden;
 `;
 
 const Header = styled(Card)`
@@ -137,11 +139,28 @@ const ProjectTabButton = styled.button<{ $active: boolean }>`
 const SelectedProjectWrap = styled.div`
   display: grid;
   gap: 12px;
+  min-width: 0;
+`;
+
+const WorkspaceRow = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.95fr);
+  gap: 12px;
+  align-items: start;
+
+  @media (max-width: 1120px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const WorkspaceCard = styled(Card)`
+  min-width: 0;
 `;
 
 const ProjectCard = styled(Card)`
   display: grid;
   gap: 10px;
+  min-width: 0;
 `;
 
 const TodoList = styled.div`
@@ -151,7 +170,6 @@ const TodoList = styled.div`
 
 const TodoRow = styled.div`
   display: grid;
-  grid-template-columns: auto 1fr;
   gap: 8px;
   align-items: center;
   padding: 8px;
@@ -162,21 +180,27 @@ const TodoRow = styled.div`
 
 const TodoMain = styled.div`
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   grid-column: 1 / -1;
+  min-width: 0;
 `;
 
 const TodoMetaRow = styled.div`
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 220px) auto;
   gap: 8px;
   align-items: center;
   grid-column: 1 / -1;
+  min-width: 0;
+
+  @media (max-width: 1120px) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
 
   @media (max-width: 760px) {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr;
   }
 `;
 
@@ -184,6 +208,7 @@ const DueBadge = styled.span<{ $kind: 'overdue' | 'soon' | 'scheduled' | 'none' 
   font-size: 0.72rem;
   padding: 4px 8px;
   border-radius: 999px;
+  width: fit-content;
   border: 1px solid
     ${({ $kind }) =>
       $kind === 'overdue'
@@ -214,6 +239,7 @@ const TodoText = styled.input`
   border-radius: 8px;
   color: ${({ theme }) => theme.colors.textPrimary};
   padding: 6px 8px;
+  min-width: 0;
 `;
 
 const Select = styled.select`
@@ -222,6 +248,8 @@ const Select = styled.select`
   border-radius: 8px;
   color: ${({ theme }) => theme.colors.textPrimary};
   padding: 6px;
+  width: 100%;
+  min-width: 0;
 `;
 
 const ProjectSummary = styled.div`
@@ -541,41 +569,6 @@ export function ProjectsPage() {
 
       <Card>
         <HeaderRow>
-          <Title data-halo="heading">Suggestions</Title>
-          <Muted>{board?.suggestions.length ?? 0} pending</Muted>
-        </HeaderRow>
-        {board?.suggestions.length ? (
-          <SuggestionList>
-            {board.suggestions.map((item) => (
-              <SuggestionRow key={item.todo_id}>
-                <SuggestionTop>
-                  <Muted>
-                    Todo #{item.todo_id} {'->'} {item.suggested_project_name}
-                  </Muted>
-                  <Confidence $confidence={item.confidence}>
-                    {Math.round(item.confidence * 100)}%
-                  </Confidence>
-                </SuggestionTop>
-                <Muted>{todosById.get(item.todo_id)?.text ?? 'Todo not found'}</Muted>
-                {item.reason ? <Muted>{item.reason}</Muted> : null}
-                <ActionRow>
-                  <Button type="button" onClick={() => applySuggestion(item.todo_id, item.suggested_project_name)}>
-                    Apply
-                  </Button>
-                  <Button type="button" onClick={() => dismissSuggestion(item.todo_id)}>
-                    Dismiss
-                  </Button>
-                </ActionRow>
-              </SuggestionRow>
-            ))}
-          </SuggestionList>
-        ) : (
-          <Muted>No pending suggestions.</Muted>
-        )}
-      </Card>
-
-      <Card>
-        <HeaderRow>
           <Title data-halo="heading">Project Selector</Title>
           <Muted>{projects.length} total</Muted>
         </HeaderRow>
@@ -593,19 +586,20 @@ export function ProjectsPage() {
         </ProjectTabs>
       </Card>
 
-      {selectedProject ? (
-        <SelectedProjectWrap>
-          {(() => {
-            const project = selectedProject;
-            const projectTodos = todosByProject.get(project.id) ?? [];
-            const showCompleted = !!showCompletedByProject[project.id];
-            const visibleTodos = showCompleted
-              ? sortTodos(projectTodos)
-              : sortTodos(projectTodos.filter((item) => !item.completed));
-            const isEditingProject = editingProjectId === project.id;
-            const draft = projectDrafts[project.id];
-            return (
-              <ProjectCard key={project.id}>
+      <WorkspaceRow>
+        {selectedProject ? (
+          <SelectedProjectWrap>
+            {(() => {
+              const project = selectedProject;
+              const projectTodos = todosByProject.get(project.id) ?? [];
+              const showCompleted = !!showCompletedByProject[project.id];
+              const visibleTodos = showCompleted
+                ? sortTodos(projectTodos)
+                : sortTodos(projectTodos.filter((item) => !item.completed));
+              const isEditingProject = editingProjectId === project.id;
+              const draft = projectDrafts[project.id];
+              return (
+                <ProjectCard key={project.id}>
                 <HeaderRow>
                   <ProjectName data-halo="heading">{project.name}</ProjectName>
                   <Muted>
@@ -772,15 +766,51 @@ export function ProjectsPage() {
                   ))}
                   {visibleTodos.length === 0 ? <Muted>No todos in this view.</Muted> : null}
                 </TodoList>
-              </ProjectCard>
-            );
-          })()}
-        </SelectedProjectWrap>
-      ) : (
-        <Card>
-          <Muted>No projects available yet.</Muted>
-        </Card>
-      )}
+                </ProjectCard>
+              );
+            })()}
+          </SelectedProjectWrap>
+        ) : (
+          <WorkspaceCard>
+            <Muted>No projects available yet.</Muted>
+          </WorkspaceCard>
+        )}
+
+        <WorkspaceCard>
+          <HeaderRow>
+            <Title data-halo="heading">Suggestions</Title>
+            <Muted>{board?.suggestions.length ?? 0} pending</Muted>
+          </HeaderRow>
+          {board?.suggestions.length ? (
+            <SuggestionList>
+              {board.suggestions.map((item) => (
+                <SuggestionRow key={item.todo_id}>
+                  <SuggestionTop>
+                    <Muted>
+                      Todo #{item.todo_id} {'->'} {item.suggested_project_name}
+                    </Muted>
+                    <Confidence $confidence={item.confidence}>
+                      {Math.round(item.confidence * 100)}%
+                    </Confidence>
+                  </SuggestionTop>
+                  <Muted>{todosById.get(item.todo_id)?.text ?? 'Todo not found'}</Muted>
+                  {item.reason ? <Muted>{item.reason}</Muted> : null}
+                  <ActionRow>
+                    <Button type="button" onClick={() => applySuggestion(item.todo_id, item.suggested_project_name)}>
+                      Apply
+                    </Button>
+                    <Button type="button" onClick={() => dismissSuggestion(item.todo_id)}>
+                      Dismiss
+                    </Button>
+                  </ActionRow>
+                </SuggestionRow>
+              ))}
+            </SuggestionList>
+          ) : (
+            <Muted>No pending suggestions.</Muted>
+          )}
+        </WorkspaceCard>
+      </WorkspaceRow>
     </Page>
   );
 }
