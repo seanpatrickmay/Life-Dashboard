@@ -148,7 +148,7 @@ const WorkspaceRow = styled.div`
   gap: 12px;
   align-items: start;
 
-  @media (max-width: 1120px) {
+  @media (max-width: 980px) {
     grid-template-columns: 1fr;
   }
 `;
@@ -195,8 +195,8 @@ const TodoMetaRow = styled.div`
   grid-column: 1 / -1;
   min-width: 0;
 
-  @media (max-width: 1120px) {
-    grid-template-columns: minmax(0, 1fr) auto;
+  @media (max-width: 1024px) {
+    grid-template-columns: minmax(0, 1fr) minmax(140px, 220px);
   }
 
   @media (max-width: 760px) {
@@ -250,6 +250,15 @@ const Select = styled.select`
   padding: 6px;
   width: 100%;
   min-width: 0;
+`;
+
+const TodoDeleteButton = styled(DangerButton)`
+  justify-self: start;
+  width: auto;
+
+  @media (max-width: 1024px) {
+    grid-column: 1 / -1;
+  }
 `;
 
 const ProjectSummary = styled.div`
@@ -748,7 +757,7 @@ export function ProjectsPage() {
                             </option>
                           ))}
                         </Select>
-                        <DangerButton
+                        <TodoDeleteButton
                           type="button"
                           onClick={() => {
                             const confirmed = window.confirm('Delete this todo?');
@@ -760,7 +769,7 @@ export function ProjectsPage() {
                           }}
                         >
                           Delete
-                        </DangerButton>
+                        </TodoDeleteButton>
                       </TodoMetaRow>
                     </TodoRow>
                   ))}
