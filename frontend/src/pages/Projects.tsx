@@ -116,9 +116,26 @@ const Confidence = styled.span<{ $confidence: number }>`
         : 'rgba(246, 126, 126, 0.12)'};
 `;
 
-const ProjectGrid = styled.div`
+const ProjectTabs = styled.div`
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+`;
+
+const ProjectTabButton = styled.button<{ $active: boolean }>`
+  border: 1px solid ${({ $active }) => ($active ? 'rgba(137, 189, 255, 0.75)' : 'rgba(255, 255, 255, 0.2)')};
+  background: ${({ $active }) => ($active ? 'rgba(137, 189, 255, 0.18)' : 'rgba(255, 255, 255, 0.08)')};
+  color: ${({ theme }) => theme.colors.textPrimary};
+  border-radius: 999px;
+  padding: 7px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 0.72rem;
+`;
+
+const SelectedProjectWrap = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 12px;
 `;
 
@@ -284,6 +301,7 @@ export function ProjectsPage() {
   const [projectDrafts, setProjectDrafts] = useState<Record<number, { name: string; notes: string }>>({});
   const [isResuggesting, setIsResuggesting] = useState(false);
   const [status, setStatus] = useState<StatusBanner | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const pendingCommitRef = useRef<PendingCommit | null>(null);
   const pendingCommitTimerRef = useRef<number | null>(null);
 
@@ -349,6 +367,20 @@ export function ProjectsPage() {
     () => [...(board?.projects ?? [])].sort((left, right) => projectSortKey(left).localeCompare(projectSortKey(right))),
     [board?.projects]
   );
+  const selectedProject =
+    projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null;
+
+  useEffect(() => {
+    if (projects.length === 0) {
+      setSelectedProjectId(null);
+      return;
+    }
+    const stillExists = projects.some((project) => project.id === selectedProjectId);
+    if (!stillExists) {
+      setSelectedProjectId(projects[0].id);
+    }
+  }, [projects, selectedProjectId]);
+
   const todosByProject = useMemo(() => {
     const map = new Map<number, TodoItem[]>();
     for (const todo of board?.todos ?? []) {
@@ -542,187 +574,213 @@ export function ProjectsPage() {
         )}
       </Card>
 
-      <ProjectGrid>
-        {projects.map((project) => {
-          const projectTodos = todosByProject.get(project.id) ?? [];
-          const showCompleted = !!showCompletedByProject[project.id];
-          const visibleTodos = showCompleted
-            ? sortTodos(projectTodos)
-            : sortTodos(projectTodos.filter((item) => !item.completed));
-          const isEditingProject = editingProjectId === project.id;
-          const draft = projectDrafts[project.id];
-          return (
-            <ProjectCard key={project.id}>
-              <HeaderRow>
-                <ProjectName data-halo="heading">{project.name}</ProjectName>
-                <Muted>
-                  {project.open_count} open / {project.completed_count} done
-                </Muted>
-              </HeaderRow>
-              {isEditingProject ? (
-                <>
-                  <Input
-                    value={draft?.name ?? project.name}
-                    onChange={(event) =>
-                      setProjectDrafts((prev) => ({
-                        ...prev,
-                        [project.id]: {
-                          name: event.target.value,
-                          notes: prev[project.id]?.notes ?? project.notes ?? ''
-                        }
-                      }))
-                    }
-                  />
-                  <TextArea
-                    value={draft?.notes ?? project.notes ?? ''}
-                    onChange={(event) =>
-                      setProjectDrafts((prev) => ({
-                        ...prev,
-                        [project.id]: {
-                          name: prev[project.id]?.name ?? project.name,
-                          notes: event.target.value
-                        }
-                      }))
-                    }
-                  />
-                </>
-              ) : (
-                <ProjectSummary>
-                  <ProjectName>{project.name}</ProjectName>
-                  <ProjectNotes>{project.notes || 'No project notes yet.'}</ProjectNotes>
-                </ProjectSummary>
-              )}
-              <ActionRow>
+      <Card>
+        <HeaderRow>
+          <Title data-halo="heading">Project Selector</Title>
+          <Muted>{projects.length} total</Muted>
+        </HeaderRow>
+        <ProjectTabs>
+          {projects.map((project) => (
+            <ProjectTabButton
+              key={project.id}
+              type="button"
+              $active={selectedProject?.id === project.id}
+              onClick={() => setSelectedProjectId(project.id)}
+            >
+              {project.name} ({project.open_count}/{project.completed_count})
+            </ProjectTabButton>
+          ))}
+        </ProjectTabs>
+      </Card>
+
+      {selectedProject ? (
+        <SelectedProjectWrap>
+          {(() => {
+            const project = selectedProject;
+            const projectTodos = todosByProject.get(project.id) ?? [];
+            const showCompleted = !!showCompletedByProject[project.id];
+            const visibleTodos = showCompleted
+              ? sortTodos(projectTodos)
+              : sortTodos(projectTodos.filter((item) => !item.completed));
+            const isEditingProject = editingProjectId === project.id;
+            const draft = projectDrafts[project.id];
+            return (
+              <ProjectCard key={project.id}>
+                <HeaderRow>
+                  <ProjectName data-halo="heading">{project.name}</ProjectName>
+                  <Muted>
+                    {project.open_count} open / {project.completed_count} done
+                  </Muted>
+                </HeaderRow>
                 {isEditingProject ? (
                   <>
-                    <Button type="button" onClick={() => saveProject(project)}>
-                      Save Project
-                    </Button>
-                    <Button type="button" onClick={() => setEditingProjectId(null)}>
-                      Cancel
-                    </Button>
+                    <Input
+                      value={draft?.name ?? project.name}
+                      onChange={(event) =>
+                        setProjectDrafts((prev) => ({
+                          ...prev,
+                          [project.id]: {
+                            name: event.target.value,
+                            notes: prev[project.id]?.notes ?? project.notes ?? ''
+                          }
+                        }))
+                      }
+                    />
+                    <TextArea
+                      value={draft?.notes ?? project.notes ?? ''}
+                      onChange={(event) =>
+                        setProjectDrafts((prev) => ({
+                          ...prev,
+                          [project.id]: {
+                            name: prev[project.id]?.name ?? project.name,
+                            notes: event.target.value
+                          }
+                        }))
+                      }
+                    />
                   </>
                 ) : (
-                  <Button type="button" onClick={() => startEditProject(project)}>
-                    Edit Project
-                  </Button>
+                  <ProjectSummary>
+                    <ProjectName>{project.name}</ProjectName>
+                    <ProjectNotes>{project.notes || 'No project notes yet.'}</ProjectNotes>
+                  </ProjectSummary>
                 )}
-                <Button
-                  type="button"
-                  onClick={() =>
-                    setShowCompletedByProject((prev) => ({ ...prev, [project.id]: !prev[project.id] }))
-                  }
-                >
-                  {showCompleted ? 'Hide Completed' : 'Show Completed'}
-                </Button>
-                {project.name.toLowerCase() !== 'inbox' ? (
-                  <DangerButton
+                <ActionRow>
+                  {isEditingProject ? (
+                    <>
+                      <Button type="button" onClick={() => saveProject(project)}>
+                        Save Project
+                      </Button>
+                      <Button type="button" onClick={() => setEditingProjectId(null)}>
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <Button type="button" onClick={() => startEditProject(project)}>
+                      Edit Project
+                    </Button>
+                  )}
+                  <Button
                     type="button"
-                    onClick={() => {
-                      const confirmed = window.confirm(`Archive project "${project.name}"?`);
-                      if (!confirmed) return;
-                      queueUndoableAction({
-                        label: `Archive "${project.name}"`,
-                        run: () => updateProject({ id: project.id, archived: true })
-                      });
-                    }}
+                    onClick={() =>
+                      setShowCompletedByProject((prev) => ({ ...prev, [project.id]: !prev[project.id] }))
+                    }
                   >
-                    Archive
-                  </DangerButton>
-                ) : null}
-                {project.name.toLowerCase() !== 'inbox' ? (
-                  <DangerButton
-                    type="button"
-                    onClick={async () => {
-                      const confirmed = window.confirm(
-                        `Delete project "${project.name}"? Todos will move to Inbox.`
-                      );
-                      if (!confirmed) return;
-                      await deleteProject(project.id);
-                      setStatus({
-                        kind: 'success',
-                        message: `Project "${project.name}" deleted. Todos moved to Inbox.`
-                      });
-                    }}
-                  >
-                    Delete Project
-                  </DangerButton>
-                ) : null}
-              </ActionRow>
-              <ActionRow>
-                <Input
-                  value={todoDrafts[project.id] ?? ''}
-                  onChange={(event) => setTodoDrafts((prev) => ({ ...prev, [project.id]: event.target.value }))}
-                  placeholder="Add todo to this project"
-                />
-                <Button type="button" onClick={() => handleCreateTodo(project.id)}>
-                  Add
-                </Button>
-              </ActionRow>
-              <TodoList>
-                {visibleTodos.map((todo) => (
-                  <TodoRow key={todo.id}>
-                    <TodoMain>
-                      <input
-                        type="checkbox"
-                        checked={todo.completed}
-                        onChange={() => updateTodo({ id: todo.id, completed: !todo.completed })}
-                      />
-                      <TodoText
-                        value={editCache[todo.id] ?? todo.text}
-                        onChange={(event) => setEditCache((prev) => ({ ...prev, [todo.id]: event.target.value }))}
-                        onBlur={() => {
-                          const draftText = editCache[todo.id];
-                          if (!draftText) return;
-                          const next = draftText.trim();
-                          if (next && next !== todo.text) {
-                            void updateTodo({ id: todo.id, text: next });
-                          }
-                          setEditCache((prev) => {
-                            const nextCache = { ...prev };
-                            delete nextCache[todo.id];
-                            return nextCache;
-                          });
-                        }}
-                      />
-                    </TodoMain>
-                    <TodoMetaRow>
-                      {(() => {
-                        const dueMeta = getDueMeta(todo);
-                        return <DueBadge $kind={dueMeta.kind}>{dueMeta.label}</DueBadge>;
-                      })()}
-                      <Select
-                        value={todo.project_id}
-                        onChange={(event) => updateTodo({ id: todo.id, project_id: Number(event.target.value) })}
-                      >
-                        {projects.map((option) => (
-                          <option key={option.id} value={option.id}>
-                            {option.name}
-                          </option>
-                        ))}
-                      </Select>
-                      <DangerButton
-                        type="button"
-                        onClick={() => {
-                          const confirmed = window.confirm('Delete this todo?');
-                          if (!confirmed) return;
-                          queueUndoableAction({
-                            label: 'Delete todo',
-                            run: () => deleteTodo(todo.id)
-                          });
-                        }}
-                      >
-                        Delete
-                      </DangerButton>
-                    </TodoMetaRow>
-                  </TodoRow>
-                ))}
-                {visibleTodos.length === 0 ? <Muted>No todos in this view.</Muted> : null}
-              </TodoList>
-            </ProjectCard>
-          );
-        })}
-      </ProjectGrid>
+                    {showCompleted ? 'Hide Completed' : 'Show Completed'}
+                  </Button>
+                  {project.name.toLowerCase() !== 'inbox' ? (
+                    <DangerButton
+                      type="button"
+                      onClick={() => {
+                        const confirmed = window.confirm(`Archive project "${project.name}"?`);
+                        if (!confirmed) return;
+                        queueUndoableAction({
+                          label: `Archive "${project.name}"`,
+                          run: () => updateProject({ id: project.id, archived: true })
+                        });
+                      }}
+                    >
+                      Archive
+                    </DangerButton>
+                  ) : null}
+                  {project.name.toLowerCase() !== 'inbox' ? (
+                    <DangerButton
+                      type="button"
+                      onClick={async () => {
+                        const confirmed = window.confirm(
+                          `Delete project "${project.name}"? Todos will move to Inbox.`
+                        );
+                        if (!confirmed) return;
+                        await deleteProject(project.id);
+                        setStatus({
+                          kind: 'success',
+                          message: `Project "${project.name}" deleted. Todos moved to Inbox.`
+                        });
+                      }}
+                    >
+                      Delete Project
+                    </DangerButton>
+                  ) : null}
+                </ActionRow>
+                <ActionRow>
+                  <Input
+                    value={todoDrafts[project.id] ?? ''}
+                    onChange={(event) => setTodoDrafts((prev) => ({ ...prev, [project.id]: event.target.value }))}
+                    placeholder="Add todo to this project"
+                  />
+                  <Button type="button" onClick={() => handleCreateTodo(project.id)}>
+                    Add
+                  </Button>
+                </ActionRow>
+                <TodoList>
+                  {visibleTodos.map((todo) => (
+                    <TodoRow key={todo.id}>
+                      <TodoMain>
+                        <input
+                          type="checkbox"
+                          checked={todo.completed}
+                          onChange={() => updateTodo({ id: todo.id, completed: !todo.completed })}
+                        />
+                        <TodoText
+                          value={editCache[todo.id] ?? todo.text}
+                          onChange={(event) => setEditCache((prev) => ({ ...prev, [todo.id]: event.target.value }))}
+                          onBlur={() => {
+                            const draftText = editCache[todo.id];
+                            if (!draftText) return;
+                            const next = draftText.trim();
+                            if (next && next !== todo.text) {
+                              void updateTodo({ id: todo.id, text: next });
+                            }
+                            setEditCache((prev) => {
+                              const nextCache = { ...prev };
+                              delete nextCache[todo.id];
+                              return nextCache;
+                            });
+                          }}
+                        />
+                      </TodoMain>
+                      <TodoMetaRow>
+                        {(() => {
+                          const dueMeta = getDueMeta(todo);
+                          return <DueBadge $kind={dueMeta.kind}>{dueMeta.label}</DueBadge>;
+                        })()}
+                        <Select
+                          value={todo.project_id}
+                          onChange={(event) => updateTodo({ id: todo.id, project_id: Number(event.target.value) })}
+                        >
+                          {projects.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.name}
+                            </option>
+                          ))}
+                        </Select>
+                        <DangerButton
+                          type="button"
+                          onClick={() => {
+                            const confirmed = window.confirm('Delete this todo?');
+                            if (!confirmed) return;
+                            queueUndoableAction({
+                              label: 'Delete todo',
+                              run: () => deleteTodo(todo.id)
+                            });
+                          }}
+                        >
+                          Delete
+                        </DangerButton>
+                      </TodoMetaRow>
+                    </TodoRow>
+                  ))}
+                  {visibleTodos.length === 0 ? <Muted>No todos in this view.</Muted> : null}
+                </TodoList>
+              </ProjectCard>
+            );
+          })()}
+        </SelectedProjectWrap>
+      ) : (
+        <Card>
+          <Muted>No projects available yet.</Muted>
+        </Card>
+      )}
     </Page>
   );
 }
