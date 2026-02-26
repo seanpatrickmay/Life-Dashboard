@@ -15,7 +15,7 @@ Life Dashboard is a self-hosted wellness hub that blends Garmin health data, nut
 - **AI insights**: Vertex AI (Gemini) summaries with a Monet-style assistant and tool routing for nutrition and todos.
 - **Nutrition system**: Ingredients, recipes, daily goals, and intake logging with AI-assisted parsing.
 - **Rich UI**: Monet-inspired lily pads, pixel textures, and layered water motifs.
-- **Docker-first**: One compose file spins up Postgres, FastAPI, and the Vite frontend.
+- **Docker-first**: One compose file runs FastAPI and the Vite frontend against an external Postgres (Neon recommended).
 
 ## Architecture Overview
 
@@ -48,11 +48,12 @@ docker/     Docker compose stack definitions
 
 1. Install Docker Desktop and confirm it is running.
 2. Copy `.env.example` to `.env` and fill in the required values.
-3. Start the stack:
+3. Set Neon database URLs in `.env` (`DATABASE_URL`, `DATABASE_URL_HOST`, `DATABASE_URL_MIGRATIONS`).
+4. Start the stack:
    ```bash
    docker compose -f docker/docker-compose.yml up --build
    ```
-4. Visit:
+5. Visit:
    - Frontend: `http://localhost:4173`
    - Backend: `http://localhost:8000`
 
@@ -71,11 +72,9 @@ All configuration lives in `.env`. The most important variables are grouped belo
 
 | Variable | Purpose |
 | --- | --- |
-| `POSTGRES_HOST` / `POSTGRES_PORT` | Database host and port for container setup |
-| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | Core Postgres credentials |
-| `DATABASE_URL` | Internal DB URL used by the backend container |
-| `DATABASE_URL_HOST` | Local DB URL used by scripts and local tools |
-| `DATABASE_URL_MIGRATIONS` | Explicit DB URL used by Alembic migrations |
+| `DATABASE_URL` | Async DB URL used by backend runtime (for this repo, set to Neon with `?ssl=require`) |
+| `DATABASE_URL_HOST` | Sync DB URL used by scripts/startup checks (set to Neon with `?sslmode=require`) |
+| `DATABASE_URL_MIGRATIONS` | Explicit sync DB URL used by Alembic migrations (set to Neon with `?sslmode=require`) |
 
 ### Auth and Sessions
 
@@ -140,7 +139,7 @@ See `docs/pipeline.md` for the full flow.
   make ingest
   ```
 - **Scheduled ingest**: APScheduler runs daily to refresh metrics and insights.
-- **Backups**: Snapshot the `pgdata` volume regularly.
+- **Backups**: Use Neon backups / point-in-time restore and branch snapshots.
 
 ## Scripts
 

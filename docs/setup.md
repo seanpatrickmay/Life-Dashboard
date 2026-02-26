@@ -2,6 +2,7 @@
 
 1. Install Docker Desktop and ensure it is running.
 2. Copy `.env.example` to `.env` and fill in `APP_ENV`, Google OAuth (local/prod), admin email, Garmin encryption key, and Vertex credentials.
+   - Set `DATABASE_URL`, `DATABASE_URL_HOST`, and `DATABASE_URL_MIGRATIONS` to your Neon Postgres URLs.
    - To generate the Garmin encryption key: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
 3. Set `FRONTEND_URL`, `GOOGLE_REDIRECT_URI_LOCAL`/`GOOGLE_REDIRECT_URI_PROD`, and `CORS_ORIGINS` for your environment.
 4. Place the Garmin token cache under the path specified in `GARMIN_TOKENS_DIR` (defaults to `/data/garmin`, mounted via Docker volume).
