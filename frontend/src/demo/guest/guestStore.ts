@@ -951,6 +951,17 @@ export const deleteGuestProjectSuggestion = (todo_id: number) => {
   saveState(state);
 };
 
+export const deleteGuestProject = (id: number) => {
+  const state = getGuestState();
+  const project = state.projects.find((item) => item.id === id);
+  if (!project) return;
+  if (normalizeProjectName(project.name) === 'inbox') return;
+  const inboxId = resolveGuestInboxProjectId(state);
+  state.todos = state.todos.map((todo) => (todo.project_id === id ? { ...todo, project_id: inboxId } : todo));
+  state.projects = state.projects.filter((item) => item.id !== id);
+  saveState(state);
+};
+
 export const getGuestNutritionMenu = (day?: string): NutritionMenuResponse => {
   const state = getGuestState();
   if (!day) return state.nutrition_menu;

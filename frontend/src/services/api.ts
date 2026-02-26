@@ -5,6 +5,7 @@ import {
   createGuestJournalEntry,
   createGuestTodo,
   createGuestProject,
+  deleteGuestProject,
   deleteGuestNutritionEntry,
   deleteGuestProjectSuggestion,
   deleteGuestTodo,
@@ -646,6 +647,14 @@ export const updateProject = async (
   }
   const { data } = await api.patch(`/api/projects/${id}`, payload);
   return data as ProjectItem;
+};
+
+export const deleteProject = async (id: number): Promise<void> => {
+  if (isGuestMode()) {
+    deleteGuestProject(id);
+    return;
+  }
+  await api.delete(`/api/projects/${id}`);
 };
 
 export const recomputeProjectSuggestions = async (payload: {

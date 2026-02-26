@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -161,6 +161,30 @@ async def update_project(
   await session.flush()
   await session.commit()
   return ProjectResponse.model_validate(project)
+
+
+@router.delete("/{project_id}", status_code=204, response_class=Response)
+async def delete_project(
+  project_id: int,
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+) -> Response:
+  repo = ProjectRepository(session)
+  project = await repo.get_for_user(current_user.id, project_id)
+  if project is None:
+    raise HTTPException(status_code=404, detail="Project not found")
+  if project.name == INBOX_PROJECT_NAME:
+    raise HTTPException(status_code=400, detail="Inbox cannot be deleted")
+
+  inbox = await repo.ensure_inbox_project(current_user.id)
+  await session.execute(
+    update(TodoItem)
+    .where(TodoItem.user_id == current_user.id, TodoItem.project_id == project.id)
+    .values(project_id=inbox.id)
+  )
+  await session.delete(project)
+  await session.commit()
+  return Response(status_code=204)
 
 
 @router.post("/suggestions/recompute", status_code=202)

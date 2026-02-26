@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createProject,
   createTodo,
+  deleteProject,
   deleteTodo,
   dismissProjectSuggestion,
   fetchProjectBoard,
@@ -87,6 +88,11 @@ export function useProjectBoard() {
     onSuccess: invalidateAll
   });
 
+  const deleteProjectMutation = useMutation({
+    mutationFn: (id: number) => deleteProject(id),
+    onSuccess: invalidateAll
+  });
+
   const recomputeSuggestionsMutation = useMutation({
     mutationFn: (payload: { scope?: 'inbox' | 'all'; todo_ids?: number[] }) =>
       recomputeProjectSuggestions(payload),
@@ -105,6 +111,7 @@ export function useProjectBoard() {
     createTodo: createTodoMutation.mutateAsync,
     updateTodo: updateTodoMutation.mutateAsync,
     deleteTodo: deleteTodoMutation.mutateAsync,
+    deleteProject: deleteProjectMutation.mutateAsync,
     recomputeSuggestions: recomputeSuggestionsMutation.mutateAsync,
     dismissSuggestion: dismissSuggestionMutation.mutateAsync
   };

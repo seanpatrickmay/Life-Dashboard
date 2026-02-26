@@ -270,6 +270,7 @@ export function ProjectsPage() {
     createTodo,
     updateTodo,
     deleteTodo,
+    deleteProject,
     recomputeSuggestions,
     dismissSuggestion
   } = useProjectBoard();
@@ -278,7 +279,7 @@ export function ProjectsPage() {
   const [newProjectNotes, setNewProjectNotes] = useState('');
   const [todoDrafts, setTodoDrafts] = useState<Record<number, string>>({});
   const [editCache, setEditCache] = useState<Record<number, string>>({});
-  const [globalShowCompleted, setGlobalShowCompleted] = useState(false);
+  const [showCompletedByProject, setShowCompletedByProject] = useState<Record<number, boolean>>({});
   const [editingProjectId, setEditingProjectId] = useState<number | null>(null);
   const [projectDrafts, setProjectDrafts] = useState<Record<number, { name: string; notes: string }>>({});
   const [isResuggesting, setIsResuggesting] = useState(false);
@@ -474,9 +475,6 @@ export function ProjectsPage() {
         <HeaderRow>
           <Title data-halo="heading">Projects</Title>
           <ActionRow>
-            <Button type="button" onClick={() => setGlobalShowCompleted((prev) => !prev)}>
-              {globalShowCompleted ? 'Open Only' : 'Open + Completed'}
-            </Button>
             <Button type="button" onClick={handleReSuggestInbox} disabled={isResuggesting}>
               {isResuggesting ? 'Queueing…' : 'Re-suggest Inbox'}
             </Button>
@@ -547,7 +545,8 @@ export function ProjectsPage() {
       <ProjectGrid>
         {projects.map((project) => {
           const projectTodos = todosByProject.get(project.id) ?? [];
-          const visibleTodos = globalShowCompleted
+          const showCompleted = !!showCompletedByProject[project.id];
+          const visibleTodos = showCompleted
             ? sortTodos(projectTodos)
             : sortTodos(projectTodos.filter((item) => !item.completed));
           const isEditingProject = editingProjectId === project.id;
@@ -608,6 +607,14 @@ export function ProjectsPage() {
                     Edit Project
                   </Button>
                 )}
+                <Button
+                  type="button"
+                  onClick={() =>
+                    setShowCompletedByProject((prev) => ({ ...prev, [project.id]: !prev[project.id] }))
+                  }
+                >
+                  {showCompleted ? 'Hide Completed' : 'Show Completed'}
+                </Button>
                 {project.name.toLowerCase() !== 'inbox' ? (
                   <DangerButton
                     type="button"
@@ -621,6 +628,24 @@ export function ProjectsPage() {
                     }}
                   >
                     Archive
+                  </DangerButton>
+                ) : null}
+                {project.name.toLowerCase() !== 'inbox' ? (
+                  <DangerButton
+                    type="button"
+                    onClick={async () => {
+                      const confirmed = window.confirm(
+                        `Delete project "${project.name}"? Todos will move to Inbox.`
+                      );
+                      if (!confirmed) return;
+                      await deleteProject(project.id);
+                      setStatus({
+                        kind: 'success',
+                        message: `Project "${project.name}" deleted. Todos moved to Inbox.`
+                      });
+                    }}
+                  >
+                    Delete Project
                   </DangerButton>
                 ) : null}
               </ActionRow>
