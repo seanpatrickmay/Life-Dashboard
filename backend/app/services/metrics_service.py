@@ -1,6 +1,7 @@
 """Metric ingestion and aggregation services."""
 from __future__ import annotations
 
+import asyncio
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -63,22 +64,22 @@ class MetricsService:
         try:
             if activities is None:
                 logger.info("Fetching Garmin activities since {}", cutoff_dt)
-                activities = garmin.fetch_recent_activities(cutoff_dt)
+                activities = await asyncio.to_thread(garmin.fetch_recent_activities, cutoff_dt)
             activities = self._filter_recent_activities(activities, cutoff_dt)
 
             ingested = await self.activity_repo.upsert_many(user_id, activities)
 
             end_date = eastern_today()
             if hrv_payload is None:
-                hrv_payload = garmin.fetch_daily_hrv(start_date, end_date)
+                hrv_payload = await asyncio.to_thread(garmin.fetch_daily_hrv, start_date, end_date)
             if rhr_payload is None:
-                rhr_payload = garmin.fetch_daily_rhr(start_date, end_date)
+                rhr_payload = await asyncio.to_thread(garmin.fetch_daily_rhr, start_date, end_date)
             if sleep_payload is None:
-                sleep_payload = garmin.fetch_sleep(start_date, end_date)
+                sleep_payload = await asyncio.to_thread(garmin.fetch_sleep, start_date, end_date)
             if load_payload is None:
-                load_payload = garmin.fetch_training_loads(start_date, end_date)
+                load_payload = await asyncio.to_thread(garmin.fetch_training_loads, start_date, end_date)
             if energy_payload is None:
-                energy_payload = garmin.fetch_daily_energy(start_date, end_date)
+                energy_payload = await asyncio.to_thread(garmin.fetch_daily_energy, start_date, end_date)
         except Exception:  # noqa: BLE001
             if self.garmin is None:
                 await GarminConnectionService(self.session).mark_reauth_required(user_id, True)
