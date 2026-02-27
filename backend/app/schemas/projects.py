@@ -29,6 +29,22 @@ class ProjectSuggestionResponse(BaseModel):
   reason: str | None = None
 
 
+class ProjectNoteResponse(BaseModel):
+  id: int
+  user_id: int
+  project_id: int
+  title: str
+  body_markdown: str
+  tags: list[str]
+  archived: bool
+  pinned: bool
+  created_at: datetime
+  updated_at: datetime
+
+  class Config:
+    from_attributes = True
+
+
 class ProjectBoardResponse(BaseModel):
   projects: list[ProjectResponse]
   todos: list[TodoItemResponse]

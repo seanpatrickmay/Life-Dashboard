@@ -1,14 +1,20 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
+import { useQuery } from '@tanstack/react-query';
 
 import { Card } from '../components/common/Card';
+import { ProjectNotesSection } from '../components/projects/ProjectNotesSection';
 import { useProjectBoard } from '../hooks/useProjectBoard';
-import type { ProjectItem, TodoItem } from '../services/api';
+import { fetchProjectNotes, type ProjectItem, type TodoItem } from '../services/api';
 
 const Page = styled.div`
   display: grid;
   gap: 16px;
   min-width: 0;
+
+  > * {
+    min-width: 0;
+  }
 `;
 
 const Header = styled(Card)`
@@ -22,6 +28,7 @@ const HeaderRow = styled.div`
   gap: 10px;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
 `;
 
 const Title = styled.h1`
@@ -119,9 +126,20 @@ const Confidence = styled.span<{ $confidence: number }>`
 
 const ProjectTabs = styled.div`
   display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
   padding-bottom: 4px;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 `;
 
 const ProjectTabButton = styled.button<{ $active: boolean }>`
@@ -131,8 +149,18 @@ const ProjectTabButton = styled.button<{ $active: boolean }>`
   border-radius: 999px;
   padding: 7px 11px;
   cursor: pointer;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.72rem;
+`;
+
+const ProjectSelectorCard = styled(Card)`
+  min-width: 0;
+  overflow: hidden;
 `;
 
 const SelectedProjectWrap = styled.div`
@@ -407,6 +435,11 @@ export function ProjectsPage() {
   );
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null;
+  const selectedProjectNotesQuery = useQuery({
+    queryKey: ['projects', 'notes', selectedProject?.id],
+    queryFn: () => fetchProjectNotes(selectedProject!.id),
+    enabled: !!selectedProject?.id
+  });
 
   useEffect(() => {
     if (projects.length === 0) {
@@ -577,7 +610,7 @@ export function ProjectsPage() {
         </form>
       </Header>
 
-      <Card>
+      <ProjectSelectorCard>
         <HeaderRow>
           <Title data-halo="heading">Project Selector</Title>
           <Muted>{projects.length} total</Muted>
@@ -594,7 +627,7 @@ export function ProjectsPage() {
             </ProjectTabButton>
           ))}
         </ProjectTabs>
-      </Card>
+      </ProjectSelectorCard>
 
       <WorkspaceRow>
         {selectedProject ? (
@@ -776,6 +809,11 @@ export function ProjectsPage() {
                   ))}
                   {visibleTodos.length === 0 ? <Muted>No todos in this view.</Muted> : null}
                 </TodoList>
+                <ProjectNotesSection
+                  notes={selectedProjectNotesQuery.data ?? []}
+                  isLoading={selectedProjectNotesQuery.isLoading}
+                  isError={selectedProjectNotesQuery.isError}
+                />
                 </ProjectCard>
               );
             })()}

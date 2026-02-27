@@ -607,6 +607,19 @@ export type ProjectSuggestion = {
   reason: string | null;
 };
 
+export type ProjectNote = {
+  id: number;
+  user_id: number;
+  project_id: number;
+  title: string;
+  body_markdown: string;
+  tags: string[];
+  archived: boolean;
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ProjectBoardResponse = {
   projects: ProjectItem[];
   todos: TodoItem[];
@@ -619,6 +632,19 @@ export const fetchProjectBoard = async (): Promise<ProjectBoardResponse> => {
   }
   const { data } = await api.get('/api/projects/board');
   return data as ProjectBoardResponse;
+};
+
+export const fetchProjectNotes = async (
+  project_id: number,
+  options?: { include_archived?: boolean }
+): Promise<ProjectNote[]> => {
+  if (isGuestMode()) {
+    return [];
+  }
+  const { data } = await api.get(`/api/projects/${project_id}/notes`, {
+    params: { include_archived: options?.include_archived ?? false }
+  });
+  return data as ProjectNote[];
 };
 
 export const createProject = async (payload: {

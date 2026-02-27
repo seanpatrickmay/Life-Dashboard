@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,11 +14,13 @@ from app.db.repositories.project_repository import (
   ProjectRepository,
   TodoProjectSuggestionRepository,
 )
+from app.db.repositories.project_note_repository import ProjectNoteRepository
 from app.db.repositories.todo_repository import TodoRepository
 from app.db.session import AsyncSessionLocal, get_session
 from app.schemas.projects import (
   ProjectBoardResponse,
   ProjectCreateRequest,
+  ProjectNoteResponse,
   ProjectResponse,
   ProjectSuggestionResponse,
   ProjectUpdateRequest,
@@ -108,6 +110,26 @@ async def get_project_board(
       for suggestion in suggestions
     ],
   )
+
+
+@router.get("/{project_id}/notes", response_model=list[ProjectNoteResponse])
+async def list_project_notes(
+  project_id: int,
+  include_archived: bool = Query(False),
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+) -> list[ProjectNoteResponse]:
+  project_repo = ProjectRepository(session)
+  note_repo = ProjectNoteRepository(session)
+  project = await project_repo.get_for_user(current_user.id, project_id)
+  if project is None:
+    raise HTTPException(status_code=404, detail="Project not found")
+  notes = await note_repo.list_for_project(
+    user_id=current_user.id,
+    project_id=project_id,
+    include_archived=include_archived,
+  )
+  return [ProjectNoteResponse.model_validate(note) for note in notes]
 
 
 @router.post("", response_model=ProjectResponse)

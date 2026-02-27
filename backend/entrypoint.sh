@@ -2,17 +2,60 @@
 set -e
 
 if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
-  DB_URL="${DATABASE_URL:-$DATABASE_URL_HOST}"
+  DB_URL="${DATABASE_URL:-}"
+  SYNC_DB_URL="${DATABASE_URL_MIGRATIONS:-${DATABASE_URL_HOST:-$DB_URL}}"
 
-  if [ -z "$DB_URL" ]; then
-    echo "DATABASE_URL or DATABASE_URL_HOST must be set." >&2
+  if [ -z "$DB_URL" ] && [ -z "$SYNC_DB_URL" ]; then
+    echo "DATABASE_URL (async) and/or DATABASE_URL_HOST|DATABASE_URL_MIGRATIONS (sync) must be set." >&2
     exit 1
   fi
 
-  export DATABASE_URL="$DB_URL"
-  MIGRATIONS_URL="${DATABASE_URL_MIGRATIONS:-$DB_URL}"
+  if [ -z "$SYNC_DB_URL" ]; then
+    SYNC_DB_URL="$DB_URL"
+  fi
+  SYNC_DB_URL=$(RAW_URL="$SYNC_DB_URL" python - <<'PY'
+import os
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-  SYNC_DB_URL=$(printf '%s' "$MIGRATIONS_URL" | sed 's/+asyncpg//')
+raw = os.environ["RAW_URL"]
+parsed = urlparse(raw)
+scheme = parsed.scheme.replace("+asyncpg", "")
+params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+if params.get("ssl") == "require":
+    params.pop("ssl", None)
+    params["sslmode"] = "require"
+query = urlencode(params)
+print(urlunparse((scheme, parsed.netloc, parsed.path, parsed.params, query, parsed.fragment)))
+PY
+)
+
+  if [ -z "$DB_URL" ]; then
+    DB_URL=$(RAW_URL="$SYNC_DB_URL" python - <<'PY'
+import os
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+raw = os.environ["RAW_URL"]
+parsed = urlparse(raw)
+scheme = parsed.scheme if "+asyncpg" in parsed.scheme else parsed.scheme.replace("postgresql", "postgresql+asyncpg")
+params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+if params.get("sslmode") == "require":
+    params.pop("sslmode", None)
+    params["ssl"] = "require"
+query = urlencode(params)
+print(urlunparse((scheme, parsed.netloc, parsed.path, parsed.params, query, parsed.fragment)))
+PY
+)
+  fi
+
+  case "$SYNC_DB_URL" in
+    *"@life_db:"*|*"@localhost:"*|*"@127.0.0.1:"*)
+      echo "Refusing local Postgres host in DATABASE_URL*. This deployment is configured to use Neon." >&2
+      echo "Set DATABASE_URL / DATABASE_URL_HOST / DATABASE_URL_MIGRATIONS to your Neon connection strings." >&2
+      exit 1
+      ;;
+  esac
+
+  export DATABASE_URL="$DB_URL"
   export DATABASE_URL_MIGRATIONS="$SYNC_DB_URL"
   export DATABASE_URL_HOST="$SYNC_DB_URL"
 
@@ -25,7 +68,7 @@ import time
 import psycopg2
 
 url = os.environ["DATABASE_URL_HOST"]
-for _ in range(30):
+for _ in range(90):
     try:
         conn = psycopg2.connect(url)
         conn.close()
@@ -34,7 +77,7 @@ for _ in range(30):
     except Exception:
         time.sleep(1)
 else:
-    print("Database not ready after 30s.", file=sys.stderr)
+    print("Database not ready after 90s.", file=sys.stderr)
     sys.exit(1)
 PY
 
