@@ -9,7 +9,6 @@ const Page = styled.div`
   display: grid;
   gap: 16px;
   min-width: 0;
-  overflow-x: hidden;
 `;
 
 const Header = styled(Card)`
@@ -144,23 +143,25 @@ const SelectedProjectWrap = styled.div`
 
 const WorkspaceRow = styled.div`
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.95fr);
+  grid-template-columns: minmax(320px, 1.2fr) minmax(220px, 0.8fr);
   gap: 12px;
   align-items: start;
 
-  @media (max-width: 980px) {
+  @media (max-width: 1200px) {
     grid-template-columns: 1fr;
   }
 `;
 
 const WorkspaceCard = styled(Card)`
   min-width: 0;
+  width: 100%;
 `;
 
 const ProjectCard = styled(Card)`
   display: grid;
   gap: 10px;
   min-width: 0;
+  width: 100%;
 `;
 
 const TodoList = styled.div`
