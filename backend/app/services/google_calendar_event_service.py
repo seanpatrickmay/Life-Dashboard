@@ -6,6 +6,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from loguru import logger
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.google_calendar_client import GoogleCalendarClient, GoogleCalendarError
@@ -74,6 +75,44 @@ class GoogleCalendarEventService:
 
         await self.sync_service._upsert_event(event.user_id, calendar, updated_event)
         await self.session.commit()
+
+    async def create_event_in_life_dashboard(
+        self,
+        user_id: int,
+        *,
+        summary: str,
+        start_time: datetime,
+        end_time: datetime,
+        is_all_day: bool = False,
+    ) -> tuple[GoogleCalendar, CalendarEvent]:
+        token = await self.connection_service.get_access_token(user_id)
+        if not token:
+            raise RuntimeError("Google Calendar connection missing or expired.")
+        calendar = await self._get_life_dashboard_calendar(user_id)
+        if not calendar:
+            raise RuntimeError("Life Dashboard calendar not found.")
+        client = GoogleCalendarClient(token)
+        payload = {
+            "summary": summary.strip(),
+            "start": (
+                _format_date_payload(start_time, calendar.time_zone)
+                if is_all_day
+                else _format_datetime_payload(start_time, calendar.time_zone)
+            ),
+            "end": (
+                _format_date_payload(end_time, calendar.time_zone)
+                if is_all_day
+                else _format_datetime_payload(end_time, calendar.time_zone)
+            ),
+        }
+        try:
+            created_event = await client.insert_event(calendar.google_id, payload)
+        except GoogleCalendarError as exc:
+            logger.warning("Failed to create Google Calendar event on {}: {}", calendar.google_id, exc)
+            raise
+        event = await self.sync_service._upsert_event(user_id, calendar, created_event)
+        await self.session.commit()
+        return calendar, event
 
     async def _patch_future_occurrences(
         self,
@@ -146,6 +185,18 @@ class GoogleCalendarEventService:
             window_end=window_end,
             force_full=False,
         )
+
+    async def _get_life_dashboard_calendar(self, user_id: int) -> GoogleCalendar | None:
+        stmt = (
+            select(GoogleCalendar)
+            .where(
+                GoogleCalendar.user_id == user_id,
+                GoogleCalendar.is_life_dashboard.is_(True),
+            )
+            .order_by(GoogleCalendar.primary.desc(), GoogleCalendar.id.asc())
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
 
 
 def _build_event_patch(

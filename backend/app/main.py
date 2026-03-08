@@ -23,6 +23,7 @@ from app.routers import (
   time,
   user,
   todos,
+  workspace,
 )
 
 configure_logging(settings.debug)
@@ -52,6 +53,7 @@ app.include_router(user.router, prefix=settings.api_prefix)
 app.include_router(system.router, prefix=settings.api_prefix)
 app.include_router(todos.router, prefix=settings.api_prefix)
 app.include_router(projects.router, prefix=settings.api_prefix)
+app.include_router(workspace.router, prefix=settings.api_prefix)
 app.include_router(calendar.router, prefix=settings.api_prefix)
 app.include_router(assistant.router, prefix=settings.api_prefix)
 app.include_router(journal.router, prefix=settings.api_prefix)

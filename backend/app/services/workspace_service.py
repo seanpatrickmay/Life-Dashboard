@@ -1,0 +1,2412 @@
+"""Workspace service powering the Notion-style projects surface."""
+from __future__ import annotations
+
+import re
+from collections import defaultdict
+from datetime import datetime, timezone
+from typing import Any
+
+from fastapi import HTTPException
+from sqlalchemy import delete, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.db.models.project import Project, TodoProjectSuggestion
+from app.db.models.project_note import ProjectNote
+from app.db.models.todo import TodoItem
+from app.db.models.workspace import (
+    WorkspaceAsset,
+    WorkspaceBlock,
+    WorkspaceDatabase,
+    WorkspaceFavorite,
+    WorkspacePage,
+    WorkspacePageLink,
+    WorkspaceProperty,
+    WorkspacePropertyOption,
+    WorkspacePropertyValue,
+    WorkspaceRecent,
+    WorkspaceTemplate,
+    WorkspaceView,
+)
+from app.db.repositories.project_note_repository import ProjectNoteRepository
+from app.db.repositories.project_repository import INBOX_PROJECT_NAME, ProjectRepository
+from app.db.repositories.todo_repository import TodoRepository
+from app.schemas.workspace import (
+    WorkspaceBacklinkResponse,
+    WorkspaceBacklinksResponse,
+    WorkspaceBlockResponse,
+    WorkspaceBootstrapResponse,
+    WorkspaceDatabaseRowsResponse,
+    WorkspaceDatabaseSummary,
+    WorkspacePageDetailResponse,
+    WorkspacePageLinkResponse,
+    WorkspacePageSummary,
+    WorkspacePropertyOptionResponse,
+    WorkspacePropertyResponse,
+    WorkspacePropertyValueResponse,
+    WorkspaceRowResponse,
+    WorkspaceSearchResponse,
+    WorkspaceSearchResult,
+    WorkspaceTemplateResponse,
+    WorkspaceViewResponse,
+)
+from app.services.todo_accomplishment_agent import TodoAccomplishmentAgent
+from app.services.todo_calendar_link_service import TodoCalendarLinkService
+from app.utils.timezone import resolve_time_zone
+
+
+PROJECTS_DB_KEY = "projects"
+TASKS_DB_KEY = "tasks"
+NOTES_DB_KEY = "notes"
+HOME_PAGE_KEY = "home"
+WORKSPACE_SCHEMA_VERSION = 2
+
+LINK_PATTERN = re.compile(r"\[\[([^\]]+)\]\]")
+MENTION_PATTERN = re.compile(r"(?<!\w)@([A-Za-z0-9][A-Za-z0-9 \-_]{1,80})")
+UNSET = object()
+NON_TEXTUAL_BLOCK_TYPES = {
+    "linked_database",
+    "favorites",
+    "recent_pages",
+    "divider",
+    "image",
+    "file",
+    "bookmark",
+    "embed",
+    "child_page",
+}
+
+
+class WorkspaceService:
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.project_note_repo = ProjectNoteRepository(session)
+        self.project_repo = ProjectRepository(session)
+        self.todo_repo = TodoRepository(session)
+
+    async def ensure_workspace(self, user_id: int, *, sync_legacy: bool = False) -> None:
+        home = await self._get_home_page(user_id)
+        if home is None:
+            await self._create_seed_workspace(user_id)
+            await self._sync_from_legacy(user_id)
+            return
+        if self._workspace_schema_version(home) < WORKSPACE_SCHEMA_VERSION:
+            await self._sync_from_legacy(user_id)
+        if sync_legacy:
+            await self._sync_from_legacy(user_id)
+
+    async def get_bootstrap(self, user_id: int, *, read_only: bool = False) -> WorkspaceBootstrapResponse:
+        await self.ensure_workspace(user_id)
+        home = await self._require_home_page(user_id)
+        sidebar_pages = await self._list_sidebar_pages(user_id)
+        favorites = await self._list_favorites(user_id)
+        recent_pages = await self._list_recent(user_id)
+        trash_pages = await self._list_trash(user_id)
+        databases = await self._list_databases(user_id)
+        return WorkspaceBootstrapResponse(
+            home_page_id=home.id,
+            read_only=read_only,
+            sidebar_pages=[self._page_summary(page) for page in sidebar_pages],
+            favorites=[self._page_summary(page) for page in favorites],
+            recent_pages=[self._page_summary(page) for page in recent_pages],
+            trash_pages=[self._page_summary(page) for page in trash_pages],
+            databases=[self._database_summary(database) for database in databases],
+        )
+
+    async def get_page_detail(self, user_id: int, page_id: int) -> WorkspacePageDetailResponse:
+        await self.ensure_workspace(user_id)
+        page = await self._require_page(user_id, page_id)
+        breadcrumbs = await self._build_breadcrumbs(page)
+        children = await self._list_children(user_id, page.id)
+        favorite = await self._is_favorite(user_id, page.id)
+        blocks = await self._list_blocks(page.id)
+        linked_databases = await self._list_linked_databases(blocks)
+        properties: list[WorkspacePropertyValueResponse] = []
+        database_summary: WorkspaceDatabaseSummary | None = None
+        if page.kind == "database_row" and page.parent_page_id is not None:
+            row_database = await self._require_database_for_page(page.parent_page_id)
+            properties = await self._serialize_page_properties(page, row_database)
+            linked_databases.insert(0, self._database_summary(row_database))
+            database_summary = self._database_summary(row_database)
+        elif page.kind == "database":
+            database = await self._get_database_for_page(page.id)
+            if database is not None:
+                database_summary = self._database_summary(database)
+        response = WorkspacePageDetailResponse(
+            page=self._page_summary(page),
+            breadcrumbs=[self._page_summary(item) for item in breadcrumbs],
+            children=[self._page_summary(item) for item in children],
+            properties=properties,
+            blocks=await self._serialize_blocks(page.user_id, blocks),
+            database=database_summary,
+            linked_databases=linked_databases,
+            favorite=favorite,
+        )
+        return response
+
+    async def get_page_backlinks(self, user_id: int, page_id: int) -> WorkspaceBacklinksResponse:
+        await self.ensure_workspace(user_id)
+        await self._require_page(user_id, page_id)
+        return WorkspaceBacklinksResponse(backlinks=await self._list_backlinks(user_id, page_id))
+
+    async def mark_recent(self, user_id: int, page_id: int) -> None:
+        await self.ensure_workspace(user_id)
+        await self._require_page(user_id, page_id)
+        await self._mark_recent(user_id, page_id)
+        await self.session.commit()
+
+    async def create_page(
+        self,
+        user_id: int,
+        *,
+        title: str,
+        parent_page_id: int | None = None,
+        kind: str = "page",
+        icon: str | None = None,
+        cover_url: str | None = None,
+        description: str | None = None,
+        show_in_sidebar: bool = True,
+        database_page_id: int | None = None,
+        sort_order: int | None = None,
+        extra_json: dict | list | None = None,
+        template_id: int | None = None,
+    ) -> WorkspacePage:
+        await self.ensure_workspace(user_id)
+        normalized_title = title.strip()
+        if not normalized_title:
+            raise HTTPException(status_code=422, detail="Page title cannot be empty")
+        parent_id = parent_page_id
+        actual_kind = kind
+        if database_page_id is not None:
+            parent_id = database_page_id
+            actual_kind = "database_row"
+            show_in_sidebar = False
+        if actual_kind == "note":
+            icon = icon or "📝"
+            show_in_sidebar = True
+        if parent_id is not None:
+            await self._require_page(user_id, parent_id)
+        if sort_order is None:
+            sort_order = await self._next_page_sort_order(user_id, parent_id)
+        page = WorkspacePage(
+            user_id=user_id,
+            parent_page_id=parent_id,
+            title=normalized_title,
+            kind=actual_kind,
+            icon=icon,
+            cover_url=cover_url,
+            description=description,
+            show_in_sidebar=show_in_sidebar,
+            sort_order=sort_order,
+            extra_json=extra_json,
+        )
+        self.session.add(page)
+        await self.session.flush()
+        if template_id is not None:
+            template = await self._require_template(user_id, template_id)
+            page.icon = page.icon or template.icon
+            page.cover_url = page.cover_url or template.cover_url
+            for block_payload in template.blocks_json or []:
+                await self._create_block_from_payload(
+                    user_id=user_id,
+                    page_id=page.id,
+                        payload=block_payload if isinstance(block_payload, dict) else {},
+                )
+        await self._ensure_page_has_default_block(page)
+        await self._refresh_page_preview(page)
+        if actual_kind == "note":
+            await self._sync_page_record_to_legacy(user_id, page)
+            await self._sync_page_body_to_legacy(user_id, page)
+        await self.session.commit()
+        return page
+
+    async def update_page(
+        self,
+        user_id: int,
+        page_id: int,
+        *,
+        title: str | None | object = UNSET,
+        icon: str | None | object = UNSET,
+        cover_url: str | None | object = UNSET,
+        description: str | None | object = UNSET,
+        parent_page_id: int | None | object = UNSET,
+        show_in_sidebar: bool | None | object = UNSET,
+        sort_order: int | None | object = UNSET,
+        favorite: bool | None | object = UNSET,
+        trashed: bool | None | object = UNSET,
+    ) -> WorkspacePage:
+        await self.ensure_workspace(user_id)
+        page = await self._require_page(user_id, page_id)
+        old_title = page.title
+        task_rollup_project_page_ids: set[int] = set()
+        task_database: WorkspaceDatabase | None = None
+        if page.kind == "database_row" and page.parent_page_id is not None:
+            candidate_database = await self._get_database_for_page(page.parent_page_id)
+            if candidate_database is not None and self._database_seed_key(candidate_database) == TASKS_DB_KEY:
+                task_database = candidate_database
+                if trashed is not UNSET:
+                    task_rollup_project_page_ids = await self._task_project_page_ids_for_task_row(task_database, page.id)
+        if title is not UNSET and title is not None:
+            normalized_title = title.strip()
+            if not normalized_title:
+                raise HTTPException(status_code=422, detail="Page title cannot be empty")
+            page.title = normalized_title
+        if icon is not UNSET:
+            page.icon = icon
+        if cover_url is not UNSET:
+            page.cover_url = cover_url
+        if description is not UNSET:
+            page.description = description
+        if parent_page_id is not UNSET and parent_page_id != page.id:
+            if parent_page_id:
+                await self._require_page(user_id, parent_page_id)
+            page.parent_page_id = parent_page_id
+        if show_in_sidebar is not UNSET and show_in_sidebar is not None:
+            page.show_in_sidebar = show_in_sidebar
+        if sort_order is not UNSET and sort_order is not None:
+            page.sort_order = sort_order
+        if trashed is not UNSET and trashed is not None:
+            if page.legacy_project_id and page.title.strip().lower() == INBOX_PROJECT_NAME.lower() and trashed:
+                raise HTTPException(status_code=400, detail="Inbox cannot be moved to trash")
+            page.trashed_at = datetime.now(timezone.utc) if trashed else None
+        if favorite is not UNSET and favorite is not None:
+            await self._set_favorite(user_id, page.id, favorite)
+        if page.title != old_title:
+            await self._rename_block_references(user_id, old_title, page.title)
+        await self._sync_page_record_to_legacy(user_id, page)
+        if task_database is not None and task_rollup_project_page_ids:
+            await self._recompute_project_rollups(user_id, task_rollup_project_page_ids)
+        await self.session.commit()
+        return page
+
+    async def create_block(
+        self,
+        user_id: int,
+        *,
+        page_id: int,
+        after_block_id: int | None,
+        block_type: str,
+        text_content: str,
+        checked: bool,
+        data_json: dict | list | None,
+    ) -> WorkspaceBlock:
+        await self.ensure_workspace(user_id)
+        page = await self._require_page(user_id, page_id)
+        sort_order = await self._next_block_sort_order(page.id, after_block_id)
+        block = WorkspaceBlock(
+            user_id=user_id,
+            page_id=page.id,
+            block_type=block_type,
+            text_content=text_content,
+            checked=checked,
+            data_json=data_json,
+            sort_order=sort_order,
+        )
+        self.session.add(block)
+        await self.session.flush()
+        await self._refresh_block_links(user_id, block)
+        await self._refresh_page_preview(page)
+        await self._sync_page_body_to_legacy(user_id, page)
+        await self.session.commit()
+        return block
+
+    async def update_block(
+        self,
+        user_id: int,
+        block_id: int,
+        *,
+        block_type: str | None | object = UNSET,
+        text_content: str | None | object = UNSET,
+        checked: bool | None | object = UNSET,
+        data_json: dict | list | None | object = UNSET,
+    ) -> WorkspaceBlock:
+        await self.ensure_workspace(user_id)
+        block = await self._require_block(user_id, block_id)
+        if block_type is not UNSET and block_type is not None:
+            block.block_type = block_type
+        if text_content is not UNSET and text_content is not None:
+            block.text_content = text_content
+        if checked is not UNSET and checked is not None:
+            block.checked = checked
+        if data_json is not UNSET:
+            block.data_json = data_json
+        await self._refresh_block_links(user_id, block)
+        page = await self._require_page(user_id, block.page_id)
+        await self._refresh_page_preview(page)
+        await self._sync_page_body_to_legacy(user_id, page)
+        await self.session.commit()
+        return block
+
+    async def delete_block(self, user_id: int, block_id: int) -> None:
+        await self.ensure_workspace(user_id)
+        block = await self._require_block(user_id, block_id)
+        page = await self._require_page(user_id, block.page_id)
+        await self.session.delete(block)
+        await self.session.flush()
+        await self._ensure_page_has_default_block(page)
+        await self._refresh_page_preview(page)
+        await self._sync_page_body_to_legacy(user_id, page)
+        await self.session.commit()
+
+    async def reorder_blocks(self, user_id: int, page_id: int, ordered_block_ids: list[int]) -> None:
+        await self.ensure_workspace(user_id)
+        await self._require_page(user_id, page_id)
+        blocks = await self._list_blocks(page_id)
+        by_id = {block.id: block for block in blocks}
+        if set(by_id) != set(ordered_block_ids):
+            raise HTTPException(status_code=400, detail="Ordered blocks do not match page blocks")
+        for index, block_id in enumerate(ordered_block_ids):
+            by_id[block_id].sort_order = index
+        await self.session.commit()
+
+    async def get_database_rows(
+        self,
+        user_id: int,
+        database_id: int,
+        *,
+        view_id: int | None = None,
+        offset: int = 0,
+        limit: int = 50,
+        relation_property_slug: str | None = None,
+        relation_page_id: int | None = None,
+    ) -> WorkspaceDatabaseRowsResponse:
+        await self.ensure_workspace(user_id)
+        database = await self._require_database(user_id, database_id)
+        view = await self._resolve_database_view(database, view_id)
+        rows, total_count = await self._query_database_rows(
+            database,
+            view,
+            offset=offset,
+            limit=limit,
+            relation_property_slug=relation_property_slug,
+            relation_page_id=relation_page_id,
+        )
+        return WorkspaceDatabaseRowsResponse(
+            database=self._database_summary(database),
+            view=self._view_summary(view) if view else None,
+            rows=rows,
+            total_count=total_count,
+            offset=offset,
+            limit=limit,
+            has_more=offset + len(rows) < total_count,
+        )
+
+    async def create_database_row(
+        self,
+        user_id: int,
+        database_id: int,
+        *,
+        title: str,
+        properties: dict[str, Any],
+        template_id: int | None = None,
+        time_zone: str | None = None,
+    ) -> WorkspacePage:
+        await self.ensure_workspace(user_id)
+        database = await self._require_database(user_id, database_id)
+        merged_properties = dict(properties)
+        if template_id is not None:
+            template = await self._require_template(user_id, template_id)
+            template_properties = dict(template.properties_json) if isinstance(template.properties_json, dict) else {}
+            template_properties.pop("title", None)
+            merged_properties = {**template_properties, **merged_properties}
+        page = await self.create_page(
+            user_id,
+            title=title,
+            database_page_id=database.page_id,
+            template_id=template_id,
+        )
+        if self._database_seed_key(database) == PROJECTS_DB_KEY:
+            page.show_in_sidebar = True
+        await self.update_property_values(
+            user_id,
+            page.id,
+            values=merged_properties,
+            time_zone=time_zone,
+            defer_commit=True,
+        )
+        if self._database_seed_key(database) == PROJECTS_DB_KEY:
+            tasks_db = await self._get_seeded_database(user_id, TASKS_DB_KEY)
+            if tasks_db is not None:
+                await self._ensure_project_tasks_linked_block(user_id, page, tasks_db)
+        await self.session.commit()
+        return page
+
+    async def update_property_values(
+        self,
+        user_id: int,
+        page_id: int,
+        *,
+        values: dict[str, Any],
+        time_zone: str | None = None,
+        defer_commit: bool = False,
+    ) -> WorkspacePage:
+        await self.ensure_workspace(user_id)
+        page = await self._require_page(user_id, page_id)
+        if page.kind != "database_row":
+            raise HTTPException(status_code=400, detail="Only database rows have editable properties")
+        database = await self._require_database_for_page(page.parent_page_id or 0)
+        seed_key = self._database_seed_key(database)
+        affected_project_page_ids: set[int] = set()
+        if seed_key == TASKS_DB_KEY and {"project", "status"} & set(values):
+            affected_project_page_ids |= await self._task_project_page_ids_for_task_row(database, page.id)
+        properties = {prop.slug: prop for prop in database.properties}
+        for slug, value in values.items():
+            prop = properties.get(slug)
+            if prop is None:
+                continue
+            if prop.property_type == "title":
+                normalized_title = str(value or "").strip()
+                if not normalized_title:
+                    raise HTTPException(status_code=422, detail="Title cannot be empty")
+                page.title = normalized_title
+                continue
+            await self._upsert_property_value(page.id, prop, value)
+        await self._sync_database_row_to_legacy(user_id, page, time_zone=time_zone)
+        if seed_key == TASKS_DB_KEY and {"project", "status"} & set(values):
+            affected_project_page_ids |= await self._task_project_page_ids_for_task_row(database, page.id)
+            await self._recompute_project_rollups(user_id, affected_project_page_ids)
+        if not defer_commit:
+            await self.session.commit()
+        return page
+
+    async def create_view(
+        self,
+        user_id: int,
+        database_id: int,
+        *,
+        name: str,
+        view_type: str,
+        is_default: bool,
+        config_json: dict | list | None,
+    ) -> WorkspaceView:
+        await self.ensure_workspace(user_id)
+        database = await self._require_database(user_id, database_id)
+        if is_default:
+            await self._clear_default_view(database.id)
+        view = WorkspaceView(
+            user_id=user_id,
+            database_id=database.id,
+            name=name.strip(),
+            view_type=view_type,
+            is_default=is_default,
+            sort_order=len(database.views),
+            config_json=_normalize_view_config(config_json),
+        )
+        self.session.add(view)
+        await self.session.commit()
+        return view
+
+    async def update_view(
+        self,
+        user_id: int,
+        view_id: int,
+        *,
+        name: str | None | object,
+        is_default: bool | None | object,
+        config_json: dict | list | None | object,
+    ) -> WorkspaceView:
+        await self.ensure_workspace(user_id)
+        view = await self._require_view(user_id, view_id)
+        if name is not UNSET and name is not None:
+            view.name = name.strip()
+        if config_json is not UNSET:
+            view.config_json = _normalize_view_config(config_json)
+        if is_default is not UNSET and is_default is not None:
+            if is_default:
+                await self._clear_default_view(view.database_id)
+            view.is_default = is_default
+        await self.session.commit()
+        return view
+
+    async def delete_page(self, user_id: int, page_id: int) -> None:
+        await self.ensure_workspace(user_id)
+        page = await self._require_page(user_id, page_id)
+        if page.is_home or page.kind == "home":
+            raise HTTPException(status_code=400, detail="Home page cannot be permanently deleted")
+        if page.kind == "database":
+            raise HTTPException(status_code=400, detail="Database pages cannot be permanently deleted")
+        if page.legacy_project_id is not None:
+            raise HTTPException(status_code=400, detail="Synced project pages cannot be permanently deleted")
+        children = await self._list_children(user_id, page.id)
+        if children:
+            raise HTTPException(status_code=400, detail="Move or delete child pages before deleting this page")
+        blocks = await self._list_blocks(page.id)
+        block_ids = [block.id for block in blocks]
+        task_rollup_project_page_ids: set[int] = set()
+        if page.kind == "database_row" and page.parent_page_id is not None:
+            candidate_database = await self._get_database_for_page(page.parent_page_id)
+            if candidate_database is not None and self._database_seed_key(candidate_database) == TASKS_DB_KEY:
+                task_rollup_project_page_ids = await self._task_project_page_ids_for_task_row(candidate_database, page.id)
+
+        if page.legacy_note_id is not None:
+            note = await self.project_note_repo.get_for_user(user_id=user_id, note_id=page.legacy_note_id)
+            if note is not None:
+                await self.session.delete(note)
+        if page.legacy_todo_id is not None:
+            todo = await self.todo_repo.get_for_user(user_id, page.legacy_todo_id)
+            if todo is not None:
+                link_service = TodoCalendarLinkService(self.session)
+                await link_service.unlink_todo(todo, delete_event=True)
+            await self.session.execute(
+                delete(TodoProjectSuggestion).where(
+                    TodoProjectSuggestion.user_id == user_id,
+                    TodoProjectSuggestion.todo_id == page.legacy_todo_id,
+                )
+            )
+            await self.todo_repo.delete_for_user(user_id, page.legacy_todo_id)
+
+        await self.session.execute(delete(WorkspaceFavorite).where(WorkspaceFavorite.page_id == page.id))
+        await self.session.execute(delete(WorkspaceRecent).where(WorkspaceRecent.page_id == page.id))
+        await self.session.execute(
+            delete(WorkspacePageLink).where(
+                or_(
+                    WorkspacePageLink.source_page_id == page.id,
+                    WorkspacePageLink.target_page_id == page.id,
+                )
+            )
+        )
+        asset_filters = [WorkspaceAsset.page_id == page.id]
+        if block_ids:
+            asset_filters.append(WorkspaceAsset.block_id.in_(block_ids))
+        await self.session.execute(delete(WorkspaceAsset).where(or_(*asset_filters)))
+        await self.session.delete(page)
+        await self.session.flush()
+        if task_rollup_project_page_ids:
+            await self._recompute_project_rollups(user_id, task_rollup_project_page_ids)
+        await self.session.commit()
+
+    async def list_templates(self, user_id: int, database_id: int | None = None) -> list[WorkspaceTemplate]:
+        await self.ensure_workspace(user_id)
+        stmt = select(WorkspaceTemplate).where(WorkspaceTemplate.user_id == user_id)
+        if database_id is not None:
+            stmt = stmt.where(WorkspaceTemplate.database_id == database_id)
+        stmt = stmt.order_by(WorkspaceTemplate.sort_order.asc(), WorkspaceTemplate.id.asc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def search(self, user_id: int, query: str) -> WorkspaceSearchResponse:
+        await self.ensure_workspace(user_id)
+        term = query.strip()
+        if not term:
+            return WorkspaceSearchResponse(results=[])
+        stmt = (
+            select(WorkspacePage)
+            .where(
+                WorkspacePage.user_id == user_id,
+                WorkspacePage.trashed_at.is_(None),
+                WorkspacePage.title.ilike(f"%{term}%"),
+            )
+            .order_by(WorkspacePage.updated_at.desc())
+            .limit(20)
+        )
+        page_result = await self.session.execute(stmt)
+        title_matches = list(page_result.scalars().all())
+        block_stmt = (
+            select(WorkspaceBlock)
+            .options(selectinload(WorkspaceBlock.page))
+            .where(
+                WorkspaceBlock.user_id == user_id,
+                WorkspaceBlock.text_content.ilike(f"%{term}%"),
+            )
+            .limit(20)
+        )
+        block_result = await self.session.execute(block_stmt)
+        results: list[WorkspaceSearchResult] = []
+        seen_page_ids = set()
+        for page in title_matches:
+            seen_page_ids.add(page.id)
+            results.append(WorkspaceSearchResult(page=self._page_summary(page), match=page.title))
+        for block in block_result.scalars().all():
+            if block.page_id in seen_page_ids or block.page is None or block.page.trashed_at is not None:
+                continue
+            seen_page_ids.add(block.page_id)
+            snippet = self._snippet(block.text_content, term)
+            results.append(WorkspaceSearchResult(page=self._page_summary(block.page), match=snippet))
+        return WorkspaceSearchResponse(results=results[:20])
+
+    async def create_asset_upload(
+        self,
+        user_id: int,
+        *,
+        page_id: int | None,
+        block_id: int | None,
+        name: str,
+        mime_type: str | None,
+        size_bytes: int | None,
+        api_prefix: str,
+    ) -> tuple[WorkspaceAsset, str, str]:
+        await self.ensure_workspace(user_id)
+        asset = WorkspaceAsset(
+            user_id=user_id,
+            page_id=page_id,
+            block_id=block_id,
+            name=name.strip(),
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+            status="pending",
+        )
+        self.session.add(asset)
+        await self.session.commit()
+        upload_url = f"{api_prefix}/workspace/assets/{asset.id}/content"
+        return asset, upload_url, upload_url
+
+    async def _create_seed_workspace(self, user_id: int) -> None:
+        home_page = WorkspacePage(
+            user_id=user_id,
+            title="Home",
+            kind="home",
+            icon="🏠",
+            show_in_sidebar=True,
+            sort_order=0,
+            is_home=True,
+            extra_json={"seed_key": HOME_PAGE_KEY, "schema_version": WORKSPACE_SCHEMA_VERSION},
+        )
+        self.session.add(home_page)
+        await self.session.flush()
+
+        projects_page = WorkspacePage(
+            user_id=user_id,
+            title="Projects",
+            kind="database",
+            icon="📁",
+            show_in_sidebar=True,
+            sort_order=10,
+        )
+        tasks_page = WorkspacePage(
+            user_id=user_id,
+            title="Tasks",
+            kind="database",
+            icon="✅",
+            show_in_sidebar=True,
+            sort_order=20,
+        )
+        self.session.add_all([projects_page, tasks_page])
+        await self.session.flush()
+
+        projects_db = WorkspaceDatabase(
+            user_id=user_id,
+            page_id=projects_page.id,
+            name="Projects",
+            description="Project pages and rollups",
+            icon="📁",
+            is_seeded=True,
+            extra_json={"seed_key": PROJECTS_DB_KEY},
+        )
+        tasks_db = WorkspaceDatabase(
+            user_id=user_id,
+            page_id=tasks_page.id,
+            name="Tasks",
+            description="Task database with dates and triage",
+            icon="✅",
+            is_seeded=True,
+            extra_json={"seed_key": TASKS_DB_KEY},
+        )
+        self.session.add_all([projects_db, tasks_db])
+        await self.session.flush()
+
+        project_props = await self._seed_properties(
+            user_id,
+            projects_db,
+            [
+                ("Name", "title", "title", {}),
+                ("Status", "status", "select", {}),
+                ("Open Tasks", "open_tasks", "rollup", {"source_database_key": TASKS_DB_KEY}),
+                ("Done Tasks", "done_tasks", "rollup", {"source_database_key": TASKS_DB_KEY}),
+            ],
+        )
+        task_props = await self._seed_properties(
+            user_id,
+            tasks_db,
+            [
+                ("Task", "title", "title", {}),
+                ("Project", "project", "relation", {"target_database_key": PROJECTS_DB_KEY}),
+                ("Status", "status", "select", {}),
+                ("Due", "due", "date", {}),
+                ("Date Only", "date_only", "checkbox", {}),
+                ("Triage", "triage_state", "select", {}),
+                ("Suggested Project", "suggested_project", "text", {}),
+                ("Accomplishment", "accomplishment", "text", {}),
+            ],
+        )
+        await self._seed_options(project_props["status"], [("active", "green"), ("archived", "gray")])
+        await self._seed_options(task_props["status"], [("todo", "default"), ("in-progress", "blue"), ("done", "green")])
+        await self._seed_options(
+            task_props["triage_state"],
+            [("assigned", "green"), ("suggested", "yellow"), ("unassigned", "gray"), ("done", "blue")],
+        )
+        await self._seed_views(
+            user_id,
+            projects_db,
+            [
+                ("All Projects", "table", True, {"sort": [{"property": "title", "direction": "asc"}]}),
+                ("By Status", "board", False, {"group_by": "status"}),
+            ],
+        )
+        await self._seed_views(
+            user_id,
+            tasks_db,
+            [
+                ("All Tasks", "table", True, {"sort": [{"property": "due", "direction": "asc"}]}),
+                ("Board", "board", False, {"group_by": "status"}),
+                ("Calendar", "calendar", False, {"date_property": "due"}),
+                ("Timeline", "timeline", False, {"date_property": "due"}),
+                (
+                    "Triage",
+                    "list",
+                    False,
+                    {"filters": [{"property": "triage_state", "operator": "in", "value": ["suggested", "unassigned"]}]},
+                ),
+            ],
+        )
+        projects_db = await self._require_database(user_id, projects_db.id)
+        tasks_db = await self._require_database(user_id, tasks_db.id)
+        projects_default_view = next(view for view in projects_db.views if view.is_default)
+        tasks_default_view = next(view for view in tasks_db.views if view.is_default)
+        home_views = {view.name: view for view in tasks_db.views}
+        tasks_triage_view = home_views["Triage"]
+        self.session.add_all(
+            [
+                WorkspaceTemplate(
+                    user_id=user_id,
+                    database_id=projects_db.id,
+                    name="Project kickoff",
+                    title="New Project",
+                    icon="🚀",
+                    blocks_json=[
+                        {"block_type": "paragraph", "text_content": "Goals, constraints, and current context."},
+                        {
+                            "block_type": "linked_database",
+                            "text_content": "Project tasks",
+                            "data_json": {
+                                "database_id": tasks_db.id,
+                                "view_id": tasks_default_view.id,
+                                "filter_property_slug": "project",
+                                "filter_page_id": "current_page",
+                            },
+                        },
+                    ],
+                ),
+            ]
+        )
+        await self.session.flush()
+        await self._create_block_from_payload(
+            user_id=user_id,
+            page_id=home_page.id,
+            payload={"block_type": "callout", "text_content": "Welcome to your workspace. Use / to add blocks, create pages, and link documents."},
+        )
+        await self._create_block_from_payload(
+            user_id=user_id,
+            page_id=home_page.id,
+            payload={"block_type": "heading_1", "text_content": "Quick access"},
+        )
+        await self._create_block_from_payload(
+            user_id=user_id,
+            page_id=home_page.id,
+            payload={"block_type": "favorites", "text_content": ""},
+        )
+        await self._create_block_from_payload(
+            user_id=user_id,
+            page_id=home_page.id,
+            payload={"block_type": "recent_pages", "text_content": ""},
+        )
+        await self._create_block_from_payload(
+            user_id=user_id,
+            page_id=home_page.id,
+            payload={
+                "block_type": "linked_database",
+                "text_content": "Projects",
+                "data_json": {"database_id": projects_db.id, "view_id": projects_default_view.id},
+            },
+        )
+        await self._create_block_from_payload(
+            user_id=user_id,
+            page_id=home_page.id,
+            payload={
+                "block_type": "linked_database",
+                "text_content": "Task triage",
+                "data_json": {"database_id": tasks_db.id, "view_id": tasks_triage_view.id},
+            },
+        )
+        await self._refresh_page_preview(home_page)
+        await self.session.commit()
+
+    async def _sync_from_legacy(self, user_id: int) -> None:
+        inbox = await self.project_repo.ensure_inbox_project(user_id)
+        home_page = await self._require_home_page(user_id)
+        projects_db = await self._get_seeded_database(user_id, PROJECTS_DB_KEY)
+        tasks_db = await self._get_seeded_database(user_id, TASKS_DB_KEY)
+        notes_db = await self._get_seeded_database(user_id, NOTES_DB_KEY)
+        if not projects_db or not tasks_db:
+            return
+        projects = await self.project_repo.list_for_user(user_id, include_archived=True)
+        todos_result = await self.session.execute(
+            select(TodoItem).where(TodoItem.user_id == user_id).order_by(TodoItem.created_at.asc())
+        )
+        todos = list(todos_result.scalars().all())
+        notes_result = await self.session.execute(
+            select(ProjectNote).where(ProjectNote.user_id == user_id).order_by(ProjectNote.updated_at.desc())
+        )
+        legacy_notes = list(notes_result.scalars().all())
+        suggestion_result = await self.session.execute(
+            select(TodoProjectSuggestion).where(TodoProjectSuggestion.user_id == user_id)
+        )
+        suggestions = {item.todo_id: item for item in suggestion_result.scalars().all()}
+
+        if notes_db is not None:
+            await self._remove_linked_database_blocks(home_page.id, notes_db.id)
+
+        project_pages = await self._list_database_row_pages(projects_db.page_id)
+        by_legacy_project = {page.legacy_project_id: page for page in project_pages if page.legacy_project_id}
+        has_project_summary = any(prop.slug == "summary" for prop in projects_db.properties)
+        for legacy_project in projects:
+            page = by_legacy_project.get(legacy_project.id)
+            if page is None:
+                page = WorkspacePage(
+                    user_id=user_id,
+                    parent_page_id=projects_db.page_id,
+                    title=legacy_project.name,
+                    kind="database_row",
+                    icon="📁" if legacy_project.name != INBOX_PROJECT_NAME else "📥",
+                    show_in_sidebar=True,
+                    sort_order=legacy_project.sort_order,
+                    legacy_project_id=legacy_project.id,
+                )
+                self.session.add(page)
+                await self.session.flush()
+            page.title = legacy_project.name
+            page.sort_order = legacy_project.sort_order
+            page.kind = "database_row"
+            page.parent_page_id = projects_db.page_id
+            page.show_in_sidebar = True
+            page.icon = page.icon or ("📁" if legacy_project.name != INBOX_PROJECT_NAME else "📥")
+            existing_body = await self._page_text_body(page.id)
+            summary_value = await self._get_value_by_slug(projects_db, page.id, "summary") if has_project_summary else None
+            description_source = existing_body.strip()
+            if not description_source:
+                description_source = str(summary_value or "").strip()
+            if not description_source:
+                description_source = str(page.description or "").strip()
+            if not description_source:
+                description_source = str(legacy_project.notes or "").strip()
+            if description_source and not existing_body.strip():
+                await self._replace_page_blocks(page.id, description_source)
+            else:
+                await self._ensure_page_has_default_block(page)
+                await self._refresh_page_preview(page)
+            await self._ensure_project_tasks_linked_block(user_id, page, tasks_db)
+            await self._upsert_value_by_slug(projects_db, page.id, "status", "archived" if legacy_project.archived else "active")
+
+        project_pages = await self._list_database_row_pages(projects_db.page_id)
+        by_legacy_project = {page.legacy_project_id: page for page in project_pages if page.legacy_project_id}
+
+        task_pages = await self._list_database_row_pages(tasks_db.page_id)
+        by_legacy_todo = {page.legacy_todo_id: page for page in task_pages if page.legacy_todo_id}
+        for todo in todos:
+            page = by_legacy_todo.get(todo.id)
+            if page is None:
+                page = WorkspacePage(
+                    user_id=user_id,
+                    parent_page_id=tasks_db.page_id,
+                    title=todo.text,
+                    kind="database_row",
+                    icon="✅",
+                    show_in_sidebar=False,
+                    sort_order=todo.id,
+                    legacy_todo_id=todo.id,
+                )
+                self.session.add(page)
+                await self.session.flush()
+                await self._ensure_page_has_default_block(page)
+            page.title = todo.text
+            page.sort_order = todo.id
+            project_page = by_legacy_project.get(todo.project_id)
+            suggestion = suggestions.get(todo.id)
+            triage_state = "assigned"
+            if todo.completed:
+                triage_state = "done"
+            elif todo.project_id == inbox.id and suggestion is not None:
+                triage_state = "suggested"
+            elif todo.project_id == inbox.id:
+                triage_state = "unassigned"
+            await self._upsert_value_by_slug(tasks_db, page.id, "project", project_page.id if project_page else None)
+            await self._upsert_value_by_slug(tasks_db, page.id, "status", "done" if todo.completed else "todo")
+            await self._upsert_value_by_slug(tasks_db, page.id, "due", todo.deadline_utc.isoformat() if todo.deadline_utc else None)
+            await self._upsert_value_by_slug(tasks_db, page.id, "date_only", todo.deadline_is_date_only)
+            await self._upsert_value_by_slug(tasks_db, page.id, "triage_state", triage_state)
+            await self._upsert_value_by_slug(
+                tasks_db, page.id, "suggested_project", suggestion.suggested_project_name if suggestion else ""
+            )
+            await self._upsert_value_by_slug(tasks_db, page.id, "accomplishment", todo.accomplishment_text or "")
+
+        note_page_filters = [
+            WorkspacePage.legacy_note_id.is_not(None),
+            WorkspacePage.kind == "note",
+        ]
+        if notes_db is not None:
+            note_page_filters.append(WorkspacePage.parent_page_id == notes_db.page_id)
+        note_pages_stmt = select(WorkspacePage).where(
+            WorkspacePage.user_id == user_id,
+            or_(*note_page_filters),
+        )
+        note_pages_result = await self.session.execute(note_pages_stmt)
+        note_pages = list(note_pages_result.scalars().all())
+        by_legacy_note = {page.legacy_note_id: page for page in note_pages if page.legacy_note_id}
+        inbox_project_page = by_legacy_project.get(inbox.id)
+        for note in legacy_notes:
+            page = by_legacy_note.get(note.id)
+            project_page = by_legacy_project.get(note.project_id) or inbox_project_page
+            if page is None:
+                page = WorkspacePage(
+                    user_id=user_id,
+                    parent_page_id=project_page.id if project_page else None,
+                    title=note.title,
+                    kind="note",
+                    icon="📝",
+                    show_in_sidebar=True,
+                    sort_order=note.id,
+                    legacy_note_id=note.id,
+                    extra_json=self._note_metadata_extra_json(note.tags or [], note.pinned, note.archived),
+                )
+                self.session.add(page)
+                await self.session.flush()
+            existing_body = await self._page_text_body(page.id)
+            page.title = note.title
+            page.kind = "note"
+            page.parent_page_id = project_page.id if project_page else page.parent_page_id
+            page.show_in_sidebar = True
+            page.sort_order = note.id
+            page.icon = page.icon or "📝"
+            page.extra_json = self._note_metadata_extra_json(note.tags or [], note.pinned, note.archived)
+            await self._replace_page_blocks(page.id, existing_body.strip() or note.body_markdown or "")
+
+        if notes_db is not None and inbox_project_page is not None:
+            retired_note_rows = await self._list_database_row_pages(notes_db.page_id)
+            for page in retired_note_rows:
+                if page.legacy_note_id is not None:
+                    continue
+                project_page_id, metadata = await self._note_row_project_metadata(notes_db, page.id)
+                page.parent_page_id = project_page_id or inbox_project_page.id
+                page.kind = "note"
+                page.icon = page.icon or "📝"
+                page.show_in_sidebar = True
+                page.extra_json = metadata
+                await self._refresh_page_preview(page)
+                await self._sync_page_record_to_legacy(user_id, page)
+                await self._sync_page_body_to_legacy(user_id, page)
+
+        await self._remove_project_summary_property(projects_db)
+        if notes_db is not None:
+            await self._retire_notes_database(user_id, notes_db)
+        home_page.extra_json = self._with_workspace_schema_version(home_page.extra_json)
+        await self._refresh_page_preview(home_page)
+
+        await self._recompute_project_rollups(user_id)
+        await self.session.flush()
+        await self.session.commit()
+
+    async def _sync_page_record_to_legacy(self, user_id: int, page: WorkspacePage) -> None:
+        if page.kind == "database_row" and page.parent_page_id and page.legacy_project_id:
+            await self._sync_database_row_to_legacy(user_id, page, time_zone=None)
+            return
+        if page.legacy_project_id:
+            project = await self.project_repo.get_for_user(user_id, page.legacy_project_id)
+            if project is not None:
+                project.name = page.title.strip()
+                if page.trashed_at is not None:
+                    project.archived = True
+        if page.kind == "note" or page.legacy_note_id:
+            await self._sync_note_page_to_legacy(user_id, page)
+        if page.legacy_todo_id:
+            await self._sync_database_row_to_legacy(user_id, page, time_zone=None)
+
+    async def _sync_database_row_to_legacy(
+        self, user_id: int, page: WorkspacePage, *, time_zone: str | None
+    ) -> None:
+        if page.kind != "database_row" or not page.parent_page_id:
+            return
+        database = await self._require_database_for_page(page.parent_page_id)
+        seed_key = self._database_seed_key(database)
+        if seed_key == PROJECTS_DB_KEY:
+            await self._sync_project_row_to_legacy(user_id, page, database)
+        elif seed_key == TASKS_DB_KEY:
+            await self._sync_task_row_to_legacy(user_id, page, database, time_zone=time_zone)
+        elif seed_key == NOTES_DB_KEY:
+            await self._sync_note_page_to_legacy(user_id, page)
+
+    async def _sync_project_row_to_legacy(
+        self, user_id: int, page: WorkspacePage, database: WorkspaceDatabase
+    ) -> None:
+        status = await self._get_value_by_slug(database, page.id, "status")
+        body = await self._page_text_body(page.id)
+        if page.legacy_project_id is None:
+            project = await self.project_repo.create_one(
+                user_id=user_id,
+                name=page.title,
+                notes=body[:1000].strip() or None,
+                archived=str(status or "") == "archived",
+                sort_order=page.sort_order,
+            )
+            await self.session.flush()
+            page.legacy_project_id = project.id
+            return
+        project = await self.project_repo.get_for_user(user_id, page.legacy_project_id)
+        if project is None:
+            return
+        if project.name == INBOX_PROJECT_NAME and str(status or "") == "archived":
+            raise HTTPException(status_code=400, detail="Inbox cannot be archived")
+        project.name = page.title.strip()
+        project.notes = body[:1000].strip() or None
+        project.archived = str(status or "") == "archived" or page.trashed_at is not None
+        project.sort_order = page.sort_order
+
+    async def _sync_task_row_to_legacy(
+        self,
+        user_id: int,
+        page: WorkspacePage,
+        database: WorkspaceDatabase,
+        *,
+        time_zone: str | None,
+    ) -> None:
+        inbox = await self.project_repo.ensure_inbox_project(user_id)
+        project_page_id = await self._get_value_by_slug(database, page.id, "project")
+        legacy_project_id = inbox.id
+        if isinstance(project_page_id, list):
+            project_page_id = project_page_id[0] if project_page_id else None
+        if project_page_id:
+            project_page = await self._require_page(user_id, int(project_page_id))
+            if project_page.legacy_project_id:
+                legacy_project_id = project_page.legacy_project_id
+        due_value = await self._get_value_by_slug(database, page.id, "due")
+        date_only = bool(await self._get_value_by_slug(database, page.id, "date_only"))
+        status = str(await self._get_value_by_slug(database, page.id, "status") or "todo")
+        completed = status == "done"
+        suggestion_value = str(await self._get_value_by_slug(database, page.id, "suggested_project") or "").strip()
+        todo = await self.session.get(TodoItem, page.legacy_todo_id) if page.legacy_todo_id else None
+        was_completed = bool(todo.completed) if todo else False
+        deadline = _parse_datetime(due_value)
+        if todo is None:
+            todo = await self.todo_repo.create_one(
+                user_id,
+                legacy_project_id,
+                page.title,
+                deadline,
+                deadline_is_date_only=date_only,
+            )
+            self.session.add(todo)
+            await self.session.flush()
+            page.legacy_todo_id = todo.id
+        else:
+            todo.text = page.title.strip()
+            todo.project_id = legacy_project_id
+            todo.deadline_utc = deadline
+            todo.deadline_is_date_only = bool(date_only) if deadline else False
+        if completed != todo.completed:
+            todo.mark_completed(completed)
+            if completed and not was_completed:
+                tz_name = (time_zone or "UTC").strip() or "UTC"
+                todo.completed_time_zone = tz_name
+                if todo.completed_at_utc:
+                    zone = resolve_time_zone(tz_name)
+                    todo.completed_local_date = todo.completed_at_utc.astimezone(zone).date()
+                if not todo.accomplishment_text:
+                    agent = TodoAccomplishmentAgent(self.session)
+                    try:
+                        todo.accomplishment_text = await agent.rewrite(todo.text)
+                    except Exception:  # noqa: BLE001
+                        todo.accomplishment_text = f"Completed {todo.text}".strip()
+                    todo.accomplishment_generated_at_utc = datetime.now(timezone.utc)
+            elif not completed:
+                todo.completed_local_date = None
+                todo.completed_time_zone = None
+        if not completed:
+            accomplishment = str(await self._get_value_by_slug(database, page.id, "accomplishment") or "").strip()
+            if accomplishment:
+                todo.accomplishment_text = accomplishment
+        await self._upsert_value_by_slug(database, page.id, "accomplishment", todo.accomplishment_text or "")
+        triage_state = str(await self._get_value_by_slug(database, page.id, "triage_state") or "")
+        if not suggestion_value or triage_state == "assigned" or completed:
+            await self.session.execute(
+                delete(TodoProjectSuggestion).where(
+                    TodoProjectSuggestion.user_id == user_id,
+                    TodoProjectSuggestion.todo_id == todo.id,
+                )
+            )
+        else:
+            suggestion = await self._get_suggestion_for_todo(user_id, todo.id)
+            if suggestion is None:
+                suggestion = TodoProjectSuggestion(
+                    user_id=user_id,
+                    todo_id=todo.id,
+                    suggested_project_name=suggestion_value,
+                    confidence=0.6,
+                    reason="Captured from workspace triage metadata",
+                )
+                self.session.add(suggestion)
+            else:
+                suggestion.suggested_project_name = suggestion_value
+
+        await self.session.flush()
+        link_service = TodoCalendarLinkService(self.session)
+        if todo.completed:
+            await link_service.unlink_todo(todo, delete_event=True)
+        elif todo.deadline_utc is not None:
+            await link_service.upsert_event_for_todo(todo, time_zone=time_zone)
+        else:
+            await link_service.unlink_todo(todo, delete_event=True)
+
+    async def _sync_page_body_to_legacy(self, user_id: int, page: WorkspacePage) -> None:
+        if page.legacy_note_id:
+            note = await self.session.get(ProjectNote, page.legacy_note_id)
+            if note and note.user_id == user_id:
+                note.body_markdown = await self._page_text_body(page.id)
+        if page.legacy_project_id:
+            project = await self.project_repo.get_for_user(user_id, page.legacy_project_id)
+            if project is not None:
+                body = await self._page_text_body(page.id)
+                project.notes = body[:1000].strip() or None
+
+    async def _sync_note_page_to_legacy(self, user_id: int, page: WorkspacePage) -> None:
+        inbox = await self.project_repo.ensure_inbox_project(user_id)
+        project_id = await self._legacy_project_id_for_page_parent(user_id, page.parent_page_id, inbox.id)
+        metadata = self._note_metadata_from_extra_json(page.extra_json)
+        note = await self.session.get(ProjectNote, page.legacy_note_id) if page.legacy_note_id else None
+        if note is None:
+            note = await self.project_note_repo.create_one(
+                user_id=user_id,
+                project_id=project_id,
+                title=page.title.strip(),
+                body_markdown=await self._page_text_body(page.id),
+                tags=metadata["tags"],
+                pinned=metadata["pinned"],
+            )
+            note.archived = metadata["archived"] or page.trashed_at is not None
+            page.legacy_note_id = note.id
+            return
+        note.project_id = project_id
+        note.title = page.title.strip()
+        note.body_markdown = await self._page_text_body(page.id)
+        note.tags = metadata["tags"]
+        note.pinned = metadata["pinned"]
+        note.archived = metadata["archived"] or page.trashed_at is not None
+
+    async def _page_text_body(self, page_id: int) -> str:
+        blocks = await self._list_blocks(page_id)
+        lines = [
+            block.text_content.strip()
+            for block in blocks
+            if block.block_type not in NON_TEXTUAL_BLOCK_TYPES and block.text_content.strip()
+        ]
+        return "\n\n".join(lines)
+
+    async def _refresh_page_preview(self, page: WorkspacePage) -> None:
+        blocks = await self._list_blocks(page.id)
+        page.description = self._page_preview_from_blocks(blocks)
+        await self.session.flush()
+
+    def _page_preview_from_blocks(self, blocks: list[WorkspaceBlock]) -> str | None:
+        for block in blocks:
+            if block.block_type in NON_TEXTUAL_BLOCK_TYPES:
+                continue
+            text = block.text_content.strip()
+            if text:
+                return text[:200]
+        return None
+
+    def _workspace_schema_version(self, home_page: WorkspacePage) -> int:
+        if isinstance(home_page.extra_json, dict):
+            raw = home_page.extra_json.get("schema_version")
+            if isinstance(raw, int):
+                return raw
+        return 0
+
+    def _with_workspace_schema_version(self, extra_json: dict | list | None) -> dict[str, Any]:
+        payload = dict(extra_json) if isinstance(extra_json, dict) else {}
+        payload["seed_key"] = payload.get("seed_key") or HOME_PAGE_KEY
+        payload["schema_version"] = WORKSPACE_SCHEMA_VERSION
+        return payload
+
+    def _note_metadata_extra_json(
+        self,
+        tags: list[str] | None,
+        pinned: bool,
+        archived: bool,
+    ) -> dict[str, Any]:
+        return {
+            "note_meta": {
+                "tags": [str(tag).strip() for tag in (tags or []) if str(tag).strip()],
+                "pinned": bool(pinned),
+                "archived": bool(archived),
+            }
+        }
+
+    def _note_metadata_from_extra_json(self, extra_json: dict | list | None) -> dict[str, Any]:
+        if isinstance(extra_json, dict):
+            raw = extra_json.get("note_meta")
+            if isinstance(raw, dict):
+                tags = raw.get("tags")
+                return {
+                    "tags": [str(tag).strip() for tag in tags] if isinstance(tags, list) else [],
+                    "pinned": bool(raw.get("pinned")),
+                    "archived": bool(raw.get("archived")),
+                }
+        return {"tags": [], "pinned": False, "archived": False}
+
+    async def _legacy_project_id_for_page_parent(
+        self,
+        user_id: int,
+        parent_page_id: int | None,
+        default_project_id: int,
+    ) -> int:
+        current = parent_page_id
+        while current is not None:
+            parent = await self._require_page(user_id, current)
+            if parent.legacy_project_id is not None:
+                return parent.legacy_project_id
+            current = parent.parent_page_id
+        return default_project_id
+
+    async def _replace_page_blocks(self, page_id: int, body: str) -> None:
+        page = await self.session.get(WorkspacePage, page_id)
+        if page is None:
+            return
+        await self.session.execute(
+            delete(WorkspacePageLink).where(WorkspacePageLink.source_page_id == page_id)
+        )
+        blocks = await self._list_blocks(page_id)
+        for block in blocks:
+            await self.session.delete(block)
+        text = body.strip()
+        if not text:
+            await self._create_block_from_payload(
+                user_id=page.user_id,
+                page_id=page_id,
+                payload={"block_type": "paragraph", "text_content": ""},
+            )
+            await self._refresh_page_preview(page)
+            return
+        lines = [line for line in text.split("\n\n") if line.strip()]
+        for index, line in enumerate(lines):
+            block = WorkspaceBlock(
+                user_id=page.user_id,
+                page_id=page_id,
+                block_type="paragraph",
+                text_content=line,
+                sort_order=index,
+            )
+            self.session.add(block)
+        await self.session.flush()
+        for block in await self._list_blocks(page_id):
+            await self._refresh_block_links(page.user_id, block)
+        await self._refresh_page_preview(page)
+
+    async def _ensure_project_tasks_linked_block(
+        self,
+        user_id: int,
+        project_page: WorkspacePage,
+        tasks_db: WorkspaceDatabase,
+    ) -> None:
+        default_view = next((view for view in tasks_db.views if view.is_default), None) or (
+            tasks_db.views[0] if tasks_db.views else None
+        )
+        if default_view is None:
+            return
+        target_data = {
+            "database_id": tasks_db.id,
+            "view_id": default_view.id,
+            "filter_property_slug": "project",
+            "filter_page_id": "current_page",
+        }
+        blocks = await self._list_blocks(project_page.id)
+        existing = next(
+            (
+                block
+                for block in blocks
+                if block.block_type == "linked_database"
+                and isinstance(block.data_json, dict)
+                and block.data_json.get("database_id") == tasks_db.id
+            ),
+            None,
+        )
+        if existing is not None:
+            existing.data_json = target_data
+            if not existing.text_content.strip():
+                existing.text_content = "Project tasks"
+            await self.session.flush()
+            return
+        await self._create_block_from_payload(
+            user_id=user_id,
+            page_id=project_page.id,
+            payload={
+                "block_type": "linked_database",
+                "text_content": "Project tasks",
+                "data_json": target_data,
+            },
+        )
+        await self._refresh_page_preview(project_page)
+
+    async def _remove_linked_database_blocks(self, page_id: int, database_id: int) -> None:
+        blocks = await self._list_blocks(page_id)
+        removed = False
+        for block in blocks:
+            if (
+                block.block_type == "linked_database"
+                and isinstance(block.data_json, dict)
+                and block.data_json.get("database_id") == database_id
+            ):
+                await self.session.delete(block)
+                removed = True
+        if removed:
+            await self.session.flush()
+
+    async def _remove_project_summary_property(self, projects_db: WorkspaceDatabase) -> None:
+        summary_prop = next((prop for prop in projects_db.properties if prop.slug == "summary"), None)
+        if summary_prop is None:
+            return
+        await self.session.execute(
+            delete(WorkspacePropertyValue).where(WorkspacePropertyValue.property_id == summary_prop.id)
+        )
+        await self.session.delete(summary_prop)
+        await self.session.flush()
+
+    async def _note_row_project_metadata(
+        self,
+        notes_db: WorkspaceDatabase,
+        page_id: int,
+    ) -> tuple[int | None, dict[str, Any]]:
+        project_page_id = await self._get_value_by_slug(notes_db, page_id, "project")
+        if isinstance(project_page_id, list):
+            project_page_id = project_page_id[0] if project_page_id else None
+        metadata = self._note_metadata_extra_json(
+            await self._get_value_by_slug(notes_db, page_id, "tags") or [],
+            bool(await self._get_value_by_slug(notes_db, page_id, "pinned")),
+            bool(await self._get_value_by_slug(notes_db, page_id, "archived")),
+        )
+        return (int(project_page_id) if isinstance(project_page_id, int) else None, metadata)
+
+    async def _retire_notes_database(self, user_id: int, notes_db: WorkspaceDatabase) -> None:
+        notes_page = await self._require_page(user_id, notes_db.page_id)
+        await self._remove_linked_database_blocks(notes_page.id, notes_db.id)
+        await self.session.execute(delete(WorkspaceFavorite).where(WorkspaceFavorite.page_id == notes_page.id))
+        await self.session.execute(delete(WorkspaceRecent).where(WorkspaceRecent.page_id == notes_page.id))
+        await self.session.execute(
+            delete(WorkspacePageLink).where(
+                or_(
+                    WorkspacePageLink.source_page_id == notes_page.id,
+                    WorkspacePageLink.target_page_id == notes_page.id,
+                )
+            )
+        )
+        block_ids = [block.id for block in await self._list_blocks(notes_page.id)]
+        asset_filters = [WorkspaceAsset.page_id == notes_page.id]
+        if block_ids:
+            asset_filters.append(WorkspaceAsset.block_id.in_(block_ids))
+        await self.session.execute(delete(WorkspaceAsset).where(or_(*asset_filters)))
+        await self.session.delete(notes_page)
+        await self.session.flush()
+
+    async def _seed_properties(
+        self,
+        user_id: int,
+        database: WorkspaceDatabase,
+        definitions: list[tuple[str, str, str, dict[str, Any]]],
+    ) -> dict[str, WorkspaceProperty]:
+        properties: dict[str, WorkspaceProperty] = {}
+        for index, (name, slug, property_type, config_json) in enumerate(definitions):
+            prop = WorkspaceProperty(
+                user_id=user_id,
+                database_id=database.id,
+                name=name,
+                slug=slug,
+                property_type=property_type,
+                sort_order=index,
+                config_json=config_json,
+            )
+            self.session.add(prop)
+            await self.session.flush()
+            properties[slug] = prop
+        return properties
+
+    async def _seed_options(
+        self, prop: WorkspaceProperty, options: list[tuple[str, str]]
+    ) -> None:
+        for index, (value, color) in enumerate(options):
+            self.session.add(
+                WorkspacePropertyOption(
+                    property_id=prop.id,
+                    label=value.replace("-", " ").title(),
+                    value=value,
+                    color=color,
+                    sort_order=index,
+                )
+            )
+        await self.session.flush()
+
+    async def _seed_views(
+        self,
+        user_id: int,
+        database: WorkspaceDatabase,
+        definitions: list[tuple[str, str, bool, dict[str, Any]]],
+    ) -> None:
+        for index, (name, view_type, is_default, config_json) in enumerate(definitions):
+            self.session.add(
+                WorkspaceView(
+                    user_id=user_id,
+                    database_id=database.id,
+                    name=name,
+                    view_type=view_type,
+                    sort_order=index,
+                    is_default=is_default,
+                    config_json=config_json,
+                )
+            )
+        await self.session.flush()
+
+    async def _create_block_from_payload(
+        self, *, user_id: int, page_id: int, payload: dict[str, Any]
+    ) -> WorkspaceBlock:
+        sort_order = await self._next_block_sort_order(page_id, after_block_id=None)
+        block = WorkspaceBlock(
+            user_id=user_id,
+            page_id=page_id,
+            block_type=str(payload.get("block_type") or "paragraph"),
+            text_content=str(payload.get("text_content") or ""),
+            checked=bool(payload.get("checked", False)),
+            data_json=payload.get("data_json"),
+            sort_order=sort_order,
+        )
+        self.session.add(block)
+        await self.session.flush()
+        if user_id:
+            await self._refresh_block_links(user_id, block)
+        return block
+
+    async def _ensure_page_has_default_block(self, page: WorkspacePage) -> None:
+        blocks = await self._list_blocks(page.id)
+        if blocks:
+            return
+        self.session.add(
+            WorkspaceBlock(
+                user_id=page.user_id,
+                page_id=page.id,
+                block_type="paragraph",
+                text_content="",
+                sort_order=0,
+            )
+        )
+        await self.session.flush()
+
+    async def _next_page_sort_order(self, user_id: int, parent_page_id: int | None) -> int:
+        stmt = (
+            select(WorkspacePage)
+            .where(WorkspacePage.user_id == user_id, WorkspacePage.parent_page_id == parent_page_id)
+            .order_by(WorkspacePage.sort_order.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        page = result.scalar_one_or_none()
+        return (page.sort_order + 10) if page else 10
+
+    async def _next_block_sort_order(self, page_id: int, after_block_id: int | None) -> int:
+        blocks = await self._list_blocks(page_id)
+        if after_block_id is None:
+            return (blocks[-1].sort_order + 1) if blocks else 0
+        after_block = next((block for block in blocks if block.id == after_block_id), None)
+        if after_block is None:
+            return (blocks[-1].sort_order + 1) if blocks else 0
+        for block in blocks:
+            if block.sort_order > after_block.sort_order:
+                block.sort_order += 1
+        return after_block.sort_order + 1
+
+    async def _upsert_property_value(
+        self, page_id: int, prop: WorkspaceProperty, value: Any
+    ) -> WorkspacePropertyValue:
+        stmt = select(WorkspacePropertyValue).where(
+            WorkspacePropertyValue.page_id == page_id,
+            WorkspacePropertyValue.property_id == prop.id,
+        )
+        result = await self.session.execute(stmt)
+        row = result.scalar_one_or_none()
+        normalized = _normalize_property_value(prop.property_type, value)
+        if row is None:
+            row = WorkspacePropertyValue(page_id=page_id, property_id=prop.id, value_json=normalized)
+            self.session.add(row)
+        else:
+            row.value_json = normalized
+        await self.session.flush()
+        return row
+
+    async def _upsert_value_by_slug(
+        self, database: WorkspaceDatabase, page_id: int, slug: str, value: Any
+    ) -> None:
+        prop = next((item for item in database.properties if item.slug == slug), None)
+        if prop is None or prop.property_type == "title":
+            return
+        await self._upsert_property_value(page_id, prop, value)
+
+    async def _get_value_by_slug(
+        self, database: WorkspaceDatabase, page_id: int, slug: str
+    ) -> Any:
+        prop = next((item for item in database.properties if item.slug == slug), None)
+        if prop is None:
+            return None
+        if prop.property_type == "title":
+            page = await self._require_page(database.user_id, page_id)
+            return page.title
+        stmt = select(WorkspacePropertyValue).where(
+            WorkspacePropertyValue.page_id == page_id,
+            WorkspacePropertyValue.property_id == prop.id,
+        )
+        result = await self.session.execute(stmt)
+        row = result.scalar_one_or_none()
+        return row.value_json if row else None
+
+    async def _task_project_page_ids_for_task_row(
+        self,
+        database: WorkspaceDatabase,
+        page_id: int,
+    ) -> set[int]:
+        if self._database_seed_key(database) != TASKS_DB_KEY:
+            return set()
+        project_value = await self._get_value_by_slug(database, page_id, "project")
+        if isinstance(project_value, list):
+            return {int(item) for item in project_value if isinstance(item, int)}
+        if isinstance(project_value, int):
+            return {project_value}
+        return set()
+
+    async def _list_pages_by_ids(self, user_id: int, page_ids: set[int]) -> dict[int, WorkspacePage]:
+        if not page_ids:
+            return {}
+        stmt = select(WorkspacePage).where(
+            WorkspacePage.user_id == user_id,
+            WorkspacePage.id.in_(page_ids),
+        )
+        result = await self.session.execute(stmt)
+        return {page.id: page for page in result.scalars().all()}
+
+    async def _require_page(self, user_id: int, page_id: int) -> WorkspacePage:
+        stmt = select(WorkspacePage).where(WorkspacePage.user_id == user_id, WorkspacePage.id == page_id)
+        result = await self.session.execute(stmt)
+        page = result.scalar_one_or_none()
+        if page is None:
+            raise HTTPException(status_code=404, detail="Workspace page not found")
+        return page
+
+    async def _require_block(self, user_id: int, block_id: int) -> WorkspaceBlock:
+        stmt = select(WorkspaceBlock).where(WorkspaceBlock.user_id == user_id, WorkspaceBlock.id == block_id)
+        result = await self.session.execute(stmt)
+        block = result.scalar_one_or_none()
+        if block is None:
+            raise HTTPException(status_code=404, detail="Workspace block not found")
+        return block
+
+    async def _require_database(self, user_id: int, database_id: int) -> WorkspaceDatabase:
+        stmt = (
+            select(WorkspaceDatabase)
+            .options(
+                selectinload(WorkspaceDatabase.properties).selectinload(WorkspaceProperty.options),
+                selectinload(WorkspaceDatabase.views),
+            )
+            .where(WorkspaceDatabase.user_id == user_id, WorkspaceDatabase.id == database_id)
+        )
+        result = await self.session.execute(stmt)
+        database = result.scalar_one_or_none()
+        if database is None:
+            raise HTTPException(status_code=404, detail="Workspace database not found")
+        return database
+
+    async def _require_database_for_page(self, page_id: int) -> WorkspaceDatabase:
+        stmt = (
+            select(WorkspaceDatabase)
+            .options(
+                selectinload(WorkspaceDatabase.properties).selectinload(WorkspaceProperty.options),
+                selectinload(WorkspaceDatabase.views),
+            )
+            .where(WorkspaceDatabase.page_id == page_id)
+        )
+        result = await self.session.execute(stmt)
+        database = result.scalar_one_or_none()
+        if database is None:
+            raise HTTPException(status_code=404, detail="Workspace database not found")
+        return database
+
+    async def _get_database_for_page(self, page_id: int) -> WorkspaceDatabase | None:
+        stmt = (
+            select(WorkspaceDatabase)
+            .options(
+                selectinload(WorkspaceDatabase.properties).selectinload(WorkspaceProperty.options),
+                selectinload(WorkspaceDatabase.views),
+            )
+            .where(WorkspaceDatabase.page_id == page_id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _require_view(self, user_id: int, view_id: int) -> WorkspaceView:
+        stmt = select(WorkspaceView).where(WorkspaceView.user_id == user_id, WorkspaceView.id == view_id)
+        result = await self.session.execute(stmt)
+        view = result.scalar_one_or_none()
+        if view is None:
+            raise HTTPException(status_code=404, detail="Workspace view not found")
+        return view
+
+    async def _require_template(self, user_id: int, template_id: int) -> WorkspaceTemplate:
+        stmt = select(WorkspaceTemplate).where(
+            WorkspaceTemplate.user_id == user_id, WorkspaceTemplate.id == template_id
+        )
+        result = await self.session.execute(stmt)
+        template = result.scalar_one_or_none()
+        if template is None:
+            raise HTTPException(status_code=404, detail="Workspace template not found")
+        return template
+
+    async def _require_home_page(self, user_id: int) -> WorkspacePage:
+        home = await self._get_home_page(user_id)
+        if home is None:
+            raise HTTPException(status_code=404, detail="Workspace home page not found")
+        return home
+
+    async def _get_home_page(self, user_id: int) -> WorkspacePage | None:
+        stmt = select(WorkspacePage).where(
+            WorkspacePage.user_id == user_id, WorkspacePage.is_home.is_(True)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _get_seeded_database(self, user_id: int, seed_key: str) -> WorkspaceDatabase | None:
+        stmt = (
+            select(WorkspaceDatabase)
+            .options(
+                selectinload(WorkspaceDatabase.properties).selectinload(WorkspaceProperty.options),
+                selectinload(WorkspaceDatabase.views),
+            )
+            .where(
+                WorkspaceDatabase.user_id == user_id,
+                WorkspaceDatabase.is_seeded.is_(True),
+            )
+        )
+        result = await self.session.execute(stmt)
+        for database in result.scalars().all():
+            if self._database_seed_key(database) == seed_key:
+                return database
+        return None
+
+    async def _list_sidebar_pages(self, user_id: int) -> list[WorkspacePage]:
+        stmt = (
+            select(WorkspacePage)
+            .where(
+                WorkspacePage.user_id == user_id,
+                WorkspacePage.show_in_sidebar.is_(True),
+                WorkspacePage.trashed_at.is_(None),
+            )
+            .order_by(WorkspacePage.parent_page_id.asc().nullsfirst(), WorkspacePage.sort_order.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def _list_children(self, user_id: int, parent_page_id: int) -> list[WorkspacePage]:
+        stmt = (
+            select(WorkspacePage)
+            .where(
+                WorkspacePage.user_id == user_id,
+                WorkspacePage.parent_page_id == parent_page_id,
+                WorkspacePage.trashed_at.is_(None),
+            )
+            .order_by(WorkspacePage.sort_order.asc(), WorkspacePage.updated_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def _list_blocks(self, page_id: int) -> list[WorkspaceBlock]:
+        stmt = (
+            select(WorkspaceBlock)
+            .options(selectinload(WorkspaceBlock.links))
+            .where(WorkspaceBlock.page_id == page_id)
+            .order_by(WorkspaceBlock.sort_order.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def _list_databases(self, user_id: int) -> list[WorkspaceDatabase]:
+        stmt = (
+            select(WorkspaceDatabase)
+            .options(
+                selectinload(WorkspaceDatabase.properties).selectinload(WorkspaceProperty.options),
+                selectinload(WorkspaceDatabase.views),
+            )
+            .where(WorkspaceDatabase.user_id == user_id)
+            .order_by(WorkspaceDatabase.id.asc())
+        )
+        result = await self.session.execute(stmt)
+        return [
+            database
+            for database in result.scalars().all()
+            if self._database_seed_key(database) != NOTES_DB_KEY
+        ]
+
+    async def _list_database_row_pages(self, database_page_id: int) -> list[WorkspacePage]:
+        stmt = (
+            select(WorkspacePage)
+            .where(
+                WorkspacePage.parent_page_id == database_page_id,
+                WorkspacePage.kind == "database_row",
+            )
+            .order_by(WorkspacePage.sort_order.asc(), WorkspacePage.updated_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def _list_favorites(self, user_id: int) -> list[WorkspacePage]:
+        stmt = (
+            select(WorkspacePage)
+            .join(WorkspaceFavorite, WorkspaceFavorite.page_id == WorkspacePage.id)
+            .where(WorkspaceFavorite.user_id == user_id, WorkspacePage.trashed_at.is_(None))
+            .order_by(WorkspaceFavorite.sort_order.asc(), WorkspacePage.updated_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def _list_recent(self, user_id: int) -> list[WorkspacePage]:
+        stmt = (
+            select(WorkspacePage)
+            .join(WorkspaceRecent, WorkspaceRecent.page_id == WorkspacePage.id)
+            .where(WorkspaceRecent.user_id == user_id, WorkspacePage.trashed_at.is_(None))
+            .order_by(WorkspaceRecent.last_viewed_at.desc().nullslast())
+            .limit(15)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def _list_trash(self, user_id: int) -> list[WorkspacePage]:
+        stmt = (
+            select(WorkspacePage)
+            .where(WorkspacePage.user_id == user_id, WorkspacePage.trashed_at.is_not(None))
+            .order_by(WorkspacePage.trashed_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def _set_favorite(self, user_id: int, page_id: int, enabled: bool) -> None:
+        stmt = select(WorkspaceFavorite).where(
+            WorkspaceFavorite.user_id == user_id, WorkspaceFavorite.page_id == page_id
+        )
+        result = await self.session.execute(stmt)
+        favorite = result.scalar_one_or_none()
+        if enabled:
+            if favorite is None:
+                count_stmt = select(WorkspaceFavorite).where(WorkspaceFavorite.user_id == user_id)
+                count_result = await self.session.execute(count_stmt)
+                order = len(list(count_result.scalars().all()))
+                self.session.add(WorkspaceFavorite(user_id=user_id, page_id=page_id, sort_order=order))
+        elif favorite is not None:
+            await self.session.delete(favorite)
+        await self.session.flush()
+
+    async def _is_favorite(self, user_id: int, page_id: int) -> bool:
+        stmt = select(WorkspaceFavorite).where(
+            WorkspaceFavorite.user_id == user_id, WorkspaceFavorite.page_id == page_id
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def _mark_recent(self, user_id: int, page_id: int) -> None:
+        stmt = select(WorkspaceRecent).where(
+            WorkspaceRecent.user_id == user_id, WorkspaceRecent.page_id == page_id
+        )
+        result = await self.session.execute(stmt)
+        recent = result.scalar_one_or_none()
+        if recent is None:
+            recent = WorkspaceRecent(user_id=user_id, page_id=page_id)
+            self.session.add(recent)
+        recent.last_viewed_at = datetime.now(timezone.utc)
+
+    async def _build_breadcrumbs(self, page: WorkspacePage) -> list[WorkspacePage]:
+        items: list[WorkspacePage] = []
+        current = page.parent_page_id
+        while current is not None:
+            ancestor = await self._require_page(page.user_id, current)
+            items.append(ancestor)
+            current = ancestor.parent_page_id
+        items.reverse()
+        return items
+
+    async def _list_backlinks(self, user_id: int, target_page_id: int) -> list[WorkspaceBacklinkResponse]:
+        stmt = select(WorkspacePageLink).where(
+            WorkspacePageLink.user_id == user_id, WorkspacePageLink.target_page_id == target_page_id
+        )
+        result = await self.session.execute(stmt)
+        links = list(result.scalars().all())
+        source_pages = await self._list_pages_by_ids(user_id, {link.source_page_id for link in links})
+        blocks_by_id: dict[int, WorkspaceBlock] = {}
+        block_ids = {link.block_id for link in links if isinstance(link.block_id, int)}
+        if block_ids:
+            block_stmt = select(WorkspaceBlock).where(
+                WorkspaceBlock.user_id == user_id,
+                WorkspaceBlock.id.in_(block_ids),
+            )
+            block_result = await self.session.execute(block_stmt)
+            blocks_by_id = {block.id: block for block in block_result.scalars().all()}
+        backlinks: list[WorkspaceBacklinkResponse] = []
+        for link in links:
+            source_page = source_pages.get(link.source_page_id)
+            if source_page is None or source_page.trashed_at is not None:
+                continue
+            snippet = None
+            if isinstance(link.block_id, int):
+                source_block = blocks_by_id.get(link.block_id)
+                if source_block is not None and source_block.text_content.strip():
+                    snippet = source_block.text_content.strip()[:180]
+            if not snippet and link.link_text:
+                snippet = link.link_text
+            backlinks.append(
+                WorkspaceBacklinkResponse(
+                    source_page=WorkspacePageLinkResponse(
+                        id=source_page.id,
+                        title=source_page.title,
+                        kind=source_page.kind,
+                        icon=source_page.icon,
+                    ),
+                    block_id=link.block_id,
+                    snippet=snippet,
+                )
+            )
+        return backlinks
+
+    async def _list_linked_databases(
+        self, blocks: list[WorkspaceBlock]
+    ) -> list[WorkspaceDatabaseSummary]:
+        database_ids = []
+        for block in blocks:
+            data_json = block.data_json if isinstance(block.data_json, dict) else {}
+            database_id = data_json.get("database_id")
+            if isinstance(database_id, int):
+                database_ids.append(database_id)
+        if not database_ids:
+            return []
+        stmt = (
+            select(WorkspaceDatabase)
+            .options(
+                selectinload(WorkspaceDatabase.properties).selectinload(WorkspaceProperty.options),
+                selectinload(WorkspaceDatabase.views),
+            )
+            .where(WorkspaceDatabase.id.in_(database_ids))
+        )
+        result = await self.session.execute(stmt)
+        by_id = {database.id: database for database in result.scalars().all()}
+        return [self._database_summary(by_id[database_id]) for database_id in database_ids if database_id in by_id]
+
+    async def _resolve_database_view(
+        self, database: WorkspaceDatabase, view_id: int | None
+    ) -> WorkspaceView | None:
+        if not database.views:
+            return None
+        if view_id is not None:
+            chosen = next((view for view in database.views if view.id == view_id), None)
+            if chosen is not None:
+                return chosen
+        return next((view for view in database.views if view.is_default), database.views[0])
+
+    async def _query_database_rows(
+        self,
+        database: WorkspaceDatabase,
+        view: WorkspaceView | None,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        relation_property_slug: str | None = None,
+        relation_page_id: int | None = None,
+    ) -> tuple[list[WorkspaceRowResponse], int]:
+        row_pages = await self._list_database_row_pages(database.page_id)
+        prop_stmt = (
+            select(WorkspacePropertyValue)
+            .join(WorkspaceProperty, WorkspaceProperty.id == WorkspacePropertyValue.property_id)
+            .where(WorkspaceProperty.database_id == database.id)
+        )
+        prop_result = await self.session.execute(prop_stmt)
+        values_by_page: dict[int, dict[int, Any]] = defaultdict(dict)
+        for value in prop_result.scalars().all():
+            values_by_page[value.page_id][value.property_id] = value.value_json
+
+        filtered_rows = [
+            page
+            for page in row_pages
+            if self._row_matches_view(page, database, values_by_page.get(page.id, {}), view)
+            and self._row_matches_relation_filter(
+                database,
+                values_by_page.get(page.id, {}),
+                relation_property_slug,
+                relation_page_id,
+            )
+        ]
+        sorted_rows = self._sort_rows(filtered_rows, database, values_by_page, view)
+        total_count = len(sorted_rows)
+        paged_rows = sorted_rows[offset : offset + limit]
+        return ([
+            WorkspaceRowResponse(
+                page=self._page_summary(page),
+                properties=self._serialize_property_values(database, page, values_by_page.get(page.id, {})),
+            )
+            for page in paged_rows
+        ], total_count)
+
+    async def _recompute_project_rollups(
+        self,
+        user_id: int,
+        project_page_ids: set[int] | None = None,
+    ) -> None:
+        projects_db = await self._get_seeded_database(user_id, PROJECTS_DB_KEY)
+        tasks_db = await self._get_seeded_database(user_id, TASKS_DB_KEY)
+        if projects_db is None or tasks_db is None:
+            return
+
+        project_prop = next((prop for prop in tasks_db.properties if prop.slug == "project"), None)
+        status_prop = next((prop for prop in tasks_db.properties if prop.slug == "status"), None)
+        open_prop = next((prop for prop in projects_db.properties if prop.slug == "open_tasks"), None)
+        done_prop = next((prop for prop in projects_db.properties if prop.slug == "done_tasks"), None)
+        if not project_prop or not status_prop or not open_prop or not done_prop:
+            return
+
+        if project_page_ids is None:
+            project_rows = await self._list_database_row_pages(projects_db.page_id)
+            target_project_page_ids = {page.id for page in project_rows}
+        else:
+            target_project_page_ids = {page_id for page_id in project_page_ids if isinstance(page_id, int)}
+        if not target_project_page_ids:
+            return
+
+        task_rows = await self._list_database_row_pages(tasks_db.page_id)
+        task_values_stmt = (
+            select(WorkspacePropertyValue)
+            .join(WorkspaceProperty, WorkspaceProperty.id == WorkspacePropertyValue.property_id)
+            .where(WorkspaceProperty.database_id == tasks_db.id)
+        )
+        task_result = await self.session.execute(task_values_stmt)
+        task_values_by_page: dict[int, dict[int, Any]] = defaultdict(dict)
+        for value in task_result.scalars().all():
+            task_values_by_page[value.page_id][value.property_id] = value.value_json
+
+        counts: dict[int, tuple[int, int]] = {page_id: (0, 0) for page_id in target_project_page_ids}
+        for task_page in task_rows:
+            if task_page.trashed_at is not None:
+                continue
+            row_values = task_values_by_page.get(task_page.id, {})
+            project_page_id = row_values.get(project_prop.id)
+            if isinstance(project_page_id, list):
+                project_page_id = project_page_id[0] if project_page_id else None
+            if not isinstance(project_page_id, int) or project_page_id not in target_project_page_ids:
+                continue
+            open_count, done_count = counts.get(project_page_id, (0, 0))
+            status = str(row_values.get(status_prop.id) or "todo")
+            if status == "done":
+                done_count += 1
+            else:
+                open_count += 1
+            counts[project_page_id] = (open_count, done_count)
+
+        for project_page_id in target_project_page_ids:
+            open_count, done_count = counts.get(project_page_id, (0, 0))
+            await self._upsert_property_value(project_page_id, open_prop, open_count)
+            await self._upsert_property_value(project_page_id, done_prop, done_count)
+
+    def _row_matches_view(
+        self,
+        page: WorkspacePage,
+        database: WorkspaceDatabase,
+        row_values: dict[int, Any],
+        view: WorkspaceView | None,
+    ) -> bool:
+        if page.trashed_at is not None:
+            return False
+        if view is None or not isinstance(view.config_json, dict):
+            return True
+        filters = view.config_json.get("filters")
+        if not isinstance(filters, list):
+            return True
+        by_slug = {prop.slug: prop for prop in database.properties}
+        for item in filters:
+            if not isinstance(item, dict):
+                continue
+            prop = by_slug.get(str(item.get("property") or ""))
+            if prop is None:
+                continue
+            value = page.title if prop.property_type == "title" else row_values.get(prop.id)
+            operator = str(item.get("operator") or "equals")
+            filter_value = item.get("value")
+            if operator == "equals" and value != filter_value:
+                return False
+            if operator == "in" and value not in (filter_value or []):
+                return False
+            if operator == "contains":
+                haystack = " ".join(str(part) for part in value) if isinstance(value, list) else str(value or "")
+                if str(filter_value or "").lower() not in haystack.lower():
+                    return False
+            if operator == "not_empty" and (value is None or value == "" or value == []):
+                return False
+            if operator == "empty" and value not in (None, "", []):
+                return False
+        return True
+
+    def _row_matches_relation_filter(
+        self,
+        database: WorkspaceDatabase,
+        row_values: dict[int, Any],
+        relation_property_slug: str | None,
+        relation_page_id: int | None,
+    ) -> bool:
+        if not relation_property_slug or relation_page_id is None:
+            return True
+        prop = next((item for item in database.properties if item.slug == relation_property_slug), None)
+        if prop is None:
+            return True
+        value = row_values.get(prop.id)
+        if isinstance(value, list):
+            return relation_page_id in value
+        return value == relation_page_id
+
+    def _sort_rows(
+        self,
+        rows: list[WorkspacePage],
+        database: WorkspaceDatabase,
+        values_by_page: dict[int, dict[int, Any]],
+        view: WorkspaceView | None,
+    ) -> list[WorkspacePage]:
+        config = view.config_json if view and isinstance(view.config_json, dict) else {}
+        sort_items = config.get("sort") if isinstance(config, dict) else None
+        if not isinstance(sort_items, list) or not sort_items:
+            return sorted(rows, key=lambda page: (page.sort_order, page.title.lower()))
+        by_slug = {prop.slug: prop for prop in database.properties}
+
+        def row_key(page: WorkspacePage) -> tuple:
+            row_values = values_by_page.get(page.id, {})
+            keys: list[Any] = []
+            for item in sort_items:
+                if not isinstance(item, dict):
+                    continue
+                prop = by_slug.get(str(item.get("property") or ""))
+                if prop is None:
+                    continue
+                raw = page.title if prop.property_type == "title" else row_values.get(prop.id)
+                keys.append(_sort_value(raw))
+            keys.append(page.sort_order)
+            keys.append(page.title.lower())
+            return tuple(keys)
+
+        reverse = False
+        first = sort_items[0] if sort_items else {}
+        if isinstance(first, dict):
+            reverse = str(first.get("direction") or "asc").lower() == "desc"
+        return sorted(rows, key=row_key, reverse=reverse)
+
+    async def _serialize_page_properties(
+        self, page: WorkspacePage, database: WorkspaceDatabase
+    ) -> list[WorkspacePropertyValueResponse]:
+        values_stmt = (
+            select(WorkspacePropertyValue)
+            .where(WorkspacePropertyValue.page_id == page.id)
+        )
+        values_result = await self.session.execute(values_stmt)
+        values_map = {value.property_id: value.value_json for value in values_result.scalars().all()}
+        return self._serialize_property_values(database, page, values_map)
+
+    def _serialize_property_values(
+        self,
+        database: WorkspaceDatabase,
+        page: WorkspacePage,
+        values_map: dict[int, Any],
+    ) -> list[WorkspacePropertyValueResponse]:
+        payload: list[WorkspacePropertyValueResponse] = []
+        for prop in database.properties:
+            value = page.title if prop.property_type == "title" else values_map.get(prop.id)
+            payload.append(
+                WorkspacePropertyValueResponse(
+                    property_id=prop.id,
+                    property_slug=prop.slug,
+                    property_name=prop.name,
+                    property_type=prop.property_type,
+                    value=value,
+                )
+            )
+        return payload
+
+    async def _serialize_blocks(
+        self,
+        user_id: int,
+        blocks: list[WorkspaceBlock],
+    ) -> list[WorkspaceBlockResponse]:
+        target_pages = await self._list_pages_by_ids(
+            user_id,
+            {link.target_page_id for block in blocks for link in block.links},
+        )
+        payload: list[WorkspaceBlockResponse] = []
+        for block in blocks:
+            link_pages: list[WorkspacePageLinkResponse] = []
+            for link in block.links:
+                target_page = target_pages.get(link.target_page_id)
+                if target_page is None or target_page.trashed_at is not None:
+                    continue
+                link_pages.append(
+                    WorkspacePageLinkResponse(
+                        id=target_page.id,
+                        title=target_page.title,
+                        kind=target_page.kind,
+                        icon=target_page.icon,
+                    )
+                )
+            payload.append(
+                WorkspaceBlockResponse(
+                    id=block.id,
+                    page_id=block.page_id,
+                    parent_block_id=block.parent_block_id,
+                    block_type=block.block_type,
+                    sort_order=block.sort_order,
+                    text_content=block.text_content,
+                    checked=block.checked,
+                    data_json=block.data_json,
+                    links=link_pages,
+                )
+            )
+        return payload
+
+    async def _serialize_block(self, block: WorkspaceBlock) -> WorkspaceBlockResponse:
+        link_pages: list[WorkspacePageLinkResponse] = []
+        for link in block.links:
+            target_page = await self._require_page(block.user_id, link.target_page_id)
+            link_pages.append(
+                WorkspacePageLinkResponse(
+                    id=target_page.id,
+                    title=target_page.title,
+                    kind=target_page.kind,
+                    icon=target_page.icon,
+                )
+            )
+        return WorkspaceBlockResponse(
+            id=block.id,
+            page_id=block.page_id,
+            parent_block_id=block.parent_block_id,
+            block_type=block.block_type,
+            sort_order=block.sort_order,
+            text_content=block.text_content,
+            checked=block.checked,
+            data_json=block.data_json,
+            links=link_pages,
+        )
+
+    async def _refresh_block_links(self, user_id: int, block: WorkspaceBlock) -> None:
+        await self.session.execute(delete(WorkspacePageLink).where(WorkspacePageLink.block_id == block.id))
+        titles = self._extract_link_titles(block.text_content)
+        if not titles:
+            return
+        stmt = select(WorkspacePage).where(
+            WorkspacePage.user_id == user_id,
+            WorkspacePage.trashed_at.is_(None),
+            or_(*[WorkspacePage.title.ilike(title) for title in titles]),
+        )
+        result = await self.session.execute(stmt)
+        candidates = list(result.scalars().all())
+        by_title = {page.title.strip().lower(): page for page in candidates}
+        for title in titles:
+            target = by_title.get(title.strip().lower())
+            if target is None or target.id == block.page_id:
+                continue
+            self.session.add(
+                WorkspacePageLink(
+                    user_id=user_id,
+                    source_page_id=block.page_id,
+                    target_page_id=target.id,
+                    block_id=block.id,
+                    link_text=title,
+                )
+            )
+        await self.session.flush()
+
+    def _extract_link_titles(self, text: str) -> list[str]:
+        titles = [match.strip() for match in LINK_PATTERN.findall(text or "") if match.strip()]
+        titles.extend(match.strip() for match in MENTION_PATTERN.findall(text or "") if match.strip())
+        unique: list[str] = []
+        for title in titles:
+            if title.lower() not in {item.lower() for item in unique}:
+                unique.append(title)
+        return unique
+
+    async def _rename_block_references(self, user_id: int, old_title: str, new_title: str) -> None:
+        if old_title.strip().lower() == new_title.strip().lower():
+            return
+        stmt = select(WorkspaceBlock).where(
+            WorkspaceBlock.user_id == user_id,
+            or_(
+                WorkspaceBlock.text_content.contains(f"[[{old_title}]]"),
+                WorkspaceBlock.text_content.contains(f"@{old_title}"),
+            ),
+        )
+        result = await self.session.execute(stmt)
+        for block in result.scalars().all():
+            block.text_content = block.text_content.replace(f"[[{old_title}]]", f"[[{new_title}]]")
+            block.text_content = block.text_content.replace(f"@{old_title}", f"@{new_title}")
+            await self._refresh_block_links(user_id, block)
+
+    async def _get_suggestion_for_todo(
+        self, user_id: int, todo_id: int
+    ) -> TodoProjectSuggestion | None:
+        stmt = select(TodoProjectSuggestion).where(
+            TodoProjectSuggestion.user_id == user_id,
+            TodoProjectSuggestion.todo_id == todo_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def _clear_default_view(self, database_id: int) -> None:
+        stmt = select(WorkspaceView).where(WorkspaceView.database_id == database_id)
+        result = await self.session.execute(stmt)
+        for view in result.scalars().all():
+            view.is_default = False
+
+    def _database_seed_key(self, database: WorkspaceDatabase) -> str | None:
+        if isinstance(database.extra_json, dict):
+            seed_key = database.extra_json.get("seed_key")
+            return str(seed_key) if seed_key else None
+        return None
+
+    def _page_summary(self, page: WorkspacePage) -> WorkspacePageSummary:
+        return WorkspacePageSummary.model_validate(page)
+
+    def _property_response(self, prop: WorkspaceProperty) -> WorkspacePropertyResponse:
+        return WorkspacePropertyResponse(
+            id=prop.id,
+            name=prop.name,
+            slug=prop.slug,
+            property_type=prop.property_type,
+            sort_order=prop.sort_order,
+            required=prop.required,
+            config_json=prop.config_json,
+            options=[WorkspacePropertyOptionResponse.model_validate(option) for option in prop.options],
+        )
+
+    def _view_summary(self, view: WorkspaceView) -> WorkspaceViewResponse:
+        return WorkspaceViewResponse.model_validate(view)
+
+    def _database_summary(self, database: WorkspaceDatabase) -> WorkspaceDatabaseSummary:
+        return WorkspaceDatabaseSummary(
+            id=database.id,
+            page_id=database.page_id,
+            name=database.name,
+            description=database.description,
+            icon=database.icon,
+            is_seeded=database.is_seeded,
+            properties=[self._property_response(prop) for prop in database.properties],
+            views=[self._view_summary(view) for view in database.views],
+        )
+
+    def _snippet(self, text: str, query: str) -> str:
+        lowered = text.lower()
+        target = query.lower()
+        index = lowered.find(target)
+        if index < 0:
+            return text[:120]
+        start = max(index - 30, 0)
+        end = min(index + len(query) + 50, len(text))
+        return text[start:end].strip()
+
+
+def _normalize_view_config(config_json: dict | list | None) -> dict[str, Any] | None:
+    if not isinstance(config_json, dict):
+        return None
+    normalized: dict[str, Any] = {}
+
+    filters = config_json.get("filters")
+    if isinstance(filters, list):
+        normalized["filters"] = [item for item in filters if isinstance(item, dict)]
+
+    sort_items = config_json.get("sort")
+    if isinstance(sort_items, list):
+        normalized["sort"] = [item for item in sort_items if isinstance(item, dict)]
+
+    group_by = config_json.get("group_by")
+    if isinstance(group_by, str) and group_by.strip():
+        normalized["group_by"] = group_by.strip()
+
+    date_property = config_json.get("date_property")
+    if isinstance(date_property, str) and date_property.strip():
+        normalized["date_property"] = date_property.strip()
+
+    open_mode = config_json.get("open_mode")
+    if open_mode in {"side_peek", "center_peek", "full_page"}:
+        normalized["open_mode"] = open_mode
+
+    card_preview = config_json.get("card_preview")
+    if card_preview in {"cover", "icon", "none"}:
+        normalized["card_preview"] = card_preview
+
+    visible_properties = config_json.get("visible_properties")
+    if isinstance(visible_properties, list):
+        normalized["visible_properties"] = [
+            item.strip() for item in visible_properties if isinstance(item, str) and item.strip()
+        ]
+
+    hidden_properties = config_json.get("hidden_properties")
+    if isinstance(hidden_properties, list):
+        normalized["hidden_properties"] = [
+            item.strip() for item in hidden_properties if isinstance(item, str) and item.strip()
+        ]
+
+    default_template_id = config_json.get("default_template_id")
+    if isinstance(default_template_id, int) and default_template_id > 0:
+        normalized["default_template_id"] = default_template_id
+
+    return normalized or None
+
+
+def _normalize_property_value(property_type: str, value: Any) -> Any:
+    if property_type in {"text", "title", "select", "status", "url", "email", "phone"}:
+        return str(value or "").strip()
+    if property_type == "checkbox":
+        return bool(value)
+    if property_type == "files":
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            return [item for item in value if item not in (None, "", {})]
+        return [value]
+    if property_type in {"relation", "multi_select"}:
+        if value in (None, "", []):
+            return [] if property_type == "multi_select" else None
+        if property_type == "relation":
+            if isinstance(value, list):
+                return value[0] if value else None
+            return int(value) if str(value).strip() else None
+        return [str(item).strip() for item in value if str(item).strip()] if isinstance(value, list) else []
+    if property_type == "date":
+        if value in (None, ""):
+            return None
+        return str(value)
+    if property_type in {"number", "rollup"}:
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+    return value
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    text = str(value).strip()
+    if not text:
+        return None
+    parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _sort_value(value: Any) -> tuple[int, Any]:
+    if value in (None, "", []):
+        return (1, "")
+    if isinstance(value, list):
+        return (0, ",".join(str(item) for item in value))
+    return (0, value)

@@ -96,7 +96,7 @@ export function PageShell({ children }: PropsWithChildren) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const guestMode = isGuestMode();
-  const fullWidth = pathname.startsWith('/calendar');
+  const fullWidth = pathname.startsWith('/calendar') || pathname.startsWith('/projects');
   return (
     <Frame $fullWidth={fullWidth}>
       {guestMode ? (

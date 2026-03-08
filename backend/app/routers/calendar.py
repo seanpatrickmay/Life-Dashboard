@@ -20,6 +20,7 @@ from app.db.models.calendar import CalendarEvent, GoogleCalendar, TodoEventLink
 from app.db.models.entities import User
 from app.db.session import get_session
 from app.schemas.calendar import (
+    CalendarEventCreateRequest,
     CalendarEventUpdateRequest,
     CalendarEventsResponse,
     CalendarListResponse,
@@ -318,6 +319,47 @@ async def list_events(
 
     deduped = _dedupe_events(events)
     return CalendarEventsResponse(events=deduped)
+
+
+@router.post("/events", response_model=CalendarEventResponse)
+async def create_event(
+    payload: CalendarEventCreateRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> CalendarEventResponse:
+    if payload.end_time <= payload.start_time:
+        raise HTTPException(status_code=422, detail="end_time must be after start_time")
+    service = GoogleCalendarEventService(session)
+    calendar, event = await service.create_event_in_life_dashboard(
+        current_user.id,
+        summary=payload.summary,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        is_all_day=payload.is_all_day,
+    )
+    return CalendarEventResponse(
+        id=event.id,
+        calendar_google_id=calendar.google_id,
+        calendar_summary=calendar.summary,
+        calendar_primary=calendar.primary,
+        calendar_is_life_dashboard=calendar.is_life_dashboard,
+        google_event_id=event.google_event_id,
+        recurring_event_id=event.recurring_event_id,
+        ical_uid=event.ical_uid,
+        summary=event.summary,
+        description=event.description,
+        location=event.location,
+        start_time=event.start_time,
+        end_time=event.end_time,
+        is_all_day=event.is_all_day,
+        status=event.status,
+        visibility=event.visibility,
+        transparency=event.transparency,
+        hangout_link=event.hangout_link,
+        conference_link=event.conference_link,
+        organizer=event.organizer,
+        attendees=event.attendees,
+    )
 
 
 @router.patch("/events/{event_id}", response_model=CalendarEventResponse)

@@ -2,16 +2,32 @@ import { useEffect, useMemo, useState } from 'react';
 import styled, { css } from 'styled-components';
 import { CalendarWeekView, type CalendarItem } from '../components/calendar/CalendarWeekView';
 import { CalendarDetailDrawer } from '../components/calendar/CalendarDetailDrawer';
+import { PageAssistantPanel } from '../components/assistant/PageAssistantPanel';
 import { useCalendarEvents, useCalendarStatus, useCalendars } from '../hooks/useCalendar';
 import { useTodos } from '../hooks/useTodos';
 import { composeLayers, getCardLayers } from '../theme/monetTheme';
-import type { CalendarEvent, TodoItem } from '../services/api';
+import type { AssistantPageContext, CalendarEvent, TodoItem } from '../services/api';
+
+const Layout = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 16px;
+  align-items: start;
+
+  @media (max-width: 1200px) {
+    grid-template-columns: 1fr;
+  }
+`;
 
 const CalendarShell = styled.div`
   display: flex;
   flex-direction: column;
   gap: 20px;
   width: 100%;
+`;
+
+const AssistantRail = styled.aside`
+  min-width: 0;
 `;
 
 const HeaderRow = styled.div`
@@ -329,94 +345,130 @@ export function CalendarPage() {
     });
   };
 
+  const assistantContext = useMemo<AssistantPageContext>(() => {
+    const selectedEntity: AssistantPageContext['selected_entity'] = {};
+    if (selectedItem?.kind === 'event') {
+      selectedEntity.calendar_event_id = (selectedItem.data as CalendarEvent).id;
+      selectedEntity.recurrence_scope = recurrenceScope;
+    }
+    if (selectedItem?.kind === 'todo') {
+      selectedEntity.todo_id = (selectedItem.data as TodoItem).id;
+    }
+    return {
+      page: 'calendar',
+      selected_entity: selectedEntity,
+      visible_range: {
+        start_iso: windowStart.toISOString(),
+        end_iso: windowEnd.toISOString()
+      }
+    };
+  }, [selectedItem, recurrenceScope, windowStart, windowEnd]);
+
+  const refreshCalendarData = () => {
+    void eventsQuery.eventsQuery.refetch();
+    void calendarsQuery.refetch();
+    void todosQuery.refetch();
+  };
+
   return (
-    <CalendarShell>
-      <HeaderRow>
-        <Title>Calendar</Title>
-        <ButtonRow>
-          {status?.connected ? (
-            <ActionButton type="button" onClick={() => eventsQuery.syncCalendar()} $primary>
-              Sync now
-            </ActionButton>
-          ) : null}
-          {!status?.connected || status?.requires_reauth ? (
-            <ActionButton type="button" onClick={handleConnect} $primary>
-              {status?.requires_reauth ? 'Reconnect' : 'Connect Google'}
-            </ActionButton>
-          ) : null}
-        </ButtonRow>
-      </HeaderRow>
-
-      <ControlGrid>
-        <Card>
-          <CardContent>
-            <CardTitle>Google Calendar</CardTitle>
+    <Layout>
+      <CalendarShell>
+        <HeaderRow>
+          <Title>Calendar</Title>
+          <ButtonRow>
             {status?.connected ? (
-              <>
-                <StatusText>Connected as {status.account_email ?? 'your account'}.</StatusText>
-                <SubtleText>
-                  Last sync {status.last_sync_at ? formatDateTime(new Date(status.last_sync_at)) : 'not yet'}
-                </SubtleText>
-              </>
-            ) : (
-              <StatusText>Connect to sync events and write todo blocks.</StatusText>
-            )}
-            {eventsQuery.isSyncing ? <SubtleText>Syncing…</SubtleText> : null}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent>
-            <CardTitle>Calendars</CardTitle>
-            {status?.connected ? (
-              <CalendarList>
-                {calendars.map((calendar) => (
-                  <CalendarRow
-                    key={calendar.google_id}
-                    $disabled={calendar.is_life_dashboard}
-                  >
-                    <CalendarToggle
-                      type="checkbox"
-                      checked={calendar.selected}
-                      disabled={calendar.is_life_dashboard}
-                      onChange={() => handleToggleCalendar(calendar)}
-                    />
-                    <CalendarName>{calendar.summary}</CalendarName>
-                    {calendar.is_life_dashboard ? <CalendarBadge>Life Dashboard</CalendarBadge> : null}
-                  </CalendarRow>
-                ))}
-                {!calendars.length ? <EmptyState>No calendars found yet.</EmptyState> : null}
-              </CalendarList>
-            ) : (
-              <EmptyState>Connect Google Calendar to pick calendars.</EmptyState>
-            )}
-          </CardContent>
-        </Card>
-      </ControlGrid>
+              <ActionButton type="button" onClick={() => eventsQuery.syncCalendar()} $primary>
+                Sync now
+              </ActionButton>
+            ) : null}
+            {!status?.connected || status?.requires_reauth ? (
+              <ActionButton type="button" onClick={handleConnect} $primary>
+                {status?.requires_reauth ? 'Reconnect' : 'Connect Google'}
+              </ActionButton>
+            ) : null}
+          </ButtonRow>
+        </HeaderRow>
 
-      <CalendarSurface>
-        {eventsQuery.eventsQuery.error ? (
-          <ErrorText>Could not load calendar events right now.</ErrorText>
-        ) : null}
-        <CalendarWeekView
-          days={days}
-          timedItems={timedItems}
-          allDayItems={allDayItems}
-          mutedDayIndex={0}
-          onSelectItem={setSelectedItem}
-          onMoveItem={handleMoveItem}
-          onResizeItem={handleResizeItem}
-          onMoveAllDayItem={handleMoveAllDayItem}
+        <ControlGrid>
+          <Card>
+            <CardContent>
+              <CardTitle>Google Calendar</CardTitle>
+              {status?.connected ? (
+                <>
+                  <StatusText>Connected as {status.account_email ?? 'your account'}.</StatusText>
+                  <SubtleText>
+                    Last sync {status.last_sync_at ? formatDateTime(new Date(status.last_sync_at)) : 'not yet'}
+                  </SubtleText>
+                </>
+              ) : (
+                <StatusText>Connect to sync events and write todo blocks.</StatusText>
+              )}
+              {eventsQuery.isSyncing ? <SubtleText>Syncing…</SubtleText> : null}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent>
+              <CardTitle>Calendars</CardTitle>
+              {status?.connected ? (
+                <CalendarList>
+                  {calendars.map((calendar) => (
+                    <CalendarRow
+                      key={calendar.google_id}
+                      $disabled={calendar.is_life_dashboard}
+                    >
+                      <CalendarToggle
+                        type="checkbox"
+                        checked={calendar.selected}
+                        disabled={calendar.is_life_dashboard}
+                        onChange={() => handleToggleCalendar(calendar)}
+                      />
+                      <CalendarName>{calendar.summary}</CalendarName>
+                      {calendar.is_life_dashboard ? <CalendarBadge>Life Dashboard</CalendarBadge> : null}
+                    </CalendarRow>
+                  ))}
+                  {!calendars.length ? <EmptyState>No calendars found yet.</EmptyState> : null}
+                </CalendarList>
+              ) : (
+                <EmptyState>Connect Google Calendar to pick calendars.</EmptyState>
+              )}
+            </CardContent>
+          </Card>
+        </ControlGrid>
+
+        <CalendarSurface>
+          {eventsQuery.eventsQuery.error ? (
+            <ErrorText>Could not load calendar events right now.</ErrorText>
+          ) : null}
+          <CalendarWeekView
+            days={days}
+            timedItems={timedItems}
+            allDayItems={allDayItems}
+            mutedDayIndex={0}
+            onSelectItem={setSelectedItem}
+            onMoveItem={handleMoveItem}
+            onResizeItem={handleResizeItem}
+            onMoveAllDayItem={handleMoveAllDayItem}
+          />
+        </CalendarSurface>
+
+        <CalendarDetailDrawer
+          open={Boolean(selectedItem)}
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+          recurrenceScope={recurrenceScope}
+          onChangeScope={setRecurrenceScope}
         />
-      </CalendarSurface>
+      </CalendarShell>
 
-      <CalendarDetailDrawer
-        open={Boolean(selectedItem)}
-        item={selectedItem}
-        onClose={() => setSelectedItem(null)}
-        recurrenceScope={recurrenceScope}
-        onChangeScope={setRecurrenceScope}
-      />
-    </CalendarShell>
+      <AssistantRail>
+        <PageAssistantPanel
+          title="Calendar Assistant"
+          placeholder="Try: create an event tomorrow 3-4pm called Follow-up"
+          context={assistantContext}
+          onActionsApplied={refreshCalendarData}
+        />
+      </AssistantRail>
+    </Layout>
   );
 }
 

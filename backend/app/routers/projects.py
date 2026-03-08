@@ -20,9 +20,11 @@ from app.db.session import AsyncSessionLocal, get_session
 from app.schemas.projects import (
   ProjectBoardResponse,
   ProjectCreateRequest,
+  ProjectNoteCreateRequest,
   ProjectNoteResponse,
   ProjectResponse,
   ProjectSuggestionResponse,
+  ProjectNoteUpdateRequest,
   ProjectUpdateRequest,
   SuggestionRecomputeRequest,
 )
@@ -130,6 +132,65 @@ async def list_project_notes(
     include_archived=include_archived,
   )
   return [ProjectNoteResponse.model_validate(note) for note in notes]
+
+
+@router.post("/{project_id}/notes", response_model=ProjectNoteResponse)
+async def create_project_note(
+  project_id: int,
+  payload: ProjectNoteCreateRequest,
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+) -> ProjectNoteResponse:
+  project_repo = ProjectRepository(session)
+  note_repo = ProjectNoteRepository(session)
+  project = await project_repo.get_for_user(current_user.id, project_id)
+  if project is None:
+    raise HTTPException(status_code=404, detail="Project not found")
+  note = await note_repo.create_one(
+    user_id=current_user.id,
+    project_id=project_id,
+    title=payload.title,
+    body_markdown=payload.body_markdown,
+    tags=payload.tags,
+    pinned=payload.pinned,
+  )
+  await session.commit()
+  return ProjectNoteResponse.model_validate(note)
+
+
+@router.patch("/{project_id}/notes/{note_id}", response_model=ProjectNoteResponse)
+async def update_project_note(
+  project_id: int,
+  note_id: int,
+  payload: ProjectNoteUpdateRequest,
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+) -> ProjectNoteResponse:
+  project_repo = ProjectRepository(session)
+  note_repo = ProjectNoteRepository(session)
+  project = await project_repo.get_for_user(current_user.id, project_id)
+  if project is None:
+    raise HTTPException(status_code=404, detail="Project not found")
+  note = await note_repo.get_for_user(user_id=current_user.id, note_id=note_id)
+  if note is None or note.project_id != project_id:
+    raise HTTPException(status_code=404, detail="Project note not found")
+  update_data = payload.model_dump(exclude_unset=True)
+  if "title" in update_data and update_data["title"] is not None:
+    title = update_data["title"].strip()
+    if not title:
+      raise HTTPException(status_code=422, detail="Note title cannot be empty")
+    note.title = title
+  if "body_markdown" in update_data and update_data["body_markdown"] is not None:
+    note.body_markdown = update_data["body_markdown"]
+  if "tags" in update_data and update_data["tags"] is not None:
+    note.tags = [tag.strip() for tag in update_data["tags"] if tag.strip()]
+  if "archived" in update_data and update_data["archived"] is not None:
+    note.archived = bool(update_data["archived"])
+  if "pinned" in update_data and update_data["pinned"] is not None:
+    note.pinned = bool(update_data["pinned"])
+  await session.flush()
+  await session.commit()
+  return ProjectNoteResponse.model_validate(note)
 
 
 @router.post("", response_model=ProjectResponse)

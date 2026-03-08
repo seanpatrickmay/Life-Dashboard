@@ -13,4 +13,5 @@ from . import (
   time,
   user,
   todos,
+  workspace,
 )  # noqa: F401

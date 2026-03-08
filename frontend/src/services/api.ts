@@ -647,6 +647,40 @@ export const fetchProjectNotes = async (
   return data as ProjectNote[];
 };
 
+export const createProjectNote = async (
+  project_id: number,
+  payload: {
+    title: string;
+    body_markdown?: string;
+    tags?: string[];
+    pinned?: boolean;
+  }
+): Promise<ProjectNote> => {
+  if (isGuestMode()) {
+    throw new Error('Project notes are unavailable in guest mode.');
+  }
+  const { data } = await api.post(`/api/projects/${project_id}/notes`, payload);
+  return data as ProjectNote;
+};
+
+export const updateProjectNote = async (
+  project_id: number,
+  note_id: number,
+  payload: {
+    title?: string;
+    body_markdown?: string;
+    tags?: string[];
+    archived?: boolean;
+    pinned?: boolean;
+  }
+): Promise<ProjectNote> => {
+  if (isGuestMode()) {
+    throw new Error('Project notes are unavailable in guest mode.');
+  }
+  const { data } = await api.patch(`/api/projects/${project_id}/notes/${note_id}`, payload);
+  return data as ProjectNote;
+};
+
 export const createProject = async (payload: {
   name: string;
   notes?: string | null;
@@ -812,6 +846,19 @@ export const fetchCalendarEvents = async (start: string, end: string): Promise<C
   return data;
 };
 
+export const createCalendarEvent = async (payload: {
+  summary: string;
+  start_time: string;
+  end_time: string;
+  is_all_day?: boolean;
+}): Promise<CalendarEvent> => {
+  if (isGuestMode()) {
+    throw new Error('Calendar editing is unavailable in guest mode.');
+  }
+  const { data } = await api.post('/api/calendar/events', payload);
+  return data as CalendarEvent;
+};
+
 export const updateCalendarEvent = async (
   id: number,
   payload: { summary?: string; start_time?: string; end_time?: string; scope?: string; is_all_day?: boolean }
@@ -912,6 +959,40 @@ export type MonetChatResponse = {
   }>;
   todo_items: TodoItem[];
   tools_used: string[];
+  requires_confirmation?: boolean;
+  proposed_actions?: AssistantAction[];
+  action_plan_id?: string | null;
+};
+
+export type AssistantPageName = 'calendar' | 'projects';
+
+export type AssistantSelectedEntity = {
+  project_id?: number;
+  project_name?: string;
+  note_id?: number;
+  note_title?: string;
+  calendar_event_id?: number;
+  todo_id?: number;
+  recurrence_scope?: 'occurrence' | 'future' | 'series';
+};
+
+export type AssistantPageContext = {
+  page: AssistantPageName;
+  selected_entity?: AssistantSelectedEntity;
+  visible_range?: {
+    start_iso: string;
+    end_iso: string;
+  };
+};
+
+export type AssistantAction = {
+  action_type:
+    | 'calendar.create_event'
+    | 'calendar.update_event'
+    | 'projects.create_todo'
+    | 'projects.create_note'
+    | 'projects.update_note';
+  params: Record<string, unknown>;
 };
 
 export const sendMonetMessage = async (payload: {
@@ -919,6 +1000,9 @@ export const sendMonetMessage = async (payload: {
   session_id?: string;
   window_days?: number;
   time_zone?: string;
+  page_context?: AssistantPageContext;
+  execution_mode?: 'auto' | 'preview' | 'commit';
+  proposed_actions?: AssistantAction[];
 }): Promise<MonetChatResponse> => {
   if (isGuestMode()) {
     return getGuestMonetChatResponse(payload);

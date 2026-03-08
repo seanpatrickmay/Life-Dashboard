@@ -19,7 +19,7 @@ const routes = [
   { path: '/insights', element: <InsightsPage /> },
   { path: '/journal', element: <JournalPage /> },
   { path: '/calendar', element: <CalendarPage /> },
-  { path: '/projects', element: <ProjectsPage /> },
+  { path: '/projects/*', element: <ProjectsPage /> },
   { path: '/nutrition', element: <NutritionPage /> },
   { path: '/user', element: <UserPage /> }
 ];

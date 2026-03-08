@@ -25,6 +25,9 @@ async def monet_message(
         session_id=payload.session_id,
         window_days=payload.window_days,
         time_zone=payload.time_zone,
+        page_context=payload.page_context,
+        execution_mode=payload.execution_mode,
+        proposed_actions=payload.proposed_actions,
     )
     return MonetMessageResponse(
         session_id=result.session_id,
@@ -32,4 +35,7 @@ async def monet_message(
         nutrition_entries=result.nutrition_entries,
         todo_items=result.todo_items,
         tools_used=result.tools_used,
+        requires_confirmation=result.requires_confirmation,
+        proposed_actions=result.proposed_actions,
+        action_plan_id=result.action_plan_id,
     )

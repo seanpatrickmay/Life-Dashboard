@@ -45,6 +45,21 @@ class ProjectNoteResponse(BaseModel):
     from_attributes = True
 
 
+class ProjectNoteCreateRequest(BaseModel):
+  title: str = Field(min_length=1, max_length=255)
+  body_markdown: str = ""
+  tags: list[str] = Field(default_factory=list)
+  pinned: bool = False
+
+
+class ProjectNoteUpdateRequest(BaseModel):
+  title: str | None = Field(default=None, min_length=1, max_length=255)
+  body_markdown: str | None = None
+  tags: list[str] | None = None
+  archived: bool | None = None
+  pinned: bool | None = None
+
+
 class ProjectBoardResponse(BaseModel):
   projects: list[ProjectResponse]
   todos: list[TodoItemResponse]

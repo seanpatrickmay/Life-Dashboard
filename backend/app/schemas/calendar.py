@@ -67,3 +67,10 @@ class CalendarEventUpdateRequest(BaseModel):
     end_time: datetime | None = None
     is_all_day: bool | None = None
     scope: str = Field(default="occurrence", pattern="^(occurrence|future|series)$")
+
+
+class CalendarEventCreateRequest(BaseModel):
+    summary: str = Field(min_length=1, max_length=512)
+    start_time: datetime
+    end_time: datetime
+    is_all_day: bool = False
