@@ -1,4 +1,4 @@
-import { DragEvent, KeyboardEvent, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { DragEvent, FormEvent, KeyboardEvent, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useMatch, useNavigate, useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 
@@ -648,6 +648,138 @@ const DatabaseBody = styled.div`
   overflow: auto;
 `;
 
+const TaskSectionCard = styled(DatabaseCard)`
+  overflow: visible;
+`;
+
+const TaskStatsRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+`;
+
+const TaskCountPill = styled.span<{ $tone: 'danger' | 'info' | 'default' | 'success' }>`
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  border: 1px solid
+    ${({ $tone }) =>
+      $tone === 'danger'
+        ? 'rgba(204, 82, 67, 0.24)'
+        : $tone === 'info'
+          ? 'rgba(46, 170, 220, 0.24)'
+          : $tone === 'success'
+            ? 'rgba(76, 153, 112, 0.24)'
+            : 'var(--workspace-line)'};
+  background:
+    ${({ $tone }) =>
+      $tone === 'danger'
+        ? 'rgba(204, 82, 67, 0.1)'
+        : $tone === 'info'
+          ? 'rgba(46, 170, 220, 0.1)'
+          : $tone === 'success'
+            ? 'rgba(76, 153, 112, 0.1)'
+            : 'rgba(55, 53, 47, 0.06)'};
+  color: var(--workspace-text);
+`;
+
+const TaskQuickAddForm = styled.form`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+`;
+
+const TaskQuickAddInput = styled(PropertyInput)`
+  flex: 1 1 260px;
+`;
+
+const TaskBucketsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+`;
+
+const TaskBucket = styled.div`
+  border: 1px solid var(--workspace-line);
+  background: rgba(247, 246, 243, 0.88);
+  border-radius: 16px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+`;
+
+const TaskBucketHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+`;
+
+const TaskCard = styled.div`
+  border: 1px solid var(--workspace-line);
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 14px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+`;
+
+const TaskCardHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+`;
+
+const TaskTitleButton = styled.button`
+  border: 0;
+  background: transparent;
+  color: var(--workspace-text);
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+`;
+
+const TaskInlineControls = styled.div`
+  display: grid;
+  gap: 8px;
+`;
+
+const TaskControlRow = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+
+  @media (max-width: 700px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const TaskEmptyState = styled.div`
+  border: 1px dashed var(--workspace-line-strong);
+  background: rgba(255, 255, 255, 0.74);
+  border-radius: 16px;
+  padding: 16px;
+  color: var(--workspace-muted);
+`;
+
+const CollapseToggle = styled.button`
+  border: 0;
+  background: transparent;
+  color: var(--workspace-text);
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+`;
+
 const Table = styled.table`
   width: 100%;
   border-collapse: collapse;
@@ -1205,6 +1337,42 @@ function parseDateValue(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function toDateInputValue(value: unknown) {
+  if (!value) return '';
+  const text = String(value).trim();
+  if (!text) return '';
+  const isoDateMatch = text.match(/^\d{4}-\d{2}-\d{2}/);
+  if (isoDateMatch) return isoDateMatch[0];
+  const parsed = parseDateValue(text);
+  if (!parsed) return '';
+  return parsed.toISOString().slice(0, 10);
+}
+
+function toDateOnlyIsoValue(value: string) {
+  return value ? `${value}T00:00:00+00:00` : null;
+}
+
+function compareTaskDates(left: Date | null, right: Date | null) {
+  if (left && right) return left.getTime() - right.getTime();
+  if (left) return -1;
+  if (right) return 1;
+  return 0;
+}
+
+function formatTaskDueLabel(value: unknown) {
+  const dueDate = parseDateValue(value);
+  if (!dueDate) return 'No due date';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDay = new Date(dueDate);
+  dueDay.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((dueDay.getTime() - today.getTime()) / 86_400_000);
+  if (diffDays === 0) return 'Due today';
+  if (diffDays === 1) return 'Due tomorrow';
+  if (diffDays === -1) return 'Due yesterday';
+  return `Due ${dueDay.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}
+
 function startOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
@@ -1565,6 +1733,285 @@ function DatabaseView({
         ) : null}
       </DatabaseBody>
     </DatabaseCard>
+  );
+}
+
+function ProjectTasksSection({
+  projectPage,
+  tasksDatabase,
+  readOnly,
+  onOpenPage,
+  onPrefetchPage,
+  onCreateTask,
+  onUpdateTaskProperties,
+  onCreateRow,
+  onCreateView,
+  onEditView,
+}: {
+  projectPage: WorkspacePageSummary;
+  tasksDatabase: WorkspaceDatabaseSummary;
+  readOnly: boolean;
+  onOpenPage: (pageId: number, mode?: WorkspaceOpenMode) => void;
+  onPrefetchPage: (pageId: number) => void;
+  onCreateTask: (projectPageId: number, title: string) => Promise<void>;
+  onUpdateTaskProperties: (pageId: number, values: Record<string, unknown>) => Promise<void>;
+  onCreateRow: (database: WorkspaceDatabaseSummary, view: WorkspaceView | null, initialProperties?: Record<string, unknown>) => void;
+  onCreateView: (database: WorkspaceDatabaseSummary) => void;
+  onEditView: (database: WorkspaceDatabaseSummary, view: WorkspaceView | null) => void;
+}) {
+  const defaultView = tasksDatabase.views.find((item) => item.is_default) ?? tasksDatabase.views[0] ?? null;
+  const [draftTitle, setDraftTitle] = useState('');
+  const [fullViewOpen, setFullViewOpen] = useState(false);
+  const [selectedFullViewId, setSelectedFullViewId] = useState<number | null>(defaultView?.id ?? null);
+  const tasksQuery = useWorkspaceDatabase(
+    tasksDatabase.id,
+    defaultView?.id ?? null,
+    true,
+    0,
+    500,
+    'project',
+    projectPage.id
+  );
+
+  useEffect(() => {
+    setDraftTitle('');
+    setFullViewOpen(false);
+    setSelectedFullViewId(defaultView?.id ?? null);
+  }, [defaultView?.id, projectPage.id, tasksDatabase.id]);
+
+  const statusOptions =
+    tasksDatabase.properties.find((property) => property.slug === 'status')?.options ?? [];
+  const activeFullView =
+    tasksDatabase.views.find((item) => item.id === selectedFullViewId) ?? defaultView;
+  const openMode = getOpenMode(activeFullView);
+  const rows = tasksQuery.data?.rows ?? [];
+  const today = useMemo(() => {
+    const next = new Date();
+    next.setHours(0, 0, 0, 0);
+    return next;
+  }, []);
+
+  const { overdueRows, inProgressRows, upNextRows, openCount, doneCount } = useMemo(() => {
+    const overdue: WorkspaceRow[] = [];
+    const inProgress: WorkspaceRow[] = [];
+    const upNext: WorkspaceRow[] = [];
+    let open = 0;
+    let done = 0;
+
+    for (const row of rows) {
+      const status = String(getPropertyValue(row.properties, 'status') || 'todo');
+      const dueDate = parseDateValue(getPropertyValue(row.properties, 'due'));
+      const dueDay = dueDate ? new Date(dueDate) : null;
+      if (dueDay) dueDay.setHours(0, 0, 0, 0);
+      const isOverdue = status !== 'done' && dueDay !== null && dueDay.getTime() < today.getTime();
+
+      if (status === 'done') {
+        done += 1;
+        continue;
+      }
+
+      open += 1;
+      if (isOverdue) {
+        overdue.push(row);
+        continue;
+      }
+      if (status === 'in-progress') {
+        inProgress.push(row);
+        continue;
+      }
+      if (status === 'todo') {
+        upNext.push(row);
+      }
+    }
+
+    const byDue = (left: WorkspaceRow, right: WorkspaceRow) =>
+      compareTaskDates(
+        parseDateValue(getPropertyValue(left.properties, 'due')),
+        parseDateValue(getPropertyValue(right.properties, 'due'))
+      );
+
+    overdue.sort(byDue);
+    inProgress.sort(byDue);
+    upNext.sort(byDue);
+
+    return {
+      overdueRows: overdue,
+      inProgressRows: inProgress,
+      upNextRows: upNext,
+      openCount: open,
+      doneCount: done,
+    };
+  }, [rows, today]);
+
+  const hasFocusedWork =
+    overdueRows.length > 0 || inProgressRows.length > 0 || upNextRows.length > 0;
+
+  const handleQuickAdd = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const title = draftTitle.trim();
+    if (!title) return;
+    await onCreateTask(projectPage.id, title);
+    setDraftTitle('');
+  };
+
+  const renderTaskCard = (row: WorkspaceRow) => {
+    const status = String(getPropertyValue(row.properties, 'status') || 'todo');
+    const due = getPropertyValue(row.properties, 'due');
+    return (
+      <TaskCard key={row.page.id}>
+        <TaskCardHeader>
+          <TaskTitleButton
+            type="button"
+            onClick={() => onOpenPage(row.page.id, openMode)}
+            onMouseEnter={() => onPrefetchPage(row.page.id)}
+            onFocus={() => onPrefetchPage(row.page.id)}
+          >
+            <strong><PageTitleText page={row.page} /></strong>
+            <Muted>{formatTaskDueLabel(due)}</Muted>
+          </TaskTitleButton>
+          <MetaPill>{status.replace('-', ' ')}</MetaPill>
+        </TaskCardHeader>
+        <TaskInlineControls>
+          <TaskControlRow>
+            <PropertySelect
+              aria-label={`Status for ${row.page.title}`}
+              value={status}
+              disabled={readOnly}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => void onUpdateTaskProperties(row.page.id, { status: event.target.value })}
+            >
+              {statusOptions.map((option) => (
+                <option key={option.id} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </PropertySelect>
+            <PropertyInput
+              aria-label={`Due date for ${row.page.title}`}
+              type="date"
+              value={toDateInputValue(due)}
+              disabled={readOnly}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) =>
+                void onUpdateTaskProperties(row.page.id, {
+                  due: toDateOnlyIsoValue(event.target.value),
+                  date_only: Boolean(event.target.value),
+                })
+              }
+            />
+          </TaskControlRow>
+          {!readOnly && toDateInputValue(due) ? (
+            <MetaRow>
+              <PillButton
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void onUpdateTaskProperties(row.page.id, { due: null, date_only: false });
+                }}
+              >
+                Clear due date
+              </PillButton>
+            </MetaRow>
+          ) : null}
+        </TaskInlineControls>
+      </TaskCard>
+    );
+  };
+
+  return (
+    <TaskSectionCard>
+      <DatabaseHeader>
+        <DatabaseHeaderTop>
+          <div>
+            <strong>{tasksDatabase.icon ?? '✅'} Tasks</strong>
+            <Muted>Priority-focused project work, with the full task database available when you need it.</Muted>
+          </div>
+          <TaskStatsRow>
+            <TaskCountPill $tone="danger">Overdue {overdueRows.length}</TaskCountPill>
+            <TaskCountPill $tone="info">In Progress {inProgressRows.length}</TaskCountPill>
+            <TaskCountPill $tone="default">Open {openCount}</TaskCountPill>
+            <TaskCountPill $tone="success">Done {doneCount}</TaskCountPill>
+          </TaskStatsRow>
+        </DatabaseHeaderTop>
+        {!readOnly ? (
+          <TaskQuickAddForm onSubmit={(event) => void handleQuickAdd(event)}>
+            <TaskQuickAddInput
+              value={draftTitle}
+              placeholder={`Add a task for ${projectPage.title}…`}
+              onChange={(event) => setDraftTitle(event.target.value)}
+            />
+            <PillButton type="submit" disabled={!draftTitle.trim()}>
+              Add task
+            </PillButton>
+          </TaskQuickAddForm>
+        ) : null}
+      </DatabaseHeader>
+      <DatabaseBody>
+        {tasksQuery.isLoading ? <Muted>Loading project tasks…</Muted> : null}
+        {!tasksQuery.isLoading ? (
+          <>
+            {hasFocusedWork ? (
+              <TaskBucketsGrid>
+                <TaskBucket>
+                  <TaskBucketHeader>
+                    <strong>Overdue</strong>
+                    <MetaPill>{overdueRows.length}</MetaPill>
+                  </TaskBucketHeader>
+                  {overdueRows.length ? overdueRows.map(renderTaskCard) : <Muted>No overdue tasks.</Muted>}
+                </TaskBucket>
+                <TaskBucket>
+                  <TaskBucketHeader>
+                    <strong>In Progress</strong>
+                    <MetaPill>{inProgressRows.length}</MetaPill>
+                  </TaskBucketHeader>
+                  {inProgressRows.length ? inProgressRows.map(renderTaskCard) : <Muted>No active tasks.</Muted>}
+                </TaskBucket>
+                <TaskBucket>
+                  <TaskBucketHeader>
+                    <strong>Up Next</strong>
+                    <MetaPill>{upNextRows.length}</MetaPill>
+                  </TaskBucketHeader>
+                  {upNextRows.length ? upNextRows.map(renderTaskCard) : <Muted>No queued tasks.</Muted>}
+                </TaskBucket>
+              </TaskBucketsGrid>
+            ) : (
+              <TaskEmptyState>
+                No active next action for this project yet. Add a task above or expand the full task database to review all related work.
+              </TaskEmptyState>
+            )}
+
+            {tasksQuery.data?.has_more ? (
+              <Muted>Showing the first {rows.length} project tasks in the smart summary.</Muted>
+            ) : null}
+
+            <ChildPages>
+              <MetaRow style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <SectionTitle>Full task database</SectionTitle>
+                <CollapseToggle type="button" onClick={() => setFullViewOpen((current) => !current)}>
+                  <span>{fullViewOpen ? '▾' : '▸'}</span>
+                  <span>{fullViewOpen ? 'Hide' : 'Show'}</span>
+                </CollapseToggle>
+              </MetaRow>
+              {fullViewOpen ? (
+                <DatabaseView
+                  database={tasksDatabase}
+                  initialViewId={selectedFullViewId}
+                  relationPropertySlug="project"
+                  relationPageId={projectPage.id}
+                  readOnly={readOnly}
+                  onOpenPage={onOpenPage}
+                  onPrefetchPage={onPrefetchPage}
+                  onCreateRow={onCreateRow}
+                  onCreateView={onCreateView}
+                  onEditView={onEditView}
+                  onViewChange={(viewId) => setSelectedFullViewId(viewId)}
+                />
+              ) : null}
+            </ChildPages>
+          </>
+        ) : null}
+      </DatabaseBody>
+    </TaskSectionCard>
   );
 }
 
@@ -2443,6 +2890,7 @@ export function ProjectsPage() {
     Boolean(detail?.properties.some((property) => property.property_type === 'relation')) ||
     Boolean(peekDetail?.properties.some((property) => property.property_type === 'relation'));
   const projectsDatabase = bootstrapQuery.data?.databases.find((database) => database.name === 'Projects') ?? null;
+  const tasksDatabase = bootstrapQuery.data?.databases.find((database) => database.name === 'Tasks') ?? null;
   const projectChoicesQuery = useWorkspaceDatabase(
     projectsDatabase?.id ?? null,
     projectsDatabase?.views.find((item) => item.is_default)?.id ?? null,
@@ -2755,6 +3203,36 @@ export function ProjectsPage() {
       await workspaceMutations.updateProperties({ pageId, values });
     } catch (error) {
       setStatus({ kind: 'error', message: error instanceof Error ? error.message : 'Could not update properties.' });
+    }
+  };
+
+  const createProjectTask = async (projectPageId: number, title: string) => {
+    if (bootstrapQuery.data?.read_only || !tasksDatabase) return;
+    try {
+      await workspaceMutations.createRow({
+        databaseId: tasksDatabase.id,
+        payload: {
+          title,
+          properties: {
+            project: projectPageId,
+            status: 'todo',
+            triage_state: 'assigned'
+          }
+        }
+      });
+    } catch (error) {
+      setStatus({ kind: 'error', message: error instanceof Error ? error.message : 'Could not create task.' });
+      throw error;
+    }
+  };
+
+  const updateTaskInline = async (pageId: number, values: Record<string, unknown>) => {
+    if (bootstrapQuery.data?.read_only) return;
+    try {
+      await workspaceMutations.updateProperties({ pageId, values });
+    } catch (error) {
+      setStatus({ kind: 'error', message: error instanceof Error ? error.message : 'Could not update task.' });
+      throw error;
     }
   };
 
@@ -3084,6 +3562,21 @@ export function ProjectsPage() {
           <PillButton type="button" onClick={() => void createBlock(pageDetail.page.id, pageDetail.blocks.at(-1)?.id ?? null)}>
             + Add block
           </PillButton>
+        ) : null}
+
+        {isProjectPage && tasksDatabase ? (
+          <ProjectTasksSection
+            projectPage={pageDetail.page}
+            tasksDatabase={tasksDatabase}
+            readOnly={Boolean(bootstrapQuery.data?.read_only)}
+            onOpenPage={openPage}
+            onPrefetchPage={(pageId) => void prefetchWorkspacePage(pageId)}
+            onCreateTask={createProjectTask}
+            onUpdateTaskProperties={updateTaskInline}
+            onCreateRow={openCreateRowDialog}
+            onCreateView={openCreateViewDialog}
+            onEditView={openEditViewDialog}
+          />
         ) : null}
 
         {isProjectPage ? (

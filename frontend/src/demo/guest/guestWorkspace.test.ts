@@ -38,6 +38,7 @@ describe('guestWorkspace', () => {
     const backlinks = await getGuestWorkspaceBacklinks(1302);
 
     expect(home.linked_databases.map((database) => database.name)).toEqual(['Projects', 'Tasks']);
+    expect(project.blocks.some((block) => block.block_type === 'linked_database')).toBe(false);
     expect(project.children.map((child) => child.title)).toEqual(['Capital One launch brief']);
     expect(project.children[0]?.kind).toBe('note');
     expect('backlinks' in home).toBe(false);

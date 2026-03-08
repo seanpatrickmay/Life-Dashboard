@@ -431,29 +431,25 @@ const blocksByPageId = new Map<number, WorkspaceBlock[]>([
   [
     1101,
     [
-      { id: 5100, page_id: 1101, parent_block_id: null, block_type: 'paragraph', sort_order: 0, text_content: 'Default landing place for uncategorized work.', checked: false, data_json: null, links: [] },
-      { id: 5101, page_id: 1101, parent_block_id: null, block_type: 'linked_database', sort_order: 1, text_content: 'Project tasks', checked: false, data_json: { database_id: 3002, view_id: 4101, filter_property_slug: 'project', filter_page_id: 'current_page' }, links: [] }
+      { id: 5100, page_id: 1101, parent_block_id: null, block_type: 'paragraph', sort_order: 0, text_content: 'Default landing place for uncategorized work.', checked: false, data_json: null, links: [] }
     ]
   ],
   [
     1102,
     [
-      { id: 5102, page_id: 1102, parent_block_id: null, block_type: 'paragraph', sort_order: 0, text_content: 'Training, recovery, and medical admin all live here. See [[Health operating notes]] for the current baseline.', checked: false, data_json: null, links: [{ id: 1301, title: 'Health operating notes', kind: 'note', icon: '📝' }] },
-      { id: 5103, page_id: 1102, parent_block_id: null, block_type: 'linked_database', sort_order: 1, text_content: 'Project tasks', checked: false, data_json: { database_id: 3002, view_id: 4101, filter_property_slug: 'project', filter_page_id: 'current_page' }, links: [] }
+      { id: 5102, page_id: 1102, parent_block_id: null, block_type: 'paragraph', sort_order: 0, text_content: 'Training, recovery, and medical admin all live here. See [[Health operating notes]] for the current baseline.', checked: false, data_json: null, links: [{ id: 1301, title: 'Health operating notes', kind: 'note', icon: '📝' }] }
     ]
   ],
   [
     1103,
     [
-      { id: 5104, page_id: 1103, parent_block_id: null, block_type: 'paragraph', sort_order: 0, text_content: 'Budgeting, reimbursements, and money admin.', checked: false, data_json: null, links: [] },
-      { id: 5105, page_id: 1103, parent_block_id: null, block_type: 'linked_database', sort_order: 1, text_content: 'Project tasks', checked: false, data_json: { database_id: 3002, view_id: 4101, filter_property_slug: 'project', filter_page_id: 'current_page' }, links: [] }
+      { id: 5104, page_id: 1103, parent_block_id: null, block_type: 'paragraph', sort_order: 0, text_content: 'Budgeting, reimbursements, and money admin.', checked: false, data_json: null, links: [] }
     ]
   ],
   [
     1104,
     [
-      { id: 5106, page_id: 1104, parent_block_id: null, block_type: 'paragraph', sort_order: 0, text_content: 'This project tracks the onboarding launch surface. Start with [[Capital One launch brief]] and the linked tasks below.', checked: false, data_json: null, links: [{ id: 1302, title: 'Capital One launch brief', kind: 'note', icon: '🗒️' }] },
-      { id: 5107, page_id: 1104, parent_block_id: null, block_type: 'linked_database', sort_order: 1, text_content: 'Project tasks', checked: false, data_json: { database_id: 3002, view_id: 4101, filter_property_slug: 'project', filter_page_id: 'current_page' }, links: [] }
+      { id: 5106, page_id: 1104, parent_block_id: null, block_type: 'paragraph', sort_order: 0, text_content: 'This project tracks the onboarding launch surface. Start with [[Capital One launch brief]] and use the task section below to prioritize launch work.', checked: false, data_json: null, links: [{ id: 1302, title: 'Capital One launch brief', kind: 'note', icon: '🗒️' }] }
     ]
   ],
   [
