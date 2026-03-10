@@ -64,6 +64,39 @@ make compose-up
 make compose-down
 ```
 
+## Local development without Docker
+
+If you want to work on the services separately:
+
+### Backend
+
+Prerequisites:
+
+- Python 3.11+
+- Poetry
+- Postgres reachable through the URLs in `.env`
+
+```bash
+cd backend
+poetry install
+poetry run uvicorn app.main:app --reload
+```
+
+### Frontend
+
+Prerequisites:
+
+- Node.js
+- npm
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend uses Vite and defaults to `http://localhost:5173` in local development.
+
 ## Configuration
 
 All configuration lives in `.env`. The most important variables are grouped below.
@@ -141,6 +174,20 @@ See `docs/pipeline.md` for the full flow.
 - **Scheduled ingest**: APScheduler runs daily to refresh metrics and insights.
 - **Backups**: Use Neon backups / point-in-time restore and branch snapshots.
 
+## Testing and verification
+
+The repo includes both backend and frontend test hooks:
+
+```bash
+cd backend
+poetry run pytest
+
+cd ../frontend
+npm test
+```
+
+There are also lightweight operational checks via scripts such as `sanity_db.py` and manual ingest flows through `make ingest`.
+
 ## Scripts
 
 Useful utilities live in `scripts/`:
@@ -161,3 +208,8 @@ Useful utilities live in `scripts/`:
 ## Contributing
 
 See `CONTRIBUTING.md` and `STYLE_GUIDE.md` for conventions, linting, and code style expectations.
+
+## Remaining documentation gaps
+
+- Add screenshots or a short demo walkthrough of the dashboard, insights page, and nutrition flow
+- Add one concrete end-to-end example of Garmin ingest -> readiness insight -> frontend surface

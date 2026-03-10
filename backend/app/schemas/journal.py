@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -25,9 +26,16 @@ class JournalCompletedItem(BaseModel):
   completed_at_utc: datetime | None = None
 
 
+class JournalDaySummaryItem(BaseModel):
+  text: str
+  time_label: str | None = None
+  occurred_at_local: datetime | None = None
+  time_precision: Literal["exact", "range", "all_day", "unknown"]
+
+
 class JournalDaySummaryGroup(BaseModel):
   title: str
-  items: list[str]
+  items: list[JournalDaySummaryItem]
 
 
 class JournalDaySummaryResponse(BaseModel):

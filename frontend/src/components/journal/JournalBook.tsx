@@ -234,6 +234,18 @@ const TaskItem = styled.li`
   line-height: 1.4;
 `;
 
+const TaskMeta = styled.div`
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--page-ink-muted);
+  margin-bottom: 4px;
+`;
+
+const TaskText = styled.div`
+  color: var(--page-ink);
+`;
+
 const EmptyText = styled.div`
   font-size: 0.85rem;
   opacity: 0.7;
@@ -442,12 +454,36 @@ const GroupTitle = styled.div`
 
 const GroupItems = styled.ul`
   margin: 0;
-  padding-left: 18px;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
   gap: 6px;
   font-size: 0.88rem;
   line-height: 1.4;
+`;
+
+const GroupItem = styled.li`
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+`;
+
+const GroupItemTime = styled.span`
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--page-border);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--page-ink-muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+`;
+
+const GroupItemText = styled.span`
+  min-width: 0;
+  color: var(--page-ink);
 `;
 
 const StatusMessage = styled.div`
@@ -517,10 +553,22 @@ export function JournalBook() {
   const todayQuery = useQuery({
     queryKey: ['journal', 'day', todayKey, timeZone],
     queryFn: () => fetchJournalDay(todayKey, timeZone),
-    enabled: selectedKey !== todayKey
+    enabled: selectedKey !== todayKey,
+    refetchOnWindowFocus: true,
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false
   });
 
-  const todayEventsQuery = useCalendarEvents(today.toISOString(), endOfDay(today).toISOString());
+  const todayEventsQuery = useCalendarEvents(
+    today.toISOString(),
+    endOfDay(today).toISOString(),
+    true,
+    {
+      refetchOnWindowFocus: true,
+      refetchInterval: 60 * 1000,
+      refetchIntervalInBackground: false
+    }
+  );
 
   const weekDays = useMemo(() => buildWeekDays(weekStart), [weekStart]);
   const dayStatusMap = useMemo(() => {
@@ -617,7 +665,10 @@ export function JournalBook() {
                 ) : (
                   <TaskList>
                     {todayCompletedItems.map((item) => (
-                      <TaskItem key={item.id}>{item.text}</TaskItem>
+                      <TaskItem key={item.id}>
+                        <TaskMeta>{formatOptionalTime(item.completed_at_utc)}</TaskMeta>
+                        <TaskText>{item.text}</TaskText>
+                      </TaskItem>
                     ))}
                   </TaskList>
                 )}
@@ -721,7 +772,10 @@ export function JournalBook() {
                 ) : (
                   <TaskList>
                     {completedItems.map((item) => (
-                      <TaskItem key={item.id}>{item.text}</TaskItem>
+                      <TaskItem key={item.id}>
+                        <TaskMeta>{formatOptionalTime(item.completed_at_utc)}</TaskMeta>
+                        <TaskText>{item.text}</TaskText>
+                      </TaskItem>
                     ))}
                   </TaskList>
                 )}
@@ -768,7 +822,10 @@ export function JournalBook() {
                       <GroupTitle>{group.title}</GroupTitle>
                       <GroupItems>
                         {group.items.map((item, index) => (
-                          <li key={`${group.title}-${index}`}>{item}</li>
+                          <GroupItem key={`${group.title}-${index}`}>
+                            {item.time_label ? <GroupItemTime>{item.time_label}</GroupItemTime> : null}
+                            <GroupItemText>{item.text}</GroupItemText>
+                          </GroupItem>
                         ))}
                       </GroupItems>
                     </GroupCard>
@@ -818,6 +875,8 @@ const formatWeekLabel = (date: Date) => {
 
 const formatTime = (value: string) =>
   new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+const formatOptionalTime = (value: string | null) => (value ? formatTime(value) : 'Time unknown');
 
 const startOfDay = (date: Date) => {
   const next = new Date(date);

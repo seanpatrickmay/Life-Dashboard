@@ -515,15 +515,17 @@ You are Monet, a calm journal editor.
 Extract the concrete accomplishments from the user's journal entries for {local_date} in {time_zone}.
 
 Return ONLY valid JSON with this shape:
-{{"items": [{{"text": "string"}}]}}
+{{"items": [{{"source_id": "string", "text": "string"}}]}}
 
 Rules:
 - Each item must be a single accomplishment in neutral past tense.
 - Use short, specific phrasing (max ~12 words).
 - Do not include categories, labels, or commentary.
 - Skip vague reflections unless they describe a completed action.
+- Copy `source_id` from the input object that supports the extracted accomplishment.
+- Multiple output items may reuse the same `source_id` when one entry contains multiple accomplishments.
 
-Entries (JSON list of strings):
+Entries (JSON list of objects with `source_id` and `text`):
 {entries_json}
 """
 
@@ -532,7 +534,7 @@ You are Monet, a calm journal editor.
 Convert the user's calendar events for {local_date} in {time_zone} into concrete, neutral past-tense items.
 
 Return ONLY valid JSON with this shape:
-{{"items": [{{"text": "string"}}]}}
+{{"items": [{{"source_id": "string", "text": "string"}}]}}
 
 Rules:
 - Each item must describe what happened, based only on the event details.
@@ -540,6 +542,7 @@ Rules:
 - Do not invent outcomes or accomplishments beyond what the event implies.
 - Skip events that look like placeholders (e.g., "Busy", "Hold", "Block") unless clearly meaningful.
 - Do not include categories, labels, or commentary.
+- Copy `source_id` from the input event object that supports the output item.
 
 Events (JSON list of objects):
 {events_json}
@@ -550,18 +553,19 @@ You are Monet, a careful editor.
 Deduplicate overlapping accomplishments between completed to-dos and extracted journal/calendar items.
 
 Return ONLY valid JSON with this shape:
-{{"items": [{{"text": "string"}}]}}
+{{"items": [{{"source_ids": ["string"], "text": "string"}}]}}
 
 Rules:
 - Merge near-duplicates into a single neutral past-tense item.
 - Keep distinct items separate if they represent different actions.
 - Prefer the most specific phrasing when merging.
 - Do not add new items or categories.
+- Each output item must include one or more `source_ids` copied from the input items it represents.
 
-Completed to-dos (JSON list of strings):
+Completed to-dos (JSON list of objects with `source_id` and `text`):
 {todo_items_json}
 
-Journal-extracted items (JSON list of strings):
+Journal-extracted items (JSON list of objects with `source_id` and `text`):
 {journal_items_json}
 """
 
@@ -571,15 +575,16 @@ Group the accomplishments into at most 4 meaningful categories.
 Example category names include professional, education, and health, but you may choose others.
 
 Return ONLY valid JSON with this shape:
-{{"groups": [{{"title": "string", "items": ["string"]}}]}}
+{{"groups": [{{"title": "string", "item_ids": ["string"]}}]}}
 
 Rules:
 - Use 1 to 4 groups total.
 - Each item must appear in exactly one group.
 - Keep titles short and descriptive.
 - Do not add commentary outside the JSON.
+- Copy `item_id` values from the input items; do not invent new IDs.
 
-Accomplishments (JSON list of strings):
+Accomplishments (JSON list of objects with `item_id` and `text`):
 {items_json}
 """
 

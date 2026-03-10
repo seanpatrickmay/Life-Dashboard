@@ -1,6 +1,8 @@
 """Journal entry capture and day summary compilation."""
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -112,23 +114,38 @@ class JournalService:
     self, *, user_id: int, local_date: date, time_zone: str
   ) -> Any:
     summary = await self.journal_repo.get_summary_for_day(user_id, local_date)
-    if summary and summary.status == "final":
-      return summary
-
     entries = await self.journal_repo.list_entries_for_day(user_id, local_date)
     completed = await self.todo_repo.list_completed_for_day(user_id, local_date)
+
     effective_time_zone = time_zone
     if summary:
       effective_time_zone = summary.time_zone
     elif entries:
       effective_time_zone = entries[0].time_zone
-    todo_items = [item.accomplishment_text or item.text for item in completed]
-    entry_texts = [entry.text for entry in entries]
+
+    zone = resolve_time_zone(effective_time_zone)
+    compiler_entries = self._serialize_entries_for_compile(entries, zone)
+    compiler_todos = self._serialize_completed_for_compile(completed, zone)
     calendar_events = await self._list_calendar_events_for_day(
       user_id=user_id,
       local_date=local_date,
       time_zone=effective_time_zone,
     )
+    source_hash = self._build_source_hash(
+      local_date=local_date,
+      time_zone=effective_time_zone,
+      entries=compiler_entries,
+      completed=compiler_todos,
+      calendar_events=calendar_events,
+    )
+
+    if (
+      summary
+      and summary.status == "final"
+      and summary.version == self.compiler.VERSION
+      and summary.source_hash == source_hash
+    ):
+      return summary
 
     now_utc = datetime.now(timezone.utc)
     summary_payload = {"groups": []}
@@ -138,8 +155,8 @@ class JournalService:
       summary_payload = await self.compiler.compile_day(
         local_date=local_date,
         time_zone=effective_time_zone,
-        entries=entry_texts,
-        todo_items=todo_items,
+        entries=compiler_entries,
+        todo_items=compiler_todos,
         calendar_events=calendar_events,
       )
       model_name = self.compiler.model_name
@@ -157,6 +174,7 @@ class JournalService:
         summary,
         status=status,
         summary_json=summary_payload,
+        source_hash=source_hash,
         finalized_at=now_utc if status == "final" else None,
         model_name=model_name,
         version=self.compiler.VERSION,
@@ -168,6 +186,7 @@ class JournalService:
         time_zone=effective_time_zone,
         status=status,
         summary_json=summary_payload,
+        source_hash=source_hash,
         finalized_at=now_utc if status == "final" else None,
         model_name=model_name,
         version=self.compiler.VERSION,
@@ -176,6 +195,59 @@ class JournalService:
     if status == "final":
       await self.journal_repo.delete_entries_for_day(user_id, local_date)
     return summary
+
+  def _serialize_entries_for_compile(
+    self, entries: list[Any], zone: Any
+  ) -> list[dict[str, Any]]:
+    payload: list[dict[str, Any]] = []
+    for entry in entries:
+      created_local = entry.created_at.astimezone(zone) if entry.created_at else None
+      payload.append(
+        {
+          "source_id": f"entry:{entry.id}",
+          "text": entry.text,
+          "occurred_at_local": created_local.isoformat() if created_local else None,
+          "time_label": _format_local_time(created_local) if created_local else "Time unknown",
+          "time_precision": "exact" if created_local else "unknown",
+        }
+      )
+    return payload
+
+  def _serialize_completed_for_compile(
+    self, completed: list[Any], zone: Any
+  ) -> list[dict[str, Any]]:
+    payload: list[dict[str, Any]] = []
+    for item in completed:
+      completed_local = item.completed_at_utc.astimezone(zone) if item.completed_at_utc else None
+      payload.append(
+        {
+          "source_id": f"todo:{item.id}",
+          "text": item.accomplishment_text or item.text,
+          "occurred_at_local": completed_local.isoformat() if completed_local else None,
+          "time_label": _format_local_time(completed_local) if completed_local else "Time unknown",
+          "time_precision": "exact" if completed_local else "unknown",
+        }
+      )
+    return payload
+
+  def _build_source_hash(
+    self,
+    *,
+    local_date: date,
+    time_zone: str,
+    entries: list[dict[str, Any]],
+    completed: list[dict[str, Any]],
+    calendar_events: list[dict[str, Any]],
+  ) -> str:
+    payload = {
+      "local_date": local_date.isoformat(),
+      "time_zone": time_zone,
+      "entries": sorted(entries, key=lambda item: str(item.get("source_id") or "")),
+      "completed": sorted(completed, key=lambda item: str(item.get("source_id") or "")),
+      "calendar_events": sorted(calendar_events, key=lambda item: str(item.get("source_id") or "")),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
   async def _list_calendar_events_for_day(
     self,
@@ -224,8 +296,13 @@ class JournalService:
         continue
       start_time_local = event.start_time.astimezone(zone) if event.start_time else None
       end_time_local = event.end_time.astimezone(zone) if event.end_time else None
+      time_precision = "all_day" if event.is_all_day else "range"
+      time_label = "All day" if event.is_all_day else _format_local_range(start_time_local, end_time_local)
       events.append(
         {
+          "source_id": f"calendar:{event.id}",
+          "event_id": event.id,
+          "google_event_id": event.google_event_id,
           "summary": summary,
           "location": event.location,
           "calendar": {
@@ -233,8 +310,11 @@ class JournalService:
             "primary": calendar.primary,
             "is_life_dashboard": calendar.is_life_dashboard,
           },
+          "occurred_at_local": start_time_local.isoformat() if start_time_local else None,
           "start_time_local": start_time_local.isoformat() if start_time_local else None,
           "end_time_local": end_time_local.isoformat() if end_time_local else None,
+          "time_label": time_label,
+          "time_precision": time_precision,
           "is_all_day": event.is_all_day,
         }
       )
@@ -248,3 +328,15 @@ def _is_declined_attendee(attendees: list[dict[str, object]] | None) -> bool:
     if attendee.get("self") and attendee.get("responseStatus") == "declined":
       return True
   return False
+
+
+def _format_local_time(value: datetime | None) -> str:
+  if value is None:
+    return "Time unknown"
+  return value.strftime("%I:%M %p").lstrip("0")
+
+
+def _format_local_range(start: datetime | None, end: datetime | None) -> str:
+  if start is None or end is None:
+    return "Time unknown"
+  return f"{_format_local_time(start)} - {_format_local_time(end)}"

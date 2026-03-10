@@ -6,6 +6,7 @@ import type {
   JournalCompletedItem,
   JournalDayResponse,
   JournalDaySummary,
+  JournalDaySummaryItem,
   JournalEntry,
   JournalWeekDayStatus,
   JournalWeekResponse,
@@ -54,6 +55,109 @@ const isoAt = (base: Date, dayOffset: number, hour: number, minute: number) =>
     hour,
     minute
   ).toISOString();
+
+const toLocalIsoString = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const absoluteOffset = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absoluteOffset / 60)).padStart(2, '0');
+  const offsetRemainder = String(absoluteOffset % 60).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetRemainder}`;
+};
+
+const localIsoAt = (base: Date, dayOffset: number, hour: number, minute: number) =>
+  toLocalIsoString(
+    new Date(
+      base.getFullYear(),
+      base.getMonth(),
+      base.getDate() + dayOffset,
+      hour,
+      minute
+    )
+  );
+
+const formatGuestTimeLabel = (value: string) =>
+  new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+const buildTimedSummaryItems = (
+  base: Date,
+  dayOffset: number,
+  groupIndex: number,
+  items: string[]
+): JournalDaySummaryItem[] => {
+  const startHour = [8, 12, 17, 20][groupIndex] ?? 8 + groupIndex * 3;
+  return items.map((text, index) => {
+    const occurredAt = localIsoAt(base, dayOffset, Math.min(startHour + index, 23), (index % 2) * 15);
+    return {
+      text,
+      time_label: formatGuestTimeLabel(occurredAt),
+      occurred_at_local: occurredAt,
+      time_precision: 'exact'
+    };
+  });
+};
+
+const structureGuestSummary = (
+  base: Date,
+  dayOffset: number,
+  summary: { groups: Array<{ title: string; items: string[] }> }
+): JournalDaySummary => ({
+  groups: summary.groups.map((group, groupIndex) => ({
+    title: group.title,
+    items: buildTimedSummaryItems(base, dayOffset, groupIndex, group.items)
+  }))
+});
+
+const normalizeSummaryItem = (item: unknown): JournalDaySummaryItem | null => {
+  if (typeof item === 'string') {
+    return {
+      text: item,
+      time_label: null,
+      occurred_at_local: null,
+      time_precision: 'unknown'
+    };
+  }
+  if (!item || typeof item !== 'object') return null;
+  const candidate = item as Partial<JournalDaySummaryItem>;
+  if (!candidate.text || typeof candidate.text !== 'string') return null;
+  const precision =
+    candidate.time_precision === 'exact' ||
+    candidate.time_precision === 'range' ||
+    candidate.time_precision === 'all_day' ||
+    candidate.time_precision === 'unknown'
+      ? candidate.time_precision
+      : 'unknown';
+  return {
+    text: candidate.text,
+    time_label: candidate.time_label ?? null,
+    occurred_at_local: candidate.occurred_at_local ?? null,
+    time_precision: precision
+  };
+};
+
+const normalizeStoredJournalSummary = (summary: unknown): JournalDaySummary | null => {
+  if (!summary || typeof summary !== 'object') return null;
+  const groups = (summary as { groups?: unknown }).groups;
+  if (!Array.isArray(groups)) return null;
+  return {
+    groups: groups
+      .map((group) => {
+        if (!group || typeof group !== 'object') return null;
+        const title = typeof (group as { title?: unknown }).title === 'string' ? (group as { title: string }).title : '';
+        const rawItems = Array.isArray((group as { items?: unknown }).items) ? (group as { items: unknown[] }).items : [];
+        const items = rawItems.map(normalizeSummaryItem).filter(Boolean) as JournalDaySummaryItem[];
+        if (!title || items.length === 0) return null;
+        return { title, items };
+      })
+      .filter(Boolean) as JournalDaySummary['groups']
+  };
+};
 
 const resolveTimeZone = () => {
   if (typeof Intl === 'undefined') return 'UTC';
@@ -308,7 +412,7 @@ const buildGuestState = (today: Date): GuestState => {
     ]
   };
 
-  const journalSummaries: Record<string, JournalDaySummary | null> = {
+  const rawJournalSummaries: Record<string, { groups: Array<{ title: string; items: string[] }> } | null> = {
     [baseKey]: {
       groups: [
         {
@@ -404,6 +508,28 @@ const buildGuestState = (today: Date): GuestState => {
         { title: 'People & Mindset', items: ['Called a friend/family member and made weekend plans', 'Wrote a 3-bullet weekly intention'] }
       ]
     }
+  };
+
+  const journalSummaries: Record<string, JournalDaySummary | null> = {
+    [baseKey]: rawJournalSummaries[baseKey] ? structureGuestSummary(baseDate, 0, rawJournalSummaries[baseKey]!) : null,
+    [dayMinus1Key]: rawJournalSummaries[dayMinus1Key]
+      ? structureGuestSummary(baseDate, -1, rawJournalSummaries[dayMinus1Key]!)
+      : null,
+    [dayMinus2Key]: rawJournalSummaries[dayMinus2Key]
+      ? structureGuestSummary(baseDate, -2, rawJournalSummaries[dayMinus2Key]!)
+      : null,
+    [dayMinus3Key]: rawJournalSummaries[dayMinus3Key]
+      ? structureGuestSummary(baseDate, -3, rawJournalSummaries[dayMinus3Key]!)
+      : null,
+    [dayMinus4Key]: rawJournalSummaries[dayMinus4Key]
+      ? structureGuestSummary(baseDate, -4, rawJournalSummaries[dayMinus4Key]!)
+      : null,
+    [dayMinus5Key]: rawJournalSummaries[dayMinus5Key]
+      ? structureGuestSummary(baseDate, -5, rawJournalSummaries[dayMinus5Key]!)
+      : null,
+    [dayMinus6Key]: rawJournalSummaries[dayMinus6Key]
+      ? structureGuestSummary(baseDate, -6, rawJournalSummaries[dayMinus6Key]!)
+      : null
   };
 
   const journalCompleted: Record<string, JournalCompletedItem[]> = {
@@ -735,7 +861,20 @@ const getGuestState = () => {
     saveState(upgraded);
     return upgraded;
   }
-  return stored;
+  const normalizedSummaries = Object.fromEntries(
+    Object.entries(stored.journal_summaries ?? {}).map(([key, summary]) => [
+      key,
+      normalizeStoredJournalSummary(summary)
+    ])
+  ) as Record<string, JournalDaySummary | null>;
+  const upgradedState: GuestState = {
+    ...stored,
+    journal_summaries: normalizedSummaries
+  };
+  if (JSON.stringify(upgradedState.journal_summaries) !== JSON.stringify(stored.journal_summaries)) {
+    saveState(upgradedState);
+  }
+  return upgradedState;
 };
 
 export const clearGuestState = () => {

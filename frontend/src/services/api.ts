@@ -884,9 +884,16 @@ export type JournalCompletedItem = {
   completed_at_utc: string | null;
 };
 
+export type JournalDaySummaryItem = {
+  text: string;
+  time_label: string | null;
+  occurred_at_local: string | null;
+  time_precision: 'exact' | 'range' | 'all_day' | 'unknown';
+};
+
 export type JournalDaySummaryGroup = {
   title: string;
-  items: string[];
+  items: JournalDaySummaryItem[];
 };
 
 export type JournalDaySummary = {

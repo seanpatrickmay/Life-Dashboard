@@ -63,6 +63,7 @@ class JournalRepository:
     time_zone: str,
     status: str,
     summary_json: dict,
+    source_hash: str | None,
     finalized_at: datetime | None,
     model_name: str | None,
     version: str | None,
@@ -73,6 +74,7 @@ class JournalRepository:
       time_zone=time_zone,
       status=status,
       summary_json=summary_json,
+      source_hash=source_hash,
       finalized_at_utc=finalized_at,
       model_name=model_name,
       version=version,
@@ -86,12 +88,14 @@ class JournalRepository:
     *,
     status: str,
     summary_json: dict,
+    source_hash: str | None,
     finalized_at: datetime | None,
     model_name: str | None,
     version: str | None,
   ) -> JournalDaySummary:
     summary.status = status
     summary.summary_json = summary_json
+    summary.source_hash = source_hash
     summary.finalized_at_utc = finalized_at
     summary.model_name = model_name
     summary.version = version

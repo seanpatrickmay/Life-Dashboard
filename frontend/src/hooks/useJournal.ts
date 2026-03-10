@@ -13,12 +13,18 @@ export function useJournal(selectedDate: string, weekStart: string) {
 
   const dayQuery = useQuery({
     queryKey: [...JOURNAL_DAY_KEY, selectedDate, timeZone],
-    queryFn: () => fetchJournalDay(selectedDate, timeZone)
+    queryFn: () => fetchJournalDay(selectedDate, timeZone),
+    refetchOnWindowFocus: true,
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false
   });
 
   const weekQuery = useQuery({
     queryKey: [...JOURNAL_WEEK_KEY, weekStart, timeZone],
-    queryFn: () => fetchJournalWeek(weekStart, timeZone)
+    queryFn: () => fetchJournalWeek(weekStart, timeZone),
+    refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60 * 1000,
+    refetchIntervalInBackground: false
   });
 
   const createMutation = useMutation({

@@ -36,6 +36,7 @@ class JournalDaySummary(Base):
   time_zone: Mapped[str] = mapped_column(String(64), nullable=False)
   status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
   summary_json: Mapped[dict] = mapped_column(JSON)
+  source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
   finalized_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
   model_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
   version: Mapped[str | None] = mapped_column(String(32), nullable=True)

@@ -15,6 +15,12 @@ const CALENDAR_STATUS_KEY = ['calendar', 'status'];
 const CALENDAR_LIST_KEY = ['calendar', 'list'];
 const CALENDAR_EVENTS_KEY = ['calendar', 'events'];
 
+type CalendarEventsOptions = {
+  refetchOnWindowFocus?: boolean;
+  refetchInterval?: number;
+  refetchIntervalInBackground?: boolean;
+};
+
 export function useCalendarStatus() {
   return useQuery<CalendarStatus>({
     queryKey: CALENDAR_STATUS_KEY,
@@ -42,12 +48,20 @@ export function useCalendars() {
   };
 }
 
-export function useCalendarEvents(start: string, end: string, enabled = true) {
+export function useCalendarEvents(
+  start: string,
+  end: string,
+  enabled = true,
+  options?: CalendarEventsOptions
+) {
   const queryClient = useQueryClient();
   const eventsQuery = useQuery({
     queryKey: [...CALENDAR_EVENTS_KEY, start, end],
     queryFn: () => fetchCalendarEvents(start, end),
-    enabled: enabled && Boolean(start && end)
+    enabled: enabled && Boolean(start && end),
+    refetchOnWindowFocus: options?.refetchOnWindowFocus,
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground
   });
 
   const syncMutation = useMutation({
