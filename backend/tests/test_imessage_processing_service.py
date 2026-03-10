@@ -17,7 +17,11 @@ if str(backend_root) not in sys.path:
     sys.path.insert(0, str(backend_root))
 load_dotenv(backend_root.parent / ".env")
 
-from app.services.imessage_processing_service import IMessageProcessingService, MessageCluster
+from app.services.imessage_processing_service import (
+    DuplicateDecision,
+    IMessageProcessingService,
+    MessageCluster,
+)
 from app.services.imessage_utils import ProjectGuess, infer_project_match
 from app.services.journal_service import JournalService
 from app.utils.timezone import resolve_time_zone
@@ -895,6 +899,9 @@ def test_process_cluster_dispatches_every_supported_action_type(case: DispatchCa
     async def fake_record_non_applied_action(self, **kwargs) -> None:
         raise AssertionError("approved dispatch test should not record non-applied actions")
 
+    async def fake_deduplicate_action(self, **kwargs):
+        return DuplicateDecision(is_duplicate=False, reason="No duplicate.")
+
     called_methods: list[str] = []
 
     def make_apply_stub(method_name: str):
@@ -909,6 +916,7 @@ def test_process_cluster_dispatches_every_supported_action_type(case: DispatchCa
     service._judge_actions = MethodType(fake_judge_actions, service)
     service._resolve_project = MethodType(fake_resolve_project, service)
     service._record_non_applied_action = MethodType(fake_record_non_applied_action, service)
+    service._deduplicate_action = MethodType(fake_deduplicate_action, service)
     service._apply_todo_create = MethodType(make_apply_stub("_apply_todo_create"), service)
     service._apply_todo_completion = MethodType(make_apply_stub("_apply_todo_completion"), service)
     service._apply_calendar_create = MethodType(make_apply_stub("_apply_calendar_create"), service)
@@ -1402,6 +1410,10 @@ def test_preview_cluster_returns_judged_actions_with_source_attribution() -> Non
     service._extract_actions = MethodType(fake_extract_actions, service)
     service._judge_actions = MethodType(fake_judge_actions, service)
     service._resolve_project = MethodType(fake_resolve_project, service)
+    service._deduplicate_action = MethodType(
+        lambda self, **kwargs: asyncio.sleep(0, result=DuplicateDecision(is_duplicate=False, reason="No duplicate.")),
+        service,
+    )
 
     preview = run(
         service._preview_cluster(
@@ -1495,6 +1507,159 @@ def test_extract_calendar_prompt_includes_historical_time_context() -> None:
     assert "cluster_end_time_local" in prompt
     assert "2026-01-14T15:00:00+00:00" in prompt
     assert "2026-01-14T15:05:00+00:00" in prompt
+
+
+def test_deterministic_duplicate_decision_matches_existing_open_todo() -> None:
+    service = make_service(client=None)
+
+    decision = service._deterministic_duplicate_decision(
+        action_type="todo.create",
+        action={"text": "Send 18.01 to Madelyn tonight"},
+        candidates=[
+            {
+                "artifact_type": "todo",
+                "artifact_id": 41,
+                "text": "Send 18.01 to Madelyn",
+            }
+        ],
+    )
+
+    assert decision.is_duplicate is True
+    assert decision.matched_candidate_type == "todo"
+    assert decision.matched_candidate_id == 41
+
+
+def test_process_cluster_skips_duplicate_existing_action_before_apply() -> None:
+    service = make_service(client=None)
+    cluster = make_cluster(
+        conversation_name="Personal Admin",
+        messages=(MessageExample("Please send 18.01 to Madelyn tonight."),),
+    )
+    payload = build_payload(
+        conversation_name="Personal Admin",
+        messages=(MessageExample("Please send 18.01 to Madelyn tonight."),),
+    )
+    run_record = SimpleNamespace(id=91, user_id=1)
+    extracted = empty_extracted()
+    extracted["todo_creates"] = [
+        {
+            "text": "Send 18.01 to Madelyn tonight",
+            "source_message_ids": [1],
+            "reason": "Direct request.",
+        }
+    ]
+    judged = empty_judgment()
+    judged["todo_creates"] = [{"approved": True, "reason": "Clear obligation."}]
+
+    async def fake_build_cluster_payload(self, *, cluster, project_catalog, time_zone):
+        return payload
+
+    async def fake_extract_actions(self, payload):
+        return extracted
+
+    async def fake_judge_actions(self, payload, extracted_payload):
+        return judged
+
+    async def fake_resolve_project(self, **kwargs):
+        return None
+
+    async def fake_deduplicate_action(self, **kwargs):
+        return DuplicateDecision(
+            is_duplicate=True,
+            reason="Existing open todo already covers this ask.",
+            matched_candidate_type="todo",
+            matched_candidate_id=77,
+        )
+
+    captured: dict[str, Any] = {}
+
+    async def fake_record_duplicate_action(self, **kwargs):
+        captured["duplicate"] = kwargs
+
+    async def fake_apply_todo_create(self, **kwargs):
+        raise AssertionError("Duplicate todo should not be applied.")
+
+    service._build_cluster_payload = MethodType(fake_build_cluster_payload, service)
+    service._extract_actions = MethodType(fake_extract_actions, service)
+    service._judge_actions = MethodType(fake_judge_actions, service)
+    service._resolve_project = MethodType(fake_resolve_project, service)
+    service._deduplicate_action = MethodType(fake_deduplicate_action, service)
+    service._record_duplicate_action = MethodType(fake_record_duplicate_action, service)
+    service._apply_todo_create = MethodType(fake_apply_todo_create, service)
+
+    result = run(
+        service._process_cluster(
+            run=run_record,
+            cluster=cluster,
+            project_catalog=[],
+            time_zone="America/New_York",
+        )
+    )
+
+    assert result == {"applied": 0}
+    assert captured["duplicate"]["duplicate"].matched_candidate_id == 77
+    assert all(message.processed_at_utc is not None for message in cluster.messages)
+
+
+def test_preview_cluster_marks_duplicate_action_as_not_approved() -> None:
+    service = make_service(client=None)
+    cluster = make_cluster(
+        conversation_name="Personal Admin",
+        messages=(MessageExample("Please send 18.01 to Madelyn tonight."),),
+    )
+
+    async def fake_build_cluster_payload(self, *, cluster, project_catalog, time_zone):
+        return build_payload(
+            conversation_name="Personal Admin",
+            messages=(MessageExample("Please send 18.01 to Madelyn tonight."),),
+        )
+
+    async def fake_extract_actions(self, payload):
+        extracted = empty_extracted()
+        extracted["todo_creates"] = [
+            {
+                "text": "Send 18.01 to Madelyn tonight",
+                "source_message_ids": [1],
+                "reason": "Direct request.",
+            }
+        ]
+        return extracted
+
+    async def fake_judge_actions(self, payload, extracted):
+        judged = empty_judgment()
+        judged["todo_creates"] = [{"approved": True, "reason": "Clear obligation."}]
+        return judged
+
+    async def fake_resolve_project(self, **kwargs):
+        return None
+
+    async def fake_deduplicate_action(self, **kwargs):
+        return DuplicateDecision(
+            is_duplicate=True,
+            reason="Existing open todo already covers this ask.",
+            matched_candidate_type="todo",
+            matched_candidate_id=77,
+        )
+
+    service._build_cluster_payload = MethodType(fake_build_cluster_payload, service)
+    service._extract_actions = MethodType(fake_extract_actions, service)
+    service._judge_actions = MethodType(fake_judge_actions, service)
+    service._resolve_project = MethodType(fake_resolve_project, service)
+    service._deduplicate_action = MethodType(fake_deduplicate_action, service)
+
+    preview = run(
+        service._preview_cluster(
+            cluster=cluster,
+            project_catalog=[],
+            time_zone="America/New_York",
+            user_id=1,
+        )
+    )
+
+    assert preview["actions"][0]["judge_approved"] is True
+    assert preview["actions"][0]["approved"] is False
+    assert preview["actions"][0]["dedup_duplicate"] is True
+    assert preview["actions"][0]["matched_candidate_id"] == 77
 
 
 def test_enrich_todo_text_preserves_named_person_and_subject() -> None:

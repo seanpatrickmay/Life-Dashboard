@@ -310,6 +310,59 @@ DATA:
 {payload_json}
 """
 
+IMESSAGE_ACTION_DEDUP_PROMPT = """
+You are the deduplication agent for an iMessage processing engine.
+Given one proposed action and a shortlist of existing candidate artifacts, decide whether the proposed action is already represented and should be skipped.
+
+Return ONLY valid JSON with this shape:
+{
+  "is_duplicate": boolean,
+  "matched_candidate_id": number | null,
+  "matched_candidate_type": string | null,
+  "reason": string
+}
+
+Rules:
+- Mark `is_duplicate` true only when the proposed action is already represented by one existing artifact of the same general kind.
+- Compare meaning, not exact wording.
+- If two phrasings refer to the same real-world obligation, meeting, deadline, conversation recap, or project fact, treat them as duplicates even when wording differs.
+- Do not collapse genuinely separate occurrences into one. Different days, different recipients, different deliverables, different meetings, or follow-up subtasks are not duplicates.
+- Todos:
+  - Duplicate when an existing open todo already captures the same obligation, recipient, deliverable, and timing closely enough.
+  - Not duplicate when the new action is a distinct follow-up or a separate ask.
+- Calendar:
+  - Duplicate when an existing event already represents the same meeting, dinner, deadline, or commitment with materially the same time window.
+  - Small summary wording differences or minor time shifts can still be duplicates.
+- Journal:
+  - Duplicate when an existing journal entry already records the same experience, conversation, decision, or accomplishment.
+  - Not duplicate when the proposed entry adds a distinct event or meaningfully different experience.
+- Workspace updates:
+  - Duplicate when an existing workspace update candidate already captures the same durable project fact, decision, or constraint.
+  - Not duplicate when the new summary captures a genuinely separate project fact.
+- Prefer false negatives over false positives when unsure.
+- If no candidate is a true duplicate, return `is_duplicate: false` with null candidate fields.
+
+Examples:
+1. Proposed todo: "Send 18.01 to Madelyn tonight"
+   Candidate todo: "Send 18.01 to Madelyn"
+   -> duplicate
+
+2. Proposed calendar: "Dinner with Owen" at 6-7 PM
+   Candidate calendar event: "Dinner" at 6-7 PM with Owen in description
+   -> duplicate
+
+3. Proposed journal: "Talked with Aidan about philosophy and compared deontology with consequentialism"
+   Candidate journal: "Long philosophy conversation with Aidan about consequentialism and deontology"
+   -> duplicate
+
+4. Proposed todo: "Ask Madelyn about the chem p-set"
+   Candidate todo: "Send 18.01 to Madelyn"
+   -> not duplicate
+
+DATA:
+{payload_json}
+"""
+
 IMESSAGE_PROJECT_INFERENCE_PROMPT = """
 You infer whether an iMessage cluster belongs to one existing project.
 Use the candidate list, heuristic signals, and message evidence.

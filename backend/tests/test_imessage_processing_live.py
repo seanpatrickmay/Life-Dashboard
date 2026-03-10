@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
-from types import MethodType
+from types import MethodType, SimpleNamespace
 from typing import Any, Callable
 
 import pytest
@@ -1218,3 +1218,51 @@ def test_live_llm_project_inference_cases(case: ProjectInferenceCase, live_servi
 
 def test_live_llm_mixed_cluster_cases(live_service: IMessageProcessingService) -> None:
     _run_mixed_cases_concurrently(cases=MIXED_EXTRACTION_CASES, live_service=live_service)
+
+
+def test_live_llm_deduplicator_todo_case(live_service: IMessageProcessingService) -> None:
+    service = clone_live_service(live_service)
+    cluster = SimpleNamespace(
+        messages=[
+            SimpleNamespace(
+                id=1,
+                sent_at_utc=datetime(2026, 3, 10, 15, 0, tzinfo=timezone.utc),
+                is_from_me=False,
+                sender_label="Madelyn",
+                handle_identifier="madelyn@example.com",
+                text="Please send 18.01 to Madelyn tonight.",
+            )
+        ]
+    )
+
+    async def fake_candidates(self, **kwargs):
+        return [
+            {
+                "artifact_type": "todo",
+                "artifact_id": 77,
+                "text": "Send 18.01 to Madelyn",
+                "deadline_utc": None,
+                "created_at": "2026-03-10T12:00:00Z",
+            }
+        ]
+
+    service._load_dedup_candidates = MethodType(fake_candidates, service)
+
+    decision = asyncio.run(
+        service._deduplicate_action(
+            user_id=1,
+            cluster=cluster,
+            action_type="todo.create",
+            action={
+                "text": "Send 18.01 to Madelyn tonight",
+                "source_message_ids": [1],
+                "reason": "Direct request.",
+            },
+            project_id=None,
+            time_zone="America/New_York",
+        )
+    )
+
+    assert decision.is_duplicate is True
+    assert decision.matched_candidate_type == "todo"
+    assert decision.matched_candidate_id == 77

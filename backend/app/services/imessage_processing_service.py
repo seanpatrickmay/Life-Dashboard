@@ -23,11 +23,14 @@ from app.db.models.imessage import (
     IMessageMessage,
     IMessageProcessingRun,
 )
+from app.db.models.calendar import CalendarEvent
+from app.db.models.journal import JournalEntry
 from app.db.models.project import Project
 from app.db.models.todo import TodoItem
 from app.db.repositories.project_repository import ProjectRepository
 from app.db.repositories.todo_repository import TodoRepository
 from app.prompts import (
+    IMESSAGE_ACTION_DEDUP_PROMPT,
     IMESSAGE_ACTION_EXTRACTION_PROMPT,
     IMESSAGE_ACTION_JUDGE_PROMPT,
     IMESSAGE_CALENDAR_EXTRACTION_PROMPT,
@@ -67,6 +70,7 @@ MAX_CLUSTER_GAP = timedelta(hours=6)
 PROJECT_ROUTER_MIN_CONFIDENCE = 0.32
 PROJECT_ROUTER_SKIP_CONFIDENCE = 0.88
 PROJECT_ROUTER_MARGIN = 0.18
+MAX_DEDUP_CANDIDATES = 8
 _HANDLE_LIKE_RE = re.compile(r"@|\d{7,}")
 _LEADING_PRONOUN_RE = re.compile(r"^(?:i|we)\s+", re.IGNORECASE)
 _TODO_PHRASE_RE = re.compile(
@@ -93,6 +97,14 @@ class MessageCluster:
 class JudgmentOutcome:
     approved: bool
     reason: str
+
+
+@dataclass(slots=True)
+class DuplicateDecision:
+    is_duplicate: bool
+    reason: str
+    matched_candidate_type: str | None = None
+    matched_candidate_id: int | None = None
 
 
 def cluster_messages(
@@ -528,6 +540,24 @@ class IMessageProcessingService:
                         judge_reasoning=verdict.reason,
                     )
                     continue
+                duplicate = await self._deduplicate_action(
+                    user_id=run.user_id,
+                    cluster=cluster,
+                    action_type=action_type,
+                    action=action,
+                    project_id=project.id if project else None,
+                    time_zone=time_zone,
+                )
+                if duplicate.is_duplicate:
+                    await self._record_duplicate_action(
+                        run=run,
+                        cluster=cluster,
+                        action_type=action_type,
+                        action=action,
+                        project_id=project.id if project else None,
+                        duplicate=duplicate,
+                    )
+                    continue
                 if key == "todo_creates":
                     applied = await self._apply_todo_create(
                         run=run,
@@ -622,6 +652,18 @@ class IMessageProcessingService:
         for key, action_type in action_specs:
             for index, action in enumerate(extracted.get(key) or []):
                 verdict = self._judge_item(judged, key, index)
+                duplicate = None
+                final_approved = verdict.approved
+                if verdict.approved:
+                    duplicate = await self._deduplicate_action(
+                        user_id=user_id,
+                        cluster=cluster,
+                        action_type=action_type,
+                        action=action,
+                        project_id=project.id if project else None,
+                        time_zone=time_zone,
+                    )
+                    final_approved = not duplicate.is_duplicate
                 source_message_ids = self._normalize_action_source_message_ids(
                     cluster.messages,
                     action_type,
@@ -636,8 +678,13 @@ class IMessageProcessingService:
                 actions.append(
                     {
                         "action_type": action_type,
-                        "approved": verdict.approved,
+                        "approved": final_approved,
+                        "judge_approved": verdict.approved,
                         "judge_reasoning": verdict.reason,
+                        "dedup_duplicate": bool(duplicate and duplicate.is_duplicate),
+                        "dedup_reason": duplicate.reason if duplicate else "",
+                        "matched_candidate_type": duplicate.matched_candidate_type if duplicate else None,
+                        "matched_candidate_id": duplicate.matched_candidate_id if duplicate else None,
                         "project_id": project.id if project else None,
                         "project_name": project.name if project else None,
                         "source_message_ids": source_message_ids,
@@ -1014,6 +1061,362 @@ class IMessageProcessingService:
                 for action in list(extracted.get(key) or [])
             ]
         return enriched
+
+    async def _deduplicate_action(
+        self,
+        *,
+        user_id: int,
+        cluster: MessageCluster,
+        action_type: str,
+        action: dict[str, Any],
+        project_id: int | None,
+        time_zone: str,
+    ) -> DuplicateDecision:
+        if action_type == "todo.complete":
+            return DuplicateDecision(is_duplicate=False, reason="Todo completion dedup handled by target completion state.")
+        candidates = await self._load_dedup_candidates(
+            user_id=user_id,
+            cluster=cluster,
+            action_type=action_type,
+            action=action,
+            project_id=project_id,
+            time_zone=time_zone,
+        )
+        if not candidates:
+            return DuplicateDecision(is_duplicate=False, reason="No plausible existing candidates found.")
+
+        deterministic = self._deterministic_duplicate_decision(
+            action_type=action_type,
+            action=action,
+            candidates=candidates,
+        )
+        if deterministic.is_duplicate:
+            return deterministic
+        if self.client is None:
+            return DuplicateDecision(is_duplicate=False, reason="LLM deduplicator unavailable and no hard duplicate matched.")
+
+        source_message_ids = self._normalize_action_source_message_ids(cluster.messages, action_type, action)
+        dedup_payload = {
+            "action_type": action_type,
+            "proposed_action": action,
+            "source_message_ids": source_message_ids,
+            "source_messages": [
+                {
+                    "id": message.id,
+                    "sent_at_utc": message.sent_at_utc.isoformat() if message.sent_at_utc else None,
+                    "is_from_me": message.is_from_me,
+                    "sender": message.sender_label or message.handle_identifier,
+                    "text": message.text or "",
+                }
+                for message in cluster.messages
+                if not source_message_ids or message.id in set(source_message_ids)
+            ],
+            "candidates": candidates,
+        }
+        prompt = IMESSAGE_ACTION_DEDUP_PROMPT.replace(
+            "{payload_json}",
+            json.dumps(dedup_payload, ensure_ascii=False),
+        )
+        text = await self._call_model(prompt)
+        parsed = self._safe_parse_json(text)
+        if not isinstance(parsed, dict):
+            return DuplicateDecision(is_duplicate=False, reason="Deduplicator returned invalid JSON.")
+        is_duplicate = bool(parsed.get("is_duplicate"))
+        matched_candidate_id = parsed.get("matched_candidate_id")
+        matched_candidate_type = str(parsed.get("matched_candidate_type") or "").strip() or None
+        try:
+            matched_candidate_id = int(matched_candidate_id) if matched_candidate_id is not None else None
+        except (TypeError, ValueError):
+            matched_candidate_id = None
+        if not is_duplicate:
+            return DuplicateDecision(
+                is_duplicate=False,
+                reason=str(parsed.get("reason") or "No duplicate candidate identified."),
+            )
+        candidate = next(
+            (
+                item for item in candidates
+                if item.get("artifact_id") == matched_candidate_id
+                and item.get("artifact_type") == matched_candidate_type
+            ),
+            None,
+        )
+        return DuplicateDecision(
+            is_duplicate=True,
+            reason=str(parsed.get("reason") or "Existing artifact already represents this action."),
+            matched_candidate_type=(candidate or {}).get("artifact_type") or matched_candidate_type,
+            matched_candidate_id=(candidate or {}).get("artifact_id") or matched_candidate_id,
+        )
+
+    async def _load_dedup_candidates(
+        self,
+        *,
+        user_id: int,
+        cluster: MessageCluster,
+        action_type: str,
+        action: dict[str, Any],
+        project_id: int | None,
+        time_zone: str,
+    ) -> list[dict[str, Any]]:
+        if action_type == "todo.create":
+            return await self._todo_dedup_candidates(user_id=user_id, action=action, project_id=project_id)
+        if action_type == "calendar.create":
+            return await self._calendar_dedup_candidates(user_id=user_id, action=action)
+        if action_type == "journal.entry":
+            occurred_at_utc = self._action_source_occurred_at_utc(
+                cluster=cluster,
+                action_type=action_type,
+                action=action,
+            )
+            return await self._journal_dedup_candidates(
+                user_id=user_id,
+                action=action,
+                time_zone=time_zone,
+                occurred_at_utc=occurred_at_utc,
+            )
+        if action_type == "workspace.update":
+            return await self._workspace_dedup_candidates(user_id=user_id, action=action, project_id=project_id)
+        return []
+
+    def _text_similarity(self, left: str | None, right: str | None) -> float:
+        return SequenceMatcher(None, normalize_message_text(left).lower(), normalize_message_text(right).lower()).ratio()
+
+    def _token_overlap_score(self, left: str | None, right: str | None) -> float:
+        left_tokens = content_tokens(left)
+        right_tokens = content_tokens(right)
+        if not left_tokens or not right_tokens:
+            return 0.0
+        return len(left_tokens & right_tokens) / max(min(len(left_tokens), len(right_tokens)), 1)
+
+    def _ranked_text_candidates(
+        self,
+        *,
+        action_text: str,
+        candidates: list[dict[str, Any]],
+        time_bonus: callable | None = None,
+    ) -> list[dict[str, Any]]:
+        ranked: list[tuple[float, dict[str, Any]]] = []
+        for candidate in candidates:
+            candidate_text = str(candidate.get("text") or "")
+            similarity = self._text_similarity(action_text, candidate_text)
+            overlap = self._token_overlap_score(action_text, candidate_text)
+            score = max(similarity, overlap)
+            if time_bonus is not None:
+                score += float(time_bonus(candidate) or 0.0)
+            if score >= 0.18:
+                ranked.append((score, candidate))
+        ranked.sort(key=lambda item: (-item[0], int(item[1].get("artifact_id") or 0)))
+        return [item[1] for item in ranked[:MAX_DEDUP_CANDIDATES]]
+
+    async def _todo_dedup_candidates(
+        self,
+        *,
+        user_id: int,
+        action: dict[str, Any],
+        project_id: int | None,
+    ) -> list[dict[str, Any]]:
+        action_text = normalize_message_text(action.get("text"))
+        if not action_text:
+            return []
+        todos = [todo for todo in await self.todo_repo.list_for_user(user_id) if not todo.completed]
+        if project_id is not None:
+            todos = [todo for todo in todos if todo.project_id == project_id] or todos
+        candidates = [
+            {
+                "artifact_type": "todo",
+                "artifact_id": todo.id,
+                "project_id": todo.project_id,
+                "text": todo.text,
+                "deadline_utc": todo.deadline_utc.isoformat() if todo.deadline_utc else None,
+                "created_at": todo.created_at.isoformat() if todo.created_at else None,
+            }
+            for todo in todos
+        ]
+        return self._ranked_text_candidates(action_text=action_text, candidates=candidates)
+
+    async def _calendar_dedup_candidates(
+        self,
+        *,
+        user_id: int,
+        action: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        summary = normalize_message_text(action.get("summary"))
+        start = self._parse_dt(action.get("start_time"))
+        end = self._parse_dt(action.get("end_time"))
+        if not summary or start is None or end is None:
+            return []
+        window_start = start - (timedelta(days=2) if bool(action.get("is_all_day")) else timedelta(hours=12))
+        window_end = end + (timedelta(days=2) if bool(action.get("is_all_day")) else timedelta(hours=12))
+        stmt = (
+            select(CalendarEvent)
+            .where(
+                CalendarEvent.user_id == user_id,
+                or_(CalendarEvent.status.is_(None), CalendarEvent.status != "cancelled"),
+                CalendarEvent.start_time.is_not(None),
+                CalendarEvent.end_time.is_not(None),
+                CalendarEvent.start_time <= window_end,
+                CalendarEvent.end_time >= window_start,
+            )
+            .order_by(CalendarEvent.start_time.asc())
+            .limit(30)
+        )
+        events = list((await self.session.execute(stmt)).scalars().all())
+        candidates = [
+            {
+                "artifact_type": "calendar_event",
+                "artifact_id": event.id,
+                "text": event.summary or "",
+                "start_time": event.start_time.isoformat() if event.start_time else None,
+                "end_time": event.end_time.isoformat() if event.end_time else None,
+                "is_all_day": bool(event.is_all_day),
+            }
+            for event in events
+        ]
+
+        def _time_bonus(candidate: dict[str, Any]) -> float:
+            candidate_start = self._parse_dt(candidate.get("start_time"))
+            if candidate_start is None:
+                return 0.0
+            delta = abs((candidate_start - start).total_seconds())
+            if delta <= 900:
+                return 0.4
+            if delta <= 3600:
+                return 0.25
+            if delta <= 21600:
+                return 0.1
+            return 0.0
+
+        return self._ranked_text_candidates(action_text=summary, candidates=candidates, time_bonus=_time_bonus)
+
+    async def _journal_dedup_candidates(
+        self,
+        *,
+        user_id: int,
+        action: dict[str, Any],
+        time_zone: str,
+        occurred_at_utc: datetime | None,
+    ) -> list[dict[str, Any]]:
+        text = normalize_message_text(action.get("text"))
+        if not text:
+            return []
+        occurred_at = occurred_at_utc or self._parse_dt(action.get("source_occurred_at_utc")) or self._parse_dt(action.get("occurred_at_utc"))
+        if occurred_at is None:
+            occurred_at = datetime.now(timezone.utc)
+        local_date = occurred_at.astimezone(resolve_time_zone(time_zone)).date()
+        stmt = (
+            select(JournalEntry)
+            .where(
+                JournalEntry.user_id == user_id,
+                JournalEntry.local_date >= (local_date - timedelta(days=1)),
+                JournalEntry.local_date <= (local_date + timedelta(days=1)),
+            )
+            .order_by(JournalEntry.created_at.desc())
+            .limit(30)
+        )
+        entries = list((await self.session.execute(stmt)).scalars().all())
+        candidates = [
+            {
+                "artifact_type": "journal_entry",
+                "artifact_id": entry.id,
+                "text": entry.text,
+                "local_date": entry.local_date.isoformat(),
+                "created_at": entry.created_at.isoformat() if entry.created_at else None,
+            }
+            for entry in entries
+        ]
+        return self._ranked_text_candidates(action_text=text, candidates=candidates)
+
+    async def _workspace_dedup_candidates(
+        self,
+        *,
+        user_id: int,
+        action: dict[str, Any],
+        project_id: int | None,
+    ) -> list[dict[str, Any]]:
+        if project_id is None:
+            return []
+        summary = normalize_message_text(action.get("summary"))
+        if not summary:
+            return []
+        stmt = (
+            select(IMessageActionAudit)
+            .where(
+                IMessageActionAudit.user_id == user_id,
+                IMessageActionAudit.project_id == project_id,
+                IMessageActionAudit.action_type == "workspace.update",
+                IMessageActionAudit.status.in_(["applied", "skipped_duplicate_existing", "skipped_duplicate_content"]),
+            )
+            .order_by(IMessageActionAudit.created_at.desc())
+            .limit(30)
+        )
+        audits = list((await self.session.execute(stmt)).scalars().all())
+        candidates = []
+        for audit in audits:
+            extracted = audit.extracted_payload or {}
+            candidate_summary = normalize_message_text(extracted.get("summary"))
+            if not candidate_summary:
+                continue
+            candidates.append(
+                {
+                    "artifact_type": "workspace_update",
+                    "artifact_id": int(audit.target_page_id or audit.id),
+                    "text": candidate_summary,
+                    "page_title": str(extracted.get("page_title") or ""),
+                    "target_page_id": audit.target_page_id,
+                    "source_occurred_at_utc": audit.source_occurred_at_utc.isoformat() if audit.source_occurred_at_utc else None,
+                }
+            )
+        return self._ranked_text_candidates(action_text=summary, candidates=candidates)
+
+    def _deterministic_duplicate_decision(
+        self,
+        *,
+        action_type: str,
+        action: dict[str, Any],
+        candidates: list[dict[str, Any]],
+    ) -> DuplicateDecision:
+        if not candidates:
+            return DuplicateDecision(is_duplicate=False, reason="No candidates.")
+        action_text = normalize_message_text(
+            action.get("text") or action.get("summary") or action.get("match_text")
+        )
+        best_candidate = candidates[0]
+        best_score = max(
+            self._text_similarity(action_text, best_candidate.get("text")),
+            self._token_overlap_score(action_text, best_candidate.get("text")),
+        )
+        if action_type == "calendar.create":
+            proposed_start = self._parse_dt(action.get("start_time"))
+            candidate_start = self._parse_dt(best_candidate.get("start_time"))
+            if proposed_start and candidate_start and abs((candidate_start - proposed_start).total_seconds()) <= 3600 and best_score >= 0.72:
+                return DuplicateDecision(
+                    is_duplicate=True,
+                    reason="Existing calendar event matches the same commitment closely enough.",
+                    matched_candidate_type=str(best_candidate.get("artifact_type") or "calendar_event"),
+                    matched_candidate_id=int(best_candidate.get("artifact_id") or 0),
+                )
+        elif action_type == "todo.create" and best_score >= 0.9:
+            return DuplicateDecision(
+                is_duplicate=True,
+                reason="Existing open todo already captures the same obligation.",
+                matched_candidate_type="todo",
+                matched_candidate_id=int(best_candidate.get("artifact_id") or 0),
+            )
+        elif action_type == "journal.entry" and best_score >= 0.9:
+            return DuplicateDecision(
+                is_duplicate=True,
+                reason="Existing journal entry already captures the same experience.",
+                matched_candidate_type="journal_entry",
+                matched_candidate_id=int(best_candidate.get("artifact_id") or 0),
+            )
+        elif action_type == "workspace.update" and best_score >= 0.88:
+            return DuplicateDecision(
+                is_duplicate=True,
+                reason="Existing workspace update already captures the same durable fact.",
+                matched_candidate_type="workspace_update",
+                matched_candidate_id=int(best_candidate.get("artifact_id") or 0),
+            )
+        return DuplicateDecision(is_duplicate=False, reason="No hard duplicate matched.")
 
     def _support_messages_for_action(
         self,
@@ -1665,6 +2068,64 @@ class IMessageProcessingService:
             judge_reasoning=judge_reasoning,
             supporting_message_ids=source_message_ids,
             source_occurred_at_utc=source_occurred_at_utc,
+        )
+
+    async def _record_duplicate_action(
+        self,
+        *,
+        run: IMessageProcessingRun,
+        cluster: MessageCluster,
+        action_type: str,
+        action: dict[str, Any],
+        project_id: int | None,
+        duplicate: DuplicateDecision,
+    ) -> None:
+        fingerprint = stable_fingerprint(
+            action_type,
+            cluster.conversation.id,
+            "skipped_duplicate_existing",
+            json.dumps(action, sort_keys=True, ensure_ascii=True, default=str),
+            duplicate.matched_candidate_type,
+            duplicate.matched_candidate_id,
+        )
+        if await self._audit_exists(run.user_id, fingerprint):
+            return
+        source_message_ids = self._normalize_action_source_message_ids(
+            cluster.messages,
+            action_type,
+            action,
+        )
+        source_occurred_at_utc = self._action_source_occurred_at_utc(
+            cluster=cluster,
+            action_type=action_type,
+            action=action,
+            source_message_ids=source_message_ids,
+        )
+        target_kwargs: dict[str, Any] = {}
+        if duplicate.matched_candidate_type == "todo":
+            target_kwargs["target_todo_id"] = duplicate.matched_candidate_id
+        elif duplicate.matched_candidate_type == "calendar_event":
+            target_kwargs["target_calendar_event_id"] = duplicate.matched_candidate_id
+        elif duplicate.matched_candidate_type == "journal_entry":
+            target_kwargs["target_journal_entry_id"] = duplicate.matched_candidate_id
+        elif duplicate.matched_candidate_type == "workspace_update":
+            target_kwargs["target_page_id"] = duplicate.matched_candidate_id
+        await self._record_action_audit(
+            run=run,
+            cluster=cluster,
+            action_type=action_type,
+            fingerprint=fingerprint,
+            status="skipped_duplicate_existing",
+            project_id=project_id,
+            action=action,
+            judge_reasoning=duplicate.reason,
+            supporting_message_ids=source_message_ids,
+            source_occurred_at_utc=source_occurred_at_utc,
+            applied_payload={
+                "matched_candidate_type": duplicate.matched_candidate_type,
+                "matched_candidate_id": duplicate.matched_candidate_id,
+            },
+            **target_kwargs,
         )
 
     async def _apply_todo_create(
