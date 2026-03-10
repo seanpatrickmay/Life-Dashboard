@@ -74,6 +74,20 @@ class User(Base):
     calendars: Mapped[list["GoogleCalendar"]] = relationship(back_populates="user")
     calendar_events: Mapped[list["CalendarEvent"]] = relationship(back_populates="user")
     todo_event_links: Mapped[list["TodoEventLink"]] = relationship(back_populates="user")
+    imessage_conversations: Mapped[list["IMessageConversation"]] = relationship(
+        back_populates="user"
+    )
+    imessage_messages: Mapped[list["IMessageMessage"]] = relationship(back_populates="user")
+    imessage_sync_runs: Mapped[list["IMessageSyncRun"]] = relationship(back_populates="user")
+    imessage_processing_runs: Mapped[list["IMessageProcessingRun"]] = relationship(
+        back_populates="user"
+    )
+    imessage_action_audits: Mapped[list["IMessageActionAudit"]] = relationship(
+        back_populates="user"
+    )
+    imessage_contact_identities: Mapped[list["IMessageContactIdentity"]] = relationship(
+        back_populates="user"
+    )
 
 
 class Activity(Base):

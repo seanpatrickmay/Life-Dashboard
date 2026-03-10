@@ -86,6 +86,8 @@ async def reauth_garmin(
             detail="Stored Garmin credentials could not be decrypted.",
         ) from exc
     try:
+        # Release any read-only transaction before the external Garmin login call.
+        await session.rollback()
         await asyncio.to_thread(client.authenticate)
     except Exception as exc:  # noqa: BLE001
         await service.mark_reauth_required(current_user.id, True)

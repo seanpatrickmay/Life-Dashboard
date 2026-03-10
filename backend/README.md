@@ -10,3 +10,4 @@ FastAPI application powering Garmin ingestion, data aggregation, and Vertex AI r
 - `app/services` — ingestion and analytics services.
 - `app/routers` — FastAPI routers for metrics, insights, and admin utilities.
 - `app/workers` — background/scheduled jobs.
+- `mcp_server` — private MCP server for workspace, project, and task tools. See `mcp_server/README.md`.

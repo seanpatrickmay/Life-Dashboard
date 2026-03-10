@@ -241,7 +241,10 @@ class MonetAssistantAgent:
             )
 
         context = await self.context_builder.build_context(
-            user_id, window_days, time_zone=time_zone
+            user_id,
+            window_days,
+            time_zone=time_zone,
+            page_context=page_context,
         )
         logger.debug("[assistant] context built window=%s keys=%s", window_days, context.keys())
         decision = await self._route_message(message, context)

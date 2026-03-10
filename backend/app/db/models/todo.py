@@ -38,10 +38,10 @@ class TodoItem(Base):
     back_populates="todo", uselist=False
   )
 
-  def mark_completed(self, done: bool) -> None:
+  def mark_completed(self, done: bool, *, completed_at_utc: datetime | None = None) -> None:
     """Set completion flag and timestamp."""
     self.completed = done
     if done:
-      self.completed_at_utc = datetime.now(timezone.utc)
+      self.completed_at_utc = completed_at_utc or datetime.now(timezone.utc)
     else:
       self.completed_at_utc = None

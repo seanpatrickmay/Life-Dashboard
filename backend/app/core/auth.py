@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import Cookie, Depends, HTTPException, Response, status
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,6 +28,16 @@ def _session_ttl(remember_me: bool) -> timedelta:
     if remember_me:
         return timedelta(days=settings.session_ttl_days)
     return timedelta(hours=settings.session_ttl_hours)
+
+
+async def _execute_with_reconnect(session: AsyncSession, stmt):  # noqa: ANN001
+    try:
+        return await session.execute(stmt)
+    except DBAPIError as exc:
+        if not exc.connection_invalidated:
+            raise
+        await session.close()
+        return await session.execute(stmt)
 
 
 async def create_user_session(
@@ -79,7 +90,7 @@ async def get_current_session(
         .options(selectinload(UserSession.user))
         .where(UserSession.token_hash == token_hash)
     )
-    result = await session.execute(stmt)
+    result = await _execute_with_reconnect(session, stmt)
     session_obj = result.scalar_one_or_none()
     now = eastern_now()
     if not session_obj or session_obj.revoked_at is not None:

@@ -10,10 +10,12 @@ __pycache__/
 *.pyo
 *.pyd
 *.sqlite3
+.venv/
 venv/
 .poetry/
 .mypy_cache/
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 .garminconnect/
@@ -34,7 +36,8 @@ db_data/
 
 # Misc
 coverage.xml
+output/
+scripts/debug_output/
 
 # Playwright artifacts
 .playwright-cli/
-output/playwright/

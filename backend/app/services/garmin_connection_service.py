@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.garmin_client import GarminClient
 from app.core.config import settings
-from app.core.crypto import decrypt_secret, encrypt_secret
+from app.core.crypto import (
+    current_garmin_encryption_key_id,
+    decrypt_secret_with_context,
+    encrypt_secret,
+)
 from app.db.models.entities import GarminConnection
 from app.utils.timezone import eastern_now
 
@@ -33,6 +37,8 @@ class GarminConnectionService:
             email=garmin_email,
             password=garmin_password,
         )
+        # Request-scoped sessions may already have an open read transaction from auth.
+        await self.session.rollback()
         await asyncio.to_thread(client.authenticate)
         encrypted_password = encrypt_secret(garmin_password)
         now = eastern_now()
@@ -41,6 +47,7 @@ class GarminConnectionService:
         if existing:
             existing.garmin_email = garmin_email
             existing.encrypted_password = encrypted_password
+            existing.encryption_key_id = current_garmin_encryption_key_id()
             existing.token_store_path = str(token_store_path)
             existing.connected_at = now
             existing.last_sync_at = now
@@ -51,6 +58,7 @@ class GarminConnectionService:
                 user_id=user_id,
                 garmin_email=garmin_email,
                 encrypted_password=encrypted_password,
+                encryption_key_id=current_garmin_encryption_key_id(),
                 token_store_path=str(token_store_path),
                 connected_at=now,
                 last_sync_at=now,
@@ -64,7 +72,19 @@ class GarminConnectionService:
         connection = await self.get_connection(user_id)
         if not connection:
             raise RuntimeError("Garmin connection not found.")
-        password = decrypt_secret(connection.encrypted_password)
+        try:
+            password, used_fallback_key = decrypt_secret_with_context(connection.encrypted_password)
+        except ValueError:
+            connection.requires_reauth = True
+            connection.last_sync_at = eastern_now()
+            await self.session.commit()
+            raise
+        current_key_id = current_garmin_encryption_key_id()
+        if used_fallback_key or connection.encryption_key_id != current_key_id:
+            connection.encrypted_password = encrypt_secret(password)
+            connection.encryption_key_id = current_key_id
+            connection.requires_reauth = False
+            await self.session.commit()
         return GarminClient(
             tokens_dir=Path(connection.token_store_path),
             email=connection.garmin_email,

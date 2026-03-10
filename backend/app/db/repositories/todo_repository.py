@@ -47,6 +47,8 @@ class TodoRepository:
     user_id: int,
     project_id: int,
     items: Iterable[tuple[str, datetime | None] | tuple[str, datetime | None, bool]],
+    *,
+    created_at: datetime | None = None,
   ) -> list[TodoItem]:
     """Create multiple todo items."""
     created: list[TodoItem] = []
@@ -63,6 +65,9 @@ class TodoRepository:
         deadline_utc=_to_utc(deadline),
         deadline_is_date_only=bool(date_only),
       )
+      if created_at is not None:
+        todo.created_at = _to_utc(created_at) or todo.created_at
+        todo.updated_at = todo.created_at
       self.session.add(todo)
       created.append(todo)
     return created
@@ -74,6 +79,8 @@ class TodoRepository:
     text: str,
     deadline: datetime | None,
     deadline_is_date_only: bool = False,
+    *,
+    created_at: datetime | None = None,
   ) -> TodoItem:
     todo = TodoItem(
       user_id=user_id,
@@ -82,6 +89,9 @@ class TodoRepository:
       deadline_utc=_to_utc(deadline),
       deadline_is_date_only=deadline_is_date_only,
     )
+    if created_at is not None:
+      todo.created_at = _to_utc(created_at) or todo.created_at
+      todo.updated_at = todo.created_at
     self.session.add(todo)
     return todo
 

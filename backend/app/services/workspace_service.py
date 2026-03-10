@@ -171,6 +171,45 @@ class WorkspaceService:
         await self._require_page(user_id, page_id)
         return WorkspaceBacklinksResponse(backlinks=await self._list_backlinks(user_id, page_id))
 
+    async def find_project_page(self, user_id: int, project_id: int) -> WorkspacePage | None:
+        await self.ensure_workspace(user_id)
+        stmt = select(WorkspacePage).where(
+            WorkspacePage.user_id == user_id,
+            WorkspacePage.legacy_project_id == project_id,
+            WorkspacePage.trashed_at.is_(None),
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_page_subtree(
+        self, user_id: int, page_id: int, *, include_root: bool = True
+    ) -> list[WorkspacePage]:
+        await self.ensure_workspace(user_id)
+        root = await self._require_page(user_id, page_id)
+        pages: list[WorkspacePage] = [root] if include_root else []
+        queue = [root.id]
+        while queue:
+            current_parent = queue.pop(0)
+            children = await self._list_children(user_id, current_parent)
+            for child in children:
+                pages.append(child)
+                queue.append(child.id)
+        return pages
+
+    async def replace_page_body(self, user_id: int, page_id: int, body: str) -> WorkspacePage:
+        await self.ensure_workspace(user_id)
+        page = await self._require_page(user_id, page_id)
+        await self._replace_page_blocks(page.id, body)
+        await self._sync_page_record_to_legacy(user_id, page)
+        await self._sync_page_body_to_legacy(user_id, page)
+        await self.session.commit()
+        return page
+
+    async def get_page_text_body(self, user_id: int, page_id: int) -> str:
+        await self.ensure_workspace(user_id)
+        await self._require_page(user_id, page_id)
+        return await self._page_text_body(page_id)
+
     async def mark_recent(self, user_id: int, page_id: int) -> None:
         await self.ensure_workspace(user_id)
         await self._require_page(user_id, page_id)

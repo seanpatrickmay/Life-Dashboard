@@ -8,7 +8,7 @@ package-mode = false
 [tool.poetry.dependencies]
 python = "^3.11"
 fastapi = "^0.115.0"
-uvicorn = { extras = ["standard"], version = "^0.30.0" }
+uvicorn = {version = ">=0.31.1,<1.0.0", extras = ["standard"]}
 sqlalchemy = { version = "^2.0.30", extras = ["asyncio"] }
 asyncpg = "^0.29.0"
 pydantic = "^2.8.0"
@@ -28,6 +28,7 @@ google-genai = "^0.5.0"
 cryptography = "^42.0.0"
 email-validator = "^2.1.0"
 python-multipart = "^0.0.22"
+mcp = "^1.26.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.4"
@@ -35,6 +36,11 @@ isort = "^5.13"
 mypy = "^1.8"
 ruff = "^0.4.0"
 pytest = "^8.3"
+
+[tool.pytest.ini_options]
+markers = [
+  "live_llm: runs real LLM evaluations against the iMessage extractor and judge prompts",
+]
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]

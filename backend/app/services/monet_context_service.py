@@ -10,10 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.entities import DailyMetric
 from app.db.models.calendar import CalendarEvent, GoogleCalendar
 from app.db.models.todo import TodoItem
+from app.db.models.workspace import WorkspacePage
+from app.schemas.assistant import AssistantPageContext
 from app.db.repositories.metrics_repository import MetricsRepository
 from app.db.repositories.todo_repository import TodoRepository
 from app.services.nutrition_intake_service import NutritionIntakeService
 from app.services.user_profile_service import UserProfileService
+from app.services.workspace_service import WorkspaceService
 from app.utils.timezone import eastern_today, local_now
 
 
@@ -26,9 +29,14 @@ class MonetContextBuilder:
         self.todo_repo = TodoRepository(session)
         self.nutrition_service = NutritionIntakeService(session)
         self.profile_service = UserProfileService(session)
+        self.workspace_service = WorkspaceService(session)
 
     async def build_context(
-        self, user_id: int, window_days: int = 7, time_zone: str | None = None
+        self,
+        user_id: int,
+        window_days: int = 7,
+        time_zone: str | None = None,
+        page_context: AssistantPageContext | None = None,
     ) -> dict[str, Any]:
         today = eastern_today()
         if window_days < 1:
@@ -48,6 +56,7 @@ class MonetContextBuilder:
         todos = await self.todo_repo.list_for_user(user_id)
         todo_payload = [self._serialize_todo(todo) for todo in todos]
         calendar_payload = await self._serialize_calendar_events(user_id, window_days, time_zone)
+        workspace_payload = await self._serialize_workspace_knowledge(user_id, page_context)
 
         return {
             "window_days": window_days,
@@ -69,6 +78,7 @@ class MonetContextBuilder:
             "profile": self._convert_dates(profile_payload),
             "todos": todo_payload,
             "calendar_events": calendar_payload,
+            "workspace": workspace_payload,
         }
 
     def _serialize_metric(self, metric: DailyMetric) -> dict[str, Any]:
@@ -182,6 +192,111 @@ class MonetContextBuilder:
             )
         return _dedupe_events(events)
 
+    async def _serialize_workspace_knowledge(
+        self,
+        user_id: int,
+        page_context: AssistantPageContext | None,
+    ) -> dict[str, Any]:
+        await self.workspace_service.ensure_workspace(user_id)
+        recent_pages = await self._list_recent_workspace_pages(user_id, limit=6)
+        payload: dict[str, Any] = {
+            "recent_pages": recent_pages,
+        }
+
+        selected_entity = page_context.selected_entity if page_context else None
+        selected_project_id = selected_entity.project_id if selected_entity else None
+        if selected_project_id:
+            project_payload = await self._serialize_selected_project(user_id, selected_project_id)
+            if project_payload is not None:
+                payload["selected_project"] = project_payload
+
+        selected_note_id = selected_entity.note_id if selected_entity else None
+        if selected_note_id:
+            note_payload = await self._serialize_selected_note(user_id, selected_note_id)
+            if note_payload is not None:
+                payload["selected_note"] = note_payload
+
+        return payload
+
+    async def _list_recent_workspace_pages(self, user_id: int, *, limit: int) -> list[dict[str, Any]]:
+        stmt = (
+            select(WorkspacePage)
+            .where(
+                WorkspacePage.user_id == user_id,
+                WorkspacePage.trashed_at.is_(None),
+                WorkspacePage.kind.in_(("page", "note", "database_row")),
+            )
+            .order_by(WorkspacePage.updated_at.desc(), WorkspacePage.id.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        pages = list(result.scalars().all())
+        serialized: list[dict[str, Any]] = []
+        for page in pages:
+            body = await self.workspace_service.get_page_text_body(user_id, page.id)
+            serialized.append(self._serialize_workspace_page(page, body, max_chars=320))
+        return serialized
+
+    async def _serialize_selected_project(
+        self,
+        user_id: int,
+        project_id: int,
+    ) -> dict[str, Any] | None:
+        project_page = await self.workspace_service.find_project_page(user_id, project_id)
+        if project_page is None:
+            return None
+        subtree = await self.workspace_service.list_page_subtree(
+            user_id,
+            project_page.id,
+            include_root=True,
+        )
+        ordered_pages = [project_page] + sorted(
+            [page for page in subtree if page.id != project_page.id and page.kind in {"page", "note"}],
+            key=lambda page: (page.updated_at or datetime.min.replace(tzinfo=timezone.utc), page.id),
+            reverse=True,
+        )
+        serialized_pages: list[dict[str, Any]] = []
+        for page in ordered_pages[:8]:
+            body = await self.workspace_service.get_page_text_body(user_id, page.id)
+            serialized_pages.append(self._serialize_workspace_page(page, body, max_chars=700))
+        return {
+            "project_id": project_id,
+            "project_page_id": project_page.id,
+            "project_name": project_page.title,
+            "pages": serialized_pages,
+        }
+
+    async def _serialize_selected_note(self, user_id: int, note_id: int) -> dict[str, Any] | None:
+        stmt = select(WorkspacePage).where(
+            WorkspacePage.user_id == user_id,
+            WorkspacePage.legacy_note_id == note_id,
+            WorkspacePage.trashed_at.is_(None),
+        )
+        result = await self.session.execute(stmt)
+        page = result.scalar_one_or_none()
+        if page is None:
+            return None
+        body = await self.workspace_service.get_page_text_body(user_id, page.id)
+        return self._serialize_workspace_page(page, body, max_chars=900)
+
+    def _serialize_workspace_page(
+        self,
+        page: WorkspacePage,
+        body: str,
+        *,
+        max_chars: int,
+    ) -> dict[str, Any]:
+        return {
+            "page_id": page.id,
+            "title": page.title,
+            "kind": page.kind,
+            "description": _cap_words(page.description, 50),
+            "body_excerpt": _truncate_text(body, max_chars=max_chars),
+            "legacy_project_id": page.legacy_project_id,
+            "legacy_note_id": page.legacy_note_id,
+            "updated_at": page.updated_at.isoformat() if page.updated_at else None,
+        }
+
     def _convert_dates(self, value: Any) -> Any:
         if isinstance(value, list):
             return [self._convert_dates(item) for item in value]
@@ -221,6 +336,15 @@ def _cap_words(text: str | None, max_words: int) -> str | None:
     if len(words) <= max_words:
         return text
     return " ".join(words[:max_words])
+
+
+def _truncate_text(text: str | None, *, max_chars: int) -> str | None:
+    if not text:
+        return text
+    normalized = " ".join(text.split())
+    if len(normalized) <= max_chars:
+        return normalized
+    return normalized[: max_chars - 1].rstrip() + "…"
 
 
 def _dedupe_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:

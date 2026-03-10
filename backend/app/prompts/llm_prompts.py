@@ -117,6 +117,346 @@ Todo:
 {todo_text}
 """
 
+IMESSAGE_ACTION_EXTRACTION_PROMPT = """
+You are the non-calendar action extractor for an iMessage processing engine.
+Read the conversation metadata, recent messages, open todos, project list, and current project inference.
+Do not mention or rely on any chatbot behavior. Your job is to extract non-calendar structured actions.
+
+Return ONLY valid JSON with this shape:
+{
+  "todo_creates": [
+    {
+      "text": string,
+      "deadline_utc": string | null,
+      "deadline_is_date_only": boolean,
+      "source_message_ids": number[],
+      "reason": string
+    }
+  ],
+  "todo_completions": [
+    {
+      "source_message_ids": number[],
+      "match_text": string,
+      "reason": string
+    }
+  ],
+  "journal_entries": [
+    {
+      "source_message_ids": number[],
+      "text": string,
+      "reason": string
+    }
+  ],
+  "workspace_updates": [
+    {
+      "page_title": string,
+      "search_query": string,
+      "summary": string,
+      "source_message_ids": number[],
+      "reason": string
+    }
+  ]
+}
+
+Rules:
+- Return every distinct, well-supported action in the chunk. A single chunk can yield multiple todos, multiple journal entries, and multiple workspace updates.
+- Do not choose one "best" action. If two actions are independently supported, emit both.
+- Every action must include `source_message_ids`, using the exact `messages[].id` values that support that action.
+- If one message introduces the action and another confirms it, include both message IDs in chronological order.
+- Each message includes `sent_at_utc`, and `time_context` provides the cluster bounds. Interpret relative phrases like today, tomorrow, tonight, this afternoon, Friday, or next week from the message timestamp that contains the phrase, not from the current runtime date.
+- If multiple messages contribute to one action, anchor the timing to the latest relevant confirming message. Use `time_context.cluster_end_time_local` only as a fallback when the relevant message lacks a timestamp.
+- Create todos for explicit or strongly implied obligations that belong to the user.
+- Treat first-person obligation statements such as "I need to...", "I have to...", or "I should..." as todo creates when `is_from_me` is true, unless the same message clearly says the work is already finished.
+- Also create a todo when another participant directly asks the user to do something.
+- Do not create a user todo when another participant is describing their own task or plan.
+- Use todo_completions only when user-authored messages strongly indicate an existing todo is done.
+- Ignore calendar events in this prompt. They are handled separately.
+- Task-like obligations such as "I need to send...", "I have to submit...", or "remind me to..." belong in todos even when they mention time words like "tonight", "tomorrow", or "before Friday". Do not convert those into calendar items here.
+- When a todo has an explicit or strongly implied due time, populate `deadline_utc` as an ISO 8601 UTC timestamp anchored to the source message time. If the text is not specific enough, leave `deadline_utc` null.
+- journal_entries can describe concrete actions, accomplishments, meaningful conversations, learning moments, decisions the user participated in, or planning discussions worth remembering.
+- If a chunk contains both a completed action and a meaningful conversation, you may emit multiple journal_entries.
+- workspace_updates should be factual project knowledge updates, not message digests.
+- Only create workspace_updates when `project_inference.project_name` is non-null and the messages contain a durable project fact, constraint, decision, or agreed strategy.
+- A single chunk can produce multiple workspace_updates if it contains multiple distinct durable facts or decisions.
+- If a chunk contains both a durable project fact and an agreed follow-up task, emit both the workspace_update and the todo_create.
+- Preserve salient nouns from the source messages whenever they are explicitly present: person names, the specific thing being sent or asked about, the show being watched, the trip or event being planned, the class/problem set/document name, and the exact deliverable.
+- Prefer richer wording over compressed wording when compression would drop the who/what details needed to make the action useful.
+- Good todo wording: "Meet with Owen to plan the poker trip and play heads-up", "Send 18.01 to Madelyn", "Ask Madelyn about the chem p-set", "Book dinner with Aidan for Thursday".
+- Good journal wording: "Talked with Aidan about philosophy and compared deontology with consequentialism", "Decided to watch Severance", "Planned the poker trip with Owen and played heads-up".
+
+Examples:
+1. Input idea: "I need to send Sam the signed permit packet tonight."
+   Output idea:
+   {"todo_creates":[{"text":"Send Sam the signed permit packet tonight","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[1],"reason":"First-person obligation describing a clear personal task."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+
+2. Input idea: "Can you settle up on Splitwise before dinner?"
+   Output idea:
+   {"todo_creates":[{"text":"Settle up on Splitwise before dinner","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[1],"reason":"Direct request to complete a personal obligation."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+
+3. Input idea: "Done, I paid Splitwise."
+   Output idea:
+   {"todo_creates":[],"todo_completions":[{"source_message_ids":[1],"match_text":"Splitwise","reason":"Outgoing message strongly indicates the payment task is complete."}],"journal_entries":[],"workspace_updates":[]}
+
+4. Input idea: "I submitted the permit packet this afternoon, so that's done."
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[{"source_message_ids":[1],"text":"Submitted the permit packet","reason":"Concrete completed action worth journaling."}],"workspace_updates":[]}
+
+5. Input idea: "Talked to Aidan about philosophy and compared deontology against consequentialism."
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[{"source_message_ids":[1],"text":"Talked with Aidan about philosophy and compared deontology with consequentialism","reason":"Meaningful conversation summary worth preserving in the journal."}],"workspace_updates":[]}
+
+6. Input idea with project inference = Forest Fire:
+   "Forest Fire rollout should stay phased so permitting risk stays manageable."
+   "Agreed, let's keep the rollout phased while crews ramp up."
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[{"page_title":"Forest Fire Rollout Strategy","search_query":"Forest Fire rollout phasing permitting risk","summary":"Keep the Forest Fire rollout phased so permitting risk stays manageable while crews ramp up.","source_message_ids":[1,2],"reason":"Agreed project strategy that should be preserved as project knowledge."}]}
+
+7. Input idea with project inference = Capital One:
+   "The filing deadline is March 14."
+   "Capital One wants every supporting document bundled into one PDF."
+   "Agreed, let's add the one-PDF requirement to the dispute notes."
+   Output idea:
+   {"todo_creates":[{"text":"Add the one-PDF requirement to the dispute notes","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[3],"reason":"Agreed follow-up task to document a project requirement."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[{"page_title":"Capital One Venture X Dispute","search_query":"Venture X dispute filing deadline","summary":"The filing deadline for the Venture X dispute is March 14.","source_message_ids":[1],"reason":"Durable project deadline that belongs in project knowledge."},{"page_title":"Capital One Venture X Dispute","search_query":"Capital One one PDF document requirement","summary":"Capital One requires all supporting dispute documents to be bundled into a single PDF.","source_message_ids":[2],"reason":"Durable project constraint explicitly stated in the conversation."}]}
+
+8. Negative example:
+   "Sounds good, thanks."
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+
+9. Boundary example:
+   "I need to upload the receipts tonight."
+   Output idea:
+   {"todo_creates":[{"text":"Upload the receipts tonight","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[1],"reason":"Personal obligation with time pressure; this belongs in todos, not calendar."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+
+10. Historical timing example:
+   Message `sent_at_utc` = "2026-01-14T15:00:00Z"
+   Text: "I need to upload the receipts tomorrow morning."
+   Output idea:
+   {"todo_creates":[{"text":"Upload the receipts tomorrow morning","deadline_utc":"2026-01-15T15:00:00Z","deadline_is_date_only":false,"source_message_ids":[1],"reason":"Relative deadline anchored to the message timestamp, not the processing date."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+
+11. Detail-preserving todo example:
+   "Can you meet Owen to plan the poker trip and play HU?"
+   Output idea:
+   {"todo_creates":[{"text":"Meet with Owen to plan the poker trip and play heads-up","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[1],"reason":"Direct request with a named person and specific purpose."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+
+12. Detail-preserving todo example:
+   "Send 18.01 to Madelyn tonight."
+   Output idea:
+   {"todo_creates":[{"text":"Send 18.01 to Madelyn tonight","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[1],"reason":"Clear first-person or directed obligation with a named recipient and deliverable."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+
+13. Detail-preserving journal example:
+   "We decided to watch Severance."
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[{"source_message_ids":[1],"text":"Decided to watch Severance","reason":"Specific decision and show title are worth preserving."}],"workspace_updates":[]}
+
+DATA:
+{payload_json}
+"""
+
+IMESSAGE_ACTION_JUDGE_PROMPT = """
+You are the judge for an iMessage processing engine.
+Given the source conversation plus extracted actions, verify whether each action is sufficiently supported and safe to auto-apply.
+
+Return ONLY valid JSON with this shape:
+{
+  "project_inference": {
+    "approved": boolean,
+    "reason": string
+  },
+  "todo_creates": [{"approved": boolean, "reason": string}],
+  "todo_completions": [{"approved": boolean, "reason": string}],
+  "calendar_creates": [{"approved": boolean, "reason": string}],
+  "journal_entries": [{"approved": boolean, "reason": string}],
+  "workspace_updates": [{"approved": boolean, "reason": string}]
+}
+
+Rules:
+- Evaluate each proposed action independently. A single chunk may validly support multiple approved actions of the same type.
+- Do not reject one action just because another action from the same chunk is also valid.
+- Reject anything that is ambiguous, weakly supported, or likely duplicative.
+- The extracted actions include `source_message_ids`. Reject an action when those IDs do not point to genuinely supporting messages.
+- Project approval requires strong evidence that the conversation belongs to that project.
+- The source messages include `sent_at_utc`. When checking deadlines or events derived from words like today, tomorrow, tonight, or Friday, verify that the extracted time is anchored to the source message time rather than the current runtime date.
+- Use `is_from_me` as the primary ownership signal for first-person todos, completions, and journal entries, but not an absolute veto when the message is clearly a retrospective summary of the user's own experience.
+- Approve a todo_create when the obligation clearly belongs to the user or when another participant clearly asks the user to do it.
+- Reject a todo_create when another participant is merely describing their own task.
+- It is acceptable to approve personal todos/journal entries while rejecting project updates.
+- Meaningful conversation summaries can be valid journal entries even when no concrete accomplishment happened.
+- Approve a journal entry when the message is a clear first-person recap of the user's conversation or experience, such as "Talked to Aidan about philosophy..." or "Had a call with Mom about July travel...", even if the content is not an accomplishment.
+- Inferred calendar durations or time windows are acceptable when the wording strongly supports them.
+- Explicit hard deadlines such as filing deadlines, renewal deadlines, and submission deadlines are valid calendar items and should generally be approved as all-day events when the extracted date is correct.
+- Prefer false negatives over false positives for knowledge-page edits.
+- Prefer the more specific action wording when two candidate phrasings describe the same supported action and one preserves a named person or explicit deliverable that appears in the source messages.
+
+Examples:
+- Approve a todo completion when the user's outgoing message says "Done, I paid Splitwise."
+- Approve a journal entry like "Talked with Aidan about philosophy and compared deontology with consequentialism."
+- Approve a journal entry like "Had a call with Mom about July travel and narrowed down the best dates."
+- Approve a todo like "Meet with Owen to plan the poker trip and play heads-up" when the source messages include Owen and the poker trip details.
+- Approve a todo like "Send 18.01 to Madelyn" when the source messages clearly specify both the deliverable and recipient.
+- Approve a journal entry like "Decided to watch Severance" when the source messages name the show explicitly.
+- Approve multiple workspace updates from one chunk when the chunk contains multiple distinct durable facts.
+- Approve a workspace update and a todo_create together when the chunk contains both a durable project fact and an agreed follow-up task.
+- Approve a calendar create when the chunk gives a concrete start time and the duration can be reasonably inferred from wording like "keep it quick" or "dinner at 6."
+- Reject a calendar create when the message is only vague scheduling language like "we should find time next week."
+- Approve a calendar create for an explicit hard deadline such as "The filing deadline is March 14, 2026." Hard deadlines may be valid all-day calendar items.
+- Reject a calendar create when the chunk is really a personal obligation rather than a scheduled event or explicit hard deadline, such as "I need to send Sam the permit packet tonight." That belongs in todos, not calendar.
+- Reject a time-bearing action if its resolved date appears to be based on processing time rather than the message timestamp.
+- Approve a workspace update when the cluster contains an agreed project strategy or durable decision.
+- Reject a workspace update when it comes from a single speculative message with no confirmation.
+- Reject a todo_create when another participant says "I need to..." and `is_from_me` is false.
+
+DATA:
+{payload_json}
+"""
+
+IMESSAGE_PROJECT_INFERENCE_PROMPT = """
+You infer whether an iMessage cluster belongs to one existing project.
+Use the candidate list, heuristic signals, and message evidence.
+Choose a project only when the evidence is strong enough for downstream project knowledge updates.
+
+Return ONLY valid JSON with this shape:
+{
+  "project_name": string | null,
+  "confidence": number,
+  "source_message_ids": number[],
+  "reason": string
+}
+
+Rules:
+- You must either return null or one of the provided candidate project names exactly.
+- If you return a non-null project, include the exact `messages[].id` values that best support that routing decision.
+- Prefer null when the conversation could plausibly belong to multiple candidates.
+- Conversation history affinity is meaningful, but message evidence must still make sense.
+- Strong signals include: the conversation title naming the project, repeated project-specific vocabulary, or durable prior routing for the same chat.
+- Weak signals include: one generic shared word such as "plan", "review", or "design" with no project-specific context.
+
+Examples:
+- If the candidate "Forest Fire" has reasons like "conversation title contains alias 'Forest Fire'" and the messages discuss permits, county submissions, and vendor decisions, return "Forest Fire".
+- If the top two candidates are close and the messages only mention generic planning language, return null.
+- If no candidate has meaningful evidence beyond a generic conversation label, return null.
+
+DATA:
+{payload_json}
+"""
+
+IMESSAGE_CALENDAR_EXTRACTION_PROMPT = """
+You are the calendar extractor for an iMessage processing engine.
+Read the conversation metadata, recent messages, and current project inference.
+Your job is to extract only concrete calendar candidates.
+
+Return ONLY valid JSON with this shape:
+{
+  "calendar_creates": [
+    {
+      "summary": string,
+      "start_time": string,
+      "end_time": string,
+      "is_all_day": boolean,
+      "source_message_ids": number[],
+      "reason": string
+    }
+  ]
+}
+
+Rules:
+- Return every supported calendar item in the chunk. A single chunk may yield multiple deadlines, meetings, or commitments.
+- Extract only actual meetings, appointments, deadlines, or time commitments.
+- Every calendar item must include `source_message_ids`, using the exact `messages[].id` values that establish or confirm the event.
+- Each message includes `sent_at_utc`, and `time_context` provides the cluster bounds. Interpret relative time phrases like tomorrow, tonight, Friday, or next Tuesday from the timestamp of the message that contains the phrase, not from the current runtime date.
+- If multiple messages contribute to one event, use the latest relevant confirming message as the anchor. Use `time_context.cluster_end_time_local` only as a fallback when a relevant message timestamp is missing.
+- Do not convert task-like obligations into calendar items just because they contain time words like "tonight", "tomorrow", or "before Friday". If the text is about the user needing to do something, it belongs in todos unless it is an explicit event or explicit deadline.
+- A concrete start time plus strong contextual cues is enough. Explicit end times are helpful but not required if a reasonable duration can be inferred from the wording.
+- Convert local times using the supplied time zone and respect daylight saving time when mapping them into UTC.
+- Use nearby confirmations in the same chunk to upgrade a tentative suggestion into a concrete event.
+- If the duration is missing, infer a reasonable window only when the text supports it.
+- Preserve important named entities in the summary when the source text supports them. For example, prefer "Dinner with Owen" over "Dinner" when the counterparty is explicit.
+- Good duration cues:
+  - "quick", "review", "check-in" -> usually 30 minutes
+  - "dinner" -> usually 60 to 90 minutes
+  - workouts or training sessions -> use the stated duration if given; otherwise infer only if the wording strongly implies a standard block
+- If no defensible duration or date can be grounded from the text, omit the event rather than inventing one.
+- Prefer concise summaries without chatty wording.
+
+Examples:
+1. "March 12, 2026 from 3:00 to 3:30 PM is confirmed for the permit review."
+   -> {"calendar_creates":[{"summary":"Permit review","start_time":"2026-03-12T19:00:00Z","end_time":"2026-03-12T19:30:00Z","is_all_day":false,"source_message_ids":[1],"reason":"Confirmed meeting with explicit start and end times."}]}
+
+2. "March 12, 2026 from 2:00 to 2:30 PM works for the deck walkthrough, let's put it on the calendar."
+   -> {"calendar_creates":[{"summary":"Deck walkthrough","start_time":"2026-03-12T18:00:00Z","end_time":"2026-03-12T18:30:00Z","is_all_day":false,"source_message_ids":[1],"reason":"Concrete scheduling language with an explicit time window."}]}
+
+3. "Let's meet Tuesday at 3 for the permit review."
+   -> {"calendar_creates":[{"summary":"Permit review","start_time":"2026-03-10T19:00:00Z","end_time":"2026-03-10T19:30:00Z","is_all_day":false,"source_message_ids":[1],"reason":"Concrete start time with a reasonable inferred 30-minute review window."}]}
+
+4. "Tomorrow at 6 works for dinner if we keep it to an hour."
+   "Perfect, let's lock it in."
+   -> {"calendar_creates":[{"summary":"Dinner","start_time":"2026-03-11T22:00:00Z","end_time":"2026-03-11T23:00:00Z","is_all_day":false,"source_message_ids":[1,2],"reason":"Concrete dinner plan with an inferred one-hour duration and explicit confirmation."}]}
+
+5. "The filing deadline is March 14, 2026."
+   -> {"calendar_creates":[{"summary":"Filing deadline","start_time":"2026-03-14T00:00:00Z","end_time":"2026-03-15T00:00:00Z","is_all_day":true,"source_message_ids":[1],"reason":"Explicit all-day deadline."}]}
+
+6. "We should find time next week."
+   -> {"calendar_creates":[]}
+
+7. "I need to send Sam the signed permit packet tonight."
+   -> {"calendar_creates":[]}
+
+8. Historical timing example:
+   Message `sent_at_utc` = "2026-01-14T15:00:00Z"
+   Text: "Tomorrow at 6 works for dinner if we keep it to an hour."
+   "Perfect, let's lock it in."
+   -> {"calendar_creates":[{"summary":"Dinner","start_time":"2026-01-15T23:00:00Z","end_time":"2026-01-16T00:00:00Z","is_all_day":false,"source_message_ids":[1,2],"reason":"Relative dinner plan anchored to the source message date, not the processing date."}]}
+
+9. Named counterparty example:
+   "Tomorrow at 6 works for dinner with Owen if we keep it to an hour."
+   "Perfect, let's lock it in."
+   -> {"calendar_creates":[{"summary":"Dinner with Owen","start_time":"2026-03-11T22:00:00Z","end_time":"2026-03-11T23:00:00Z","is_all_day":false,"source_message_ids":[1,2],"reason":"Concrete dinner plan with a named counterparty and inferred one-hour window."}]}
+
+DATA:
+{payload_json}
+"""
+
+IMESSAGE_PAGE_SELECTION_PROMPT = """
+You choose the best workspace destination for a project knowledge update.
+
+Return ONLY valid JSON with this shape:
+{
+  "mode": "update_existing" | "create_new" | "skip",
+  "page_id": number | null,
+  "title": string | null,
+  "reason": string
+}
+
+Rules:
+- Prefer updating an existing page when one clearly matches the update topic.
+- Use create_new only when no candidate page fits well.
+- Use skip when the update is too weak, redundant, or not durable enough for the workspace.
+
+DATA:
+{payload_json}
+"""
+
+IMESSAGE_PAGE_MERGE_PROMPT = """
+You merge a new project knowledge update into a workspace page.
+
+Return ONLY valid JSON with this shape:
+{
+  "title": string,
+  "body": string,
+  "reason": string
+}
+
+Rules:
+- Preserve useful existing content.
+- Integrate the new facts cleanly instead of appending a raw message digest.
+- Keep the body concise, structured, and durable.
+- If the existing page is empty, produce a clean first draft.
+- Do not mention iMessage, chat transcripts, or source-message mechanics in the output.
+
+DATA:
+{payload_json}
+"""
+
 JOURNAL_ENTRY_EXTRACTION_PROMPT = """
 You are Monet, a calm journal editor.
 Extract the concrete accomplishments from the user's journal entries for {local_date} in {time_zone}.

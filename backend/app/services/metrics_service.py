@@ -50,17 +50,30 @@ class MetricsService:
         load_payload: list[dict[str, Any]] | None = None,
         energy_payload: list[dict[str, Any]] | None = None,
     ) -> dict:
-        now = eastern_now()
         start_date = eastern_today() - timedelta(days=lookback_days - 1)
         cutoff_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=EASTERN_TZ)
         if self.garmin is not None:
             garmin = self.garmin
         else:
-            connection = await GarminConnectionService(self.session).get_connection(user_id)
+            connection_service = GarminConnectionService(self.session)
+            connection = await connection_service.get_connection(user_id)
             if not connection:
                 logger.info("Skipping Garmin ingest for user {} (no connection).", user_id)
                 return self._empty_summary()
-            garmin = await GarminConnectionService(self.session).get_client(user_id)
+            if connection.requires_reauth:
+                logger.info("Skipping Garmin ingest for user {} (reauth required).", user_id)
+                return self._empty_summary()
+            try:
+                garmin = await connection_service.get_client(user_id)
+            except ValueError:
+                await connection_service.mark_reauth_required(user_id, True)
+                logger.warning(
+                    "Skipping Garmin ingest for user {} because stored credentials could not be decrypted.",
+                    user_id,
+                )
+                return self._empty_summary()
+            # Release the read-only transaction before long-running Garmin API calls.
+            await self.session.rollback()
         try:
             if activities is None:
                 logger.info("Fetching Garmin activities since {}", cutoff_dt)

@@ -24,15 +24,22 @@ class JournalService:
     self.todo_repo = TodoRepository(session)
     self.compiler = JournalCompiler(session)
 
-  async def add_entry(self, *, user_id: int, text: str, time_zone: str) -> dict[str, Any]:
-    local_date = local_today(time_zone)
-    now_utc = datetime.now(timezone.utc)
+  async def add_entry(
+    self,
+    *,
+    user_id: int,
+    text: str,
+    time_zone: str,
+    occurred_at_utc: datetime | None = None,
+  ) -> dict[str, Any]:
+    effective_time = occurred_at_utc.astimezone(timezone.utc) if occurred_at_utc else datetime.now(timezone.utc)
+    local_date = effective_time.astimezone(resolve_time_zone(time_zone)).date() if occurred_at_utc else local_today(time_zone)
     entry = await self.journal_repo.create_entry(
       user_id=user_id,
       local_date=local_date,
       time_zone=time_zone,
       text=text,
-      created_at=now_utc,
+      created_at=effective_time,
     )
     return {
       "entry": entry,

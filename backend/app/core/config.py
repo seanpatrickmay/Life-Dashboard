@@ -18,6 +18,9 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = Field(..., env="DATABASE_URL")
+    database_pool_pre_ping: bool = Field(True, env="DATABASE_POOL_PRE_PING")
+    database_pool_recycle_seconds: int = Field(1800, env="DATABASE_POOL_RECYCLE_SECONDS")
+    database_pool_use_lifo: bool = Field(True, env="DATABASE_POOL_USE_LIFO")
 
     # Environment
     environment: str = Field("local", env="APP_ENV")
@@ -63,6 +66,12 @@ class Settings(BaseSettings):
     garmin_tokens_dir: str = Field("/data/garmin", env="GARMIN_TOKENS_DIR")
     garmin_tokens_dir_host: str | None = Field(None, env="GARMIN_TOKENS_DIR_HOST")
     garmin_password_encryption_key: str = Field(..., env="GARMIN_PASSWORD_ENCRYPTION_KEY")
+    garmin_password_encryption_key_id: str | None = Field(
+        None, env="GARMIN_PASSWORD_ENCRYPTION_KEY_ID"
+    )
+    garmin_password_encryption_key_fallbacks: str = Field(
+        "", env="GARMIN_PASSWORD_ENCRYPTION_KEY_FALLBACKS"
+    )
     garmin_page_size: int = Field(100, env="GARMIN_PAGE_SIZE")
     garmin_max_activities: int = Field(400, env="GARMIN_MAX_ACTIVITIES")
 
