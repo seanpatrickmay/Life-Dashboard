@@ -1,31 +1,20 @@
-"""Claude-style nutrition agent backed by Google GenAI + Vertex AI."""
+"""Nutrition assistant backed by the OpenAI Responses API."""
 
 from __future__ import annotations
 
-import asyncio
-import json
 import math
-import re
 from dataclasses import dataclass
-from datetime import date
 from typing import Any
 from uuid import uuid4
 
-from google.genai.types import GenerateContentConfig, GoogleSearch, Tool
-
-try:  # google-genai < 0.5.0 ships HttpOptions elsewhere / omits it entirely
-    from google.genai.types import HttpOptions
-except ImportError:  # pragma: no cover - runtime shim for docker image
-    HttpOptions = None  # type: ignore[assignment]
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.clients.genai_client import build_genai_client
+from app.clients.openai_client import OpenAIResponsesClient
 from app.prompts import (
-    CLAUDE_FOOD_EXTRACTION_PROMPT,
-    CLAUDE_NUTRIENT_PROFILE_PROMPT,
-    CLAUDE_RECIPE_SUGGESTION_PROMPT,
+    NUTRITION_FOOD_EXTRACTION_PROMPT,
+    NUTRIENT_PROFILE_PROMPT,
+    RECIPE_SUGGESTION_PROMPT,
 )
 from app.db.models.nutrition import (
     NUTRIENT_COLUMN_BY_SLUG,
@@ -40,18 +29,23 @@ from app.db.repositories.nutrition_ingredients_repository import (
     NutritionRecipesRepository,
 )
 from app.db.repositories.nutrition_intake_repository import NutritionIntakeRepository
+from app.schemas.llm_outputs import (
+    NutritionFoodExtractionOutput,
+    NutrientProfileOutput,
+    RecipeSuggestionOutput,
+)
 from app.services.nutrition_units import NutritionUnitNormalizer
 from app.utils.timezone import eastern_today
 
 
 @dataclass
-class ClaudeResponse:
+class NutritionAssistantResponse:
     reply: str
     logged_entries: list[dict[str, Any]]
 
 
-class ClaudeNutritionAgent:
-    """Nutrition mentor that uses Gemini via Vertex AI for parsing + grounding."""
+class NutritionAssistantAgent:
+    """Nutrition mentor that uses OpenAI for parsing and nutrient grounding."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -59,25 +53,22 @@ class ClaudeNutritionAgent:
         self.recipes_repo = NutritionRecipesRepository(session)
         self.intake_repo = NutritionIntakeRepository(session)
         self.unit_normalizer = NutritionUnitNormalizer()
-        http_options = HttpOptions(api_version="v1") if HttpOptions else None
-        self.client = build_genai_client(http_options=http_options)
-        self.model_name = settings.vertex_model_name or "gemini-2.5-flash"
-        self.search_tool = Tool(google_search=GoogleSearch())
+        self.client = OpenAIResponsesClient()
 
     async def respond(
         self, user_id: int, message: str, request_id: str | None = None
-    ) -> ClaudeResponse:
+    ) -> NutritionAssistantResponse:
         request_id = request_id or str(uuid4())
         logger.info(
-            f"[claude] respond start id={request_id} user={user_id} text={message}"
+            f"[nutrition] respond start id={request_id} user={user_id} text={message}"
         )
         parsed = await self._extract_food_mentions(message)
         logger.info(
-            f"[claude] parsed foods={parsed.get('foods')} summary={parsed.get('summary')}"
+            f"[nutrition] parsed foods={parsed.get('foods')} summary={parsed.get('summary')}"
         )
         if not parsed["foods"]:
-            logger.info(f"[claude] no foods detected for request id={request_id}")
-            return ClaudeResponse(
+            logger.info(f"[nutrition] no foods detected for request id={request_id}")
+            return NutritionAssistantResponse(
                 reply="I couldn't recognize any foods. Try something like ‘I ate two eggs and a banana.’",
                 logged_entries=[],
             )
@@ -143,7 +134,7 @@ class ClaudeNutritionAgent:
             # Unknown dish: ask recipe agent for structure, create ingredients + recipe, then log
             suggestion = await self._suggest_recipe(name)
             if suggestion is None:
-                logger.info("[claude] no recipe suggestion for %s", name)
+                logger.info("[nutrition] no recipe suggestion for %s", name)
                 continue
             created_recipe = await self._ensure_recipe_from_suggestion(
                 owner_user_id=user_id,
@@ -169,7 +160,7 @@ class ClaudeNutritionAgent:
         await self.session.flush()
         await self.session.commit()
         logger.info(
-            f"[claude] logged {len(entries)} entries for request id={request_id}"
+            f"[nutrition] logged {len(entries)} entries for request id={request_id}"
         )
 
         reply = parsed.get("summary") or self._build_summary(entries)
@@ -179,46 +170,63 @@ class ClaudeNutritionAgent:
         ):
             reply += "\nNote: items marked unconfirmed still need a quick review."
 
-        logger.info(f"[claude] respond complete id={request_id} reply={reply}")
-        return ClaudeResponse(reply=reply, logged_entries=entries)
+        logger.info(f"[nutrition] respond complete id={request_id} reply={reply}")
+        return NutritionAssistantResponse(reply=reply, logged_entries=entries)
 
     async def _extract_food_mentions(self, user_text: str) -> dict[str, Any]:
-        prompt = CLAUDE_FOOD_EXTRACTION_PROMPT.format(user_text=user_text)
-        response = await self._call_model(prompt, use_search=False)
-        return self._extract_json(response) or {"foods": [], "summary": None}
+        prompt = NUTRITION_FOOD_EXTRACTION_PROMPT.format(user_text=user_text)
+        try:
+            result = await self.client.generate_json(
+                prompt,
+                response_model=NutritionFoodExtractionOutput,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[nutrition] food extraction failed: {}", exc)
+            return {"foods": [], "summary": None}
+        return result.data.model_dump()
 
     async def _fetch_nutrient_profile(
         self, food_name: str, unit: str
     ) -> dict[str, float | None]:
-        logger.info(f"[claude] fetching nutrient profile food={food_name} unit={unit}")
+        logger.info(f"[nutrition] fetching nutrient profile food={food_name} unit={unit}")
         nutrient_list = ", ".join(
             definition.slug for definition in NUTRIENT_DEFINITIONS
         )
-        prompt = CLAUDE_NUTRIENT_PROFILE_PROMPT.format(
+        prompt = NUTRIENT_PROFILE_PROMPT.format(
             food_name=food_name,
             unit=unit,
             nutrient_list=nutrient_list,
         )
-        response = await self._call_model(prompt, use_search=True)
-        data = self._extract_json(response) or {}
+        try:
+            result = await self.client.generate_json_with_web_search(
+                prompt,
+                response_model=NutrientProfileOutput,
+            )
+            data = result.data.root
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[nutrition] nutrient lookup failed for {}: {}", food_name, exc)
+            data = {}
         nutrients: dict[str, float | None] = {}
         for slug in NUTRIENT_COLUMN_BY_SLUG:
-            value = self._safe_float(data.get(slug)) if isinstance(data, dict) else None
+            value = self._safe_float(data.get(slug))
             nutrients[slug] = value
-        logger.info(f"[claude] nutrient profile resolved for {food_name}")
+        logger.info(f"[nutrition] nutrient profile resolved for {food_name}")
         return nutrients
 
     async def _suggest_recipe(self, description: str) -> dict[str, Any] | None:
-        prompt = CLAUDE_RECIPE_SUGGESTION_PROMPT.format(description=description)
-        text = await self._call_model(prompt, use_search=False)
-        data = self._extract_json(text)
-        if not data or not isinstance(data, dict):
+        prompt = RECIPE_SUGGESTION_PROMPT.format(description=description)
+        try:
+            result = await self.client.generate_json(
+                prompt,
+                response_model=RecipeSuggestionOutput,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[nutrition] recipe suggestion failed for {}: {}", description, exc)
             return None
-        recipe = data.get("recipe")
-        ingredients = data.get("ingredients")
-        if not isinstance(recipe, dict) or not isinstance(ingredients, list):
-            return None
-        return {"recipe": recipe, "ingredients": ingredients}
+        return {
+            "recipe": result.data.recipe.model_dump(),
+            "ingredients": [item.model_dump() for item in result.data.ingredients],
+        }
 
     async def _ensure_recipe_from_suggestion(
         self, *, owner_user_id: int, suggestion: dict[str, Any]
@@ -251,7 +259,7 @@ class ClaudeNutritionAgent:
                     status=NutritionIngredientStatus.UNCONFIRMED,
                 )
                 created = True
-                logger.info(f"[claude] created ingredient={ing_name} id={ingredient.id}")
+                logger.info(f"[nutrition] created ingredient={ing_name} id={ingredient.id}")
             components.append(
                 {
                     "ingredient_id": ingredient.id,
@@ -272,7 +280,7 @@ class ClaudeNutritionAgent:
                 components=components,
                 source="claude",
             )
-            logger.info(f"[claude] created recipe name={name} id={recipe.id}")
+            logger.info(f"[nutrition] created recipe name={name} id={recipe.id}")
             recipe = await self.recipes_repo.get_recipe(recipe.id, owner_user_id, load_components=True)
         return recipe
 
@@ -311,37 +319,6 @@ class ClaudeNutritionAgent:
                     await _expand(comp.child_recipe, effective_qty)
 
         await _expand(recipe, servings)
-
-    async def _call_model(self, prompt: str, use_search: bool) -> str:
-        def _invoke() -> str:
-            config = GenerateContentConfig()
-            if use_search:
-                config.tools = [self.search_tool]
-            logger.info(f"[claude] model call start search={use_search}")
-            result = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=config,
-            )
-            text = result.text or ""
-            logger.info(
-                f"[claude] model call complete chars={len(text)} search={use_search}"
-            )
-            return text
-
-        return await asyncio.to_thread(_invoke)
-
-    def _extract_json(self, text: str) -> dict[str, Any] | None:
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", text, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group(0))
-                except json.JSONDecodeError:
-                    return None
-        return None
 
     def _build_summary(self, entries: list[dict[str, Any]]) -> str:
         if not entries:

@@ -504,7 +504,7 @@ export function FoodManager() {
             {!filtered.length && (
               <tr>
                 <td colSpan={3} style={{ opacity: 0.7, padding: '12px 8px' }}>
-                  No ingredients recorded yet. Log meals with Claude to populate your pallete.
+                  No ingredients recorded yet. Log meals with Monet to populate your palette.
                 </td>
               </tr>
             )}

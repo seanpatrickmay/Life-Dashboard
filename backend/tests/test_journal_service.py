@@ -17,7 +17,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///test.db")
 os.environ.setdefault("ADMIN_EMAIL", "test@example.com")
 os.environ.setdefault("FRONTEND_URL", "http://localhost:4173")
 os.environ.setdefault("GARMIN_PASSWORD_ENCRYPTION_KEY", "test-key")
-os.environ.setdefault("VERTEX_PROJECT_ID", "test-project")
+os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 os.environ.setdefault("READINESS_ADMIN_TOKEN", "test-token")
 
 from app.services.journal_compiler import JournalCompiler, JournalGroupedItem, JournalSourceItem

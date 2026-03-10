@@ -16,6 +16,6 @@ Defines Pydantic models used for request validation and response serialization a
 | `insights.py` | Schemas for insight responses. |
 | `journal.py` | Schemas for journal entry input, day summaries, and week statuses. |
 | `metrics.py` | Schemas for metrics overview/daily responses. |
-| `nutrition.py` | Schemas for nutrition foods, goals, intake summaries, and Claude chat. |
-| `todos.py` | Schemas for per-user to-do items and Claude-powered creation. |
+| `nutrition.py` | Schemas for nutrition foods, goals, intake summaries, and nutrition assistant chat. |
+| `todos.py` | Schemas for per-user to-do items and assistant-powered creation. |
 | `system.py` | Status payloads for background refresh triggers. |

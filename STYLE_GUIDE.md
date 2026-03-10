@@ -23,7 +23,7 @@ This guide defines the coding conventions for the Life Dashboard project. All co
   - Functions & variables: `snake_case`.
   - Constants: `UPPER_SNAKE`.
 - Keep data access logic in `db/repositories/`. Services orchestrate repositories and clients.
-- Place integration code (Garmin, Vertex, etc.) in `app/clients/` modules.
+- Place integration code (Garmin, OpenAI, external APIs, etc.) in `app/clients/` modules.
 
 ### Async & I/O
 - Prefer `async`/`await` for I/O. Avoid blocking calls (e.g., `time.sleep`) inside async functions.

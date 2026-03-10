@@ -109,13 +109,13 @@ class MonetContextBuilder:
                 "morning_note": metric.insight_morning_note,
             },
         }
-        if metric.vertex_insight:
-            payload["vertex_insight"] = {
-                "model_name": metric.vertex_insight.model_name,
-                "metric_date": metric.vertex_insight.metric_date.isoformat(),
-                "response_text": metric.vertex_insight.response_text,
-                "tokens_used": metric.vertex_insight.tokens_used,
-                "readiness_score": metric.vertex_insight.readiness_score,
+        if metric.readiness_insight:
+            payload["readiness_insight"] = {
+                "model_name": metric.readiness_insight.model_name,
+                "metric_date": metric.readiness_insight.metric_date.isoformat(),
+                "response_text": metric.readiness_insight.response_text,
+                "tokens_used": metric.readiness_insight.tokens_used,
+                "readiness_score": metric.readiness_insight.readiness_score,
             }
         return payload
 

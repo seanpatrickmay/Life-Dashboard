@@ -1,7 +1,7 @@
 # Todo Components Folder
 
 ## Purpose
-Holds Monet-styled components for the dashboard to-do experience, including the Claude chat pad and scroll-themed list surface.
+Holds Monet-styled components for the dashboard to-do experience, including the assistant chat pad and scroll-themed list surface.
 
 ## File Overview
 
@@ -9,4 +9,3 @@ Holds Monet-styled components for the dashboard to-do experience, including the 
 | --- | --- |
 | `TodoChatPad.tsx` | Monet chatbot panel for creating to-do items via natural language. |
 | `TodoScrollPad.tsx` | Scroll-themed list surface for viewing and managing to-do items on the dashboard. |
-

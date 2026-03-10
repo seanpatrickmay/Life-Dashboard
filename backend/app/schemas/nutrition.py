@@ -128,15 +128,19 @@ class LogIntakeRequest(BaseModel):
         return self
 
 
-class ClaudeMessageRequest(BaseModel):
+class NutritionAssistantMessageRequest(BaseModel):
     session_id: str | None = None
     message: str
 
 
-class ClaudeMessageResponse(BaseModel):
+class NutritionAssistantMessageResponse(BaseModel):
     session_id: str
     reply: str
     logged_entries: list[dict[str, Any]]
+
+
+ClaudeMessageRequest = NutritionAssistantMessageRequest
+ClaudeMessageResponse = NutritionAssistantMessageResponse
 
 
 class NutritionIntakeEntry(BaseModel):

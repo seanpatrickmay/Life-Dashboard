@@ -1,37 +1,28 @@
-"""Claude-style todo agent backed by Google GenAI + Vertex AI."""
+"""Todo assistant backed by the OpenAI Responses API."""
 
 from __future__ import annotations
 
-import asyncio
-import json
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from dateutil import parser as date_parser
-from google.genai.types import GenerateContentConfig
-
-try:  # google-genai < 0.5.0 ships HttpOptions elsewhere / omits it entirely
-  from google.genai.types import HttpOptions
-except ImportError:  # pragma: no cover - runtime shim for docker image
-  HttpOptions = None  # type: ignore[assignment]
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.clients.genai_client import build_genai_client
+from app.clients.openai_client import OpenAIResponsesClient
 from app.db.repositories.project_repository import ProjectRepository
 from app.db.repositories.todo_repository import TodoRepository
-from app.prompts import CLAUDE_TODO_EXTRACTION_PROMPT
+from app.prompts import TODO_EXTRACTION_PROMPT
+from app.schemas.llm_outputs import TodoExtractionOutput
 from app.services.todo_calendar_link_service import TodoCalendarLinkService
 from app.utils.timezone import eastern_now, ensure_eastern
 
 
 @dataclass
-class ClaudeTodoResult:
-  """Structured result from the Claude todo agent."""
+class TodoAssistantResult:
+  """Structured result from the todo assistant."""
 
   session_id: str
   reply: str
@@ -39,33 +30,31 @@ class ClaudeTodoResult:
   raw_payload: dict[str, Any] | None = None
 
 
-class ClaudeTodoAgent:
-  """Todo mentor that uses Gemini via Vertex AI for parsing + normalization."""
+class TodoAssistantAgent:
+  """Todo mentor that uses OpenAI for parsing and normalization."""
 
   def __init__(self, session: AsyncSession) -> None:
     self.session = session
     self.repo = TodoRepository(session)
-    http_options = HttpOptions(api_version="v1") if HttpOptions else None
-    self.client = build_genai_client(http_options=http_options)
-    self.model_name = settings.vertex_model_name or "gemini-2.5-flash"
+    self.client = OpenAIResponsesClient()
 
   async def respond(
     self, user_id: int, message: str, request_id: str | None = None
-  ) -> ClaudeTodoResult:
+  ) -> TodoAssistantResult:
     request_id = request_id or str(uuid4())
-    logger.info("[claude-todo] respond start id={} user={} text={}", request_id, user_id, message)
+    logger.info("[todo-assistant] respond start id={} user={} text={}", request_id, user_id, message)
 
     parsed = await self._extract_todos(message)
-    logger.info("[claude-todo] parsed payload={}", parsed)
+    logger.info("[todo-assistant] parsed payload={}", parsed)
 
     items = parsed.get("items") or []
     if not isinstance(items, list) or not items:
-      logger.info("[claude-todo] no todos detected for request id={}", request_id)
-      return ClaudeTodoResult(
+      logger.info("[todo-assistant] no todos detected for request id={}", request_id)
+      return TodoAssistantResult(
         session_id=request_id,
         reply="I didn't find a clear task to track yet. Try something like ‘Pay rent by Friday 5pm’ or ‘Do the laundry’.",
         items=[],
-        raw_payload=parsed if isinstance(parsed, dict) else None,
+        raw_payload=parsed,
       )
 
     todo_specs: list[tuple[str, datetime | None]] = []
@@ -78,12 +67,12 @@ class ClaudeTodoAgent:
       todo_specs.append((text, deadline))
 
     if not todo_specs:
-      logger.info("[claude-todo] parsed items but none usable for request id={}", request_id)
-      return ClaudeTodoResult(
+      logger.info("[todo-assistant] parsed items but none usable for request id={}", request_id)
+      return TodoAssistantResult(
         session_id=request_id,
         reply="I couldn't turn that into any concrete to-dos yet. Try phrasing one task per sentence.",
         items=[],
-        raw_payload=parsed if isinstance(parsed, dict) else None,
+        raw_payload=parsed,
       )
 
     project_repo = ProjectRepository(self.session)
@@ -100,56 +89,33 @@ class ClaudeTodoAgent:
     if not reply:
       reply = self._build_summary(created)
 
-    logger.info("[claude-todo] respond complete id={} created={}", request_id, len(created))
-    return ClaudeTodoResult(
+    logger.info("[todo-assistant] respond complete id={} created={}", request_id, len(created))
+    return TodoAssistantResult(
       session_id=request_id,
       reply=reply,
       items=created,
-      raw_payload=parsed if isinstance(parsed, dict) else None,
+      raw_payload=parsed,
     )
 
   async def _extract_todos(self, user_text: str) -> dict[str, Any]:
     now_utc = datetime.now(timezone.utc)
     now_eastern = eastern_now()
-    prompt = CLAUDE_TODO_EXTRACTION_PROMPT.format(
+    prompt = TODO_EXTRACTION_PROMPT.format(
       user_text=user_text,
       today_utc=now_utc.date().isoformat(),
       now_utc_iso=now_utc.isoformat(),
       today_eastern=now_eastern.date().isoformat(),
       now_eastern_iso=now_eastern.isoformat(),
     )
-    response = await self._call_model(prompt)
-    data = self._extract_json(response)
-    if isinstance(data, dict):
-      return data
-    return {"items": [], "summary": None}
-
-  async def _call_model(self, prompt: str) -> str:
-    def _invoke() -> str:
-      config = GenerateContentConfig()
-      logger.info("[claude-todo] model call start")
-      result = self.client.models.generate_content(
-        model=self.model_name,
-        contents=prompt,
-        config=config,
-      )
-      text = result.text or ""
-      logger.info("[claude-todo] model call complete chars={}", len(text))
-      return text
-
-    return await asyncio.to_thread(_invoke)
-
-  def _extract_json(self, text: str) -> dict[str, Any] | None:
     try:
-      return json.loads(text)
-    except json.JSONDecodeError:
-      match = re.search(r"\{.*\}", text, re.DOTALL)
-      if match:
-        try:
-          return json.loads(match.group(0))
-        except json.JSONDecodeError:
-          return None
-    return None
+      result = await self.client.generate_json(
+        prompt,
+        response_model=TodoExtractionOutput,
+      )
+    except Exception as exc:  # noqa: BLE001
+      logger.warning("[todo-assistant] extraction failed: {}", exc)
+      return {"items": [], "summary": None}
+    return result.data.model_dump()
 
   def _parse_deadline(self, raw: Any) -> datetime | None:
     if not raw:
@@ -167,7 +133,7 @@ class ClaudeTodoAgent:
         dt = ensure_eastern(dt)
       return dt.astimezone(timezone.utc)
     except Exception:  # pragma: no cover - defensive parsing
-      logger.warning("[claude-todo] failed to parse deadline '{}'", raw)
+      logger.warning("[todo-assistant] failed to parse deadline '{}'", raw)
       return None
 
   def _build_summary(self, items: list[Any]) -> str:

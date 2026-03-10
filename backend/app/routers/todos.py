@@ -13,13 +13,13 @@ from app.db.repositories.todo_repository import TodoRepository
 from app.db.session import AsyncSessionLocal, get_session
 from app.db.models.entities import User
 from app.schemas.todos import (
-  ClaudeTodoMessageRequest,
-  ClaudeTodoMessageResponse,
   TodoCreateRequest,
+  TodoAssistantMessageRequest,
+  TodoAssistantMessageResponse,
   TodoItemResponse,
   TodoUpdateRequest,
 )
-from app.services.claude_todo_agent import ClaudeTodoAgent
+from app.services.claude_todo_agent import TodoAssistantAgent
 from app.services.todo_accomplishment_agent import TodoAccomplishmentAgent
 from app.services.todo_calendar_link_service import TodoCalendarLinkService
 from app.services.todo_project_suggestion_service import TodoProjectSuggestionService
@@ -180,14 +180,13 @@ async def delete_todo(
   return Response(status_code=204)
 
 
-@router.post("/claude/message", response_model=ClaudeTodoMessageResponse)
-async def claude_todo_message(
-  payload: ClaudeTodoMessageRequest,
+async def _assistant_todo_message(
+  payload: TodoAssistantMessageRequest,
   background_tasks: BackgroundTasks,
   current_user: User = Depends(enforce_chat_quota),
   session: AsyncSession = Depends(get_session),
-) -> ClaudeTodoMessageResponse:
-  agent = ClaudeTodoAgent(session)
+) -> TodoAssistantMessageResponse:
+  agent = TodoAssistantAgent(session)
   response = await agent.respond(current_user.id, payload.message, payload.session_id)
   now_utc = datetime.now(timezone.utc)
   created_items = [_todo_response(item, now_utc) for item in response.items]
@@ -195,9 +194,29 @@ async def claude_todo_message(
     background_tasks.add_task(
       _run_project_suggestions, current_user.id, [item.id for item in response.items]
     )
-  return ClaudeTodoMessageResponse(
+  return TodoAssistantMessageResponse(
     session_id=response.session_id,
     reply=response.reply,
     created_items=created_items,
     raw_payload=response.raw_payload,
   )
+
+
+@router.post("/assistant/message", response_model=TodoAssistantMessageResponse)
+async def todo_assistant_message(
+  payload: TodoAssistantMessageRequest,
+  background_tasks: BackgroundTasks,
+  current_user: User = Depends(enforce_chat_quota),
+  session: AsyncSession = Depends(get_session),
+) -> TodoAssistantMessageResponse:
+  return await _assistant_todo_message(payload, background_tasks, current_user, session)
+
+
+@router.post("/claude/message", response_model=TodoAssistantMessageResponse, deprecated=True)
+async def claude_todo_message(
+  payload: TodoAssistantMessageRequest,
+  background_tasks: BackgroundTasks,
+  current_user: User = Depends(enforce_chat_quota),
+  session: AsyncSession = Depends(get_session),
+) -> TodoAssistantMessageResponse:
+  return await _assistant_todo_message(payload, background_tasks, current_user, session)

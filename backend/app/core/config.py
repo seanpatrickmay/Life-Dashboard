@@ -75,12 +75,9 @@ class Settings(BaseSettings):
     garmin_page_size: int = Field(100, env="GARMIN_PAGE_SIZE")
     garmin_max_activities: int = Field(400, env="GARMIN_MAX_ACTIVITIES")
 
-    # Vertex AI
-    vertex_project_id: str = Field(..., env="VERTEX_PROJECT_ID")
-    vertex_location: str = Field("us-central1", env="VERTEX_LOCATION")
-    vertex_model_name: str = Field("gemini-2.5-flash", env="VERTEX_MODEL_NAME")
-    vertex_sa_path: str | None = Field(None, env="VERTEX_SERVICE_ACCOUNT_JSON")
-    vertex_service_account_json_host: str | None = Field(None, env="VERTEX_SERVICE_ACCOUNT_JSON_HOST")
+    # OpenAI
+    openai_api_key: str | None = Field(None, env="OPENAI_API_KEY")
+    openai_model_name: str = Field("gpt-5-mini", env="OPENAI_MODEL_NAME")
 
     # Scheduler / Admin
     readiness_admin_token: str = Field(..., env="READINESS_ADMIN_TOKEN")

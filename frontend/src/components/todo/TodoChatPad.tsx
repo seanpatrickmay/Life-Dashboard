@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import styled from 'styled-components';
-import { useTodoClaudeChat } from '../../hooks/useTodoClaudeChat';
+import { useTodoChat } from '../../hooks/useTodoChat';
 
 const Wrapper = styled.div`
   display: flex;
@@ -78,7 +78,7 @@ const Button = styled.button`
 `;
 
 export function TodoChatPad() {
-  const { history, sendMessage, isSending } = useTodoClaudeChat();
+  const { history, sendMessage, isSending } = useTodoChat();
   const [text, setText] = useState('');
 
   const submit = async () => {

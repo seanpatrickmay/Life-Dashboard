@@ -802,8 +802,18 @@ def test_model_examples_suggest_and_approve_calendar_and_journal_actions(case: M
     )
     service = make_service(client=object())
     prompts: list[str] = []
+    extraction_response = (
+        {"calendar_creates": case.extraction["calendar_creates"]}
+        if case.action_key == "calendar_creates"
+        else {
+            "todo_creates": [],
+            "todo_completions": [],
+            "journal_entries": case.extraction["journal_entries"],
+            "workspace_updates": [],
+        }
+    )
     responses = [
-        json.dumps(case.extraction, ensure_ascii=False),
+        json.dumps(extraction_response, ensure_ascii=False),
         json.dumps(case.judgment, ensure_ascii=False),
     ]
 

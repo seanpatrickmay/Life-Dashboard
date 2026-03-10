@@ -14,7 +14,13 @@ from google.oauth2 import id_token
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import clear_session_cookie, create_user_session, get_current_user, set_session_cookie
+from app.core.auth import (
+    clear_session_cookie,
+    create_user_session,
+    get_current_user,
+    get_optional_current_user,
+    set_session_cookie,
+)
 from app.core.config import settings
 from app.db.models.entities import User, UserRole, UserSession
 from app.db.session import get_session
@@ -189,8 +195,11 @@ async def google_callback(
 
 @router.get("/me", response_model=AuthMeResponse)
 async def get_me(
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> AuthMeResponse:
+    if current_user is None:
+        return AuthMeResponse(user=None)
+
     return AuthMeResponse(
         user=AuthUserResponse(
             id=current_user.id,

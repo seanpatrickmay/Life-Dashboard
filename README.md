@@ -12,7 +12,7 @@ Life Dashboard is a self-hosted wellness hub that blends Garmin health data, nut
 ## Highlights
 
 - **Garmin ingestion**: HRV, resting HR, sleep, training load, activities, and energy data.
-- **AI insights**: Vertex AI (Gemini) summaries with a Monet-style assistant and tool routing for nutrition and todos.
+- **AI insights**: OpenAI Responses API summaries with a Monet-style assistant and tool routing for nutrition and todos.
 - **Nutrition system**: Ingredients, recipes, daily goals, and intake logging with AI-assisted parsing.
 - **Rich UI**: Monet-inspired lily pads, pixel textures, and layered water motifs.
 - **Docker-first**: One compose file runs FastAPI and the Vite frontend against an external Postgres (Neon recommended).
@@ -23,15 +23,15 @@ Life Dashboard is a self-hosted wellness hub that blends Garmin health data, nut
 - **Backend**: FastAPI with async SQLAlchemy for ingestion, insights, and admin utilities.
 - **Database**: PostgreSQL with time-series tables, activity storage, nutrition catalog, and AI insights.
 - **AI services**:
-  - Vertex AI (Gemini) for daily readiness narratives and Monet assistant reasoning.
-  - Tool agents for nutrition parsing and todo generation backed by Vertex AI prompts.
+  - OpenAI Responses API with `gpt-5-mini` for daily readiness narratives and Monet assistant reasoning.
+  - Tool agents for nutrition parsing and todo generation backed by OpenAI structured outputs.
 
 ## Tech Stack
 
 - **Frontend**: React, Vite, styled-components, TanStack Query
 - **Backend**: FastAPI, SQLAlchemy (async), Alembic, Loguru
 - **Data**: PostgreSQL
-- **AI**: Google Vertex AI (Gemini via google-genai)
+- **AI**: OpenAI Responses API (`gpt-5-mini` via the OpenAI Python SDK)
 - **Infra**: Docker, Docker Compose
 
 ## Repository Layout
@@ -140,15 +140,12 @@ All configuration lives in `.env`. The most important variables are grouped belo
 | `GARMIN_PAGE_SIZE` / `GARMIN_MAX_ACTIVITIES` | Pagination limits for ingestion |
 | `READINESS_ADMIN_TOKEN` | Admin token for manual ingest endpoint |
 
-### Vertex AI (Gemini)
+### OpenAI
 
 | Variable | Purpose |
 | --- | --- |
-| `VERTEX_PROJECT_ID` | GCP project ID |
-| `VERTEX_LOCATION` | Vertex region (ex: `us-central1`) |
-| `VERTEX_MODEL_NAME` | Gemini model name |
-| `VERTEX_SERVICE_ACCOUNT_JSON` | Container path to service account JSON |
-| `VERTEX_SERVICE_ACCOUNT_JSON_HOST` | Host path mounted into the container |
+| `OPENAI_API_KEY` | API key for OpenAI Responses API calls |
+| `OPENAI_MODEL_NAME` | Model name used across app LLM workflows (defaults to `gpt-5-mini`) |
 
 ### Frontend
 
@@ -160,7 +157,7 @@ All configuration lives in `.env`. The most important variables are grouped belo
 
 1. **Garmin ingestion** pulls activities, HRV, resting HR, sleep, training load, and energy.
 2. **Metric aggregation** normalizes daily values and computes rolling training load.
-3. **Vertex AI** generates a daily readiness narrative stored in Postgres.
+3. **OpenAI** generates a daily readiness narrative stored in Postgres.
 4. **Frontend** surfaces the latest insight plus 14-day trends and nutrition progress.
 
 See `docs/pipeline.md` for the full flow.

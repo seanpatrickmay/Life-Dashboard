@@ -143,7 +143,7 @@ export function ReadinessCard() {
           <HeroLabel data-halo="heading">Today</HeroLabel>
           <HeroNarrative>{heroNarrative}</HeroNarrative>
           {!insightLoading && !hasStructured && (
-            <Notice>Structured insight missing. Investigate Vertex generation.</Notice>
+            <Notice>Structured insight missing. Investigate AI generation.</Notice>
           )}
         </HeroTile>
       </HeroCluster>
@@ -154,4 +154,3 @@ export function ReadinessCard() {
 function formatValue(value?: number | null, decimals = 0) {
   return typeof value === 'number' ? value.toFixed(decimals) : '—';
 }
-

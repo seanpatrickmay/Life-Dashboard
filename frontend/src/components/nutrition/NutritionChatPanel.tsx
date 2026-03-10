@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import styled from 'styled-components';
 import { Card } from '../common/Card';
-import { useClaudeChat } from '../../hooks/useClaudeChat';
+import { useNutritionChat } from '../../hooks/useNutritionChat';
 
 const Panel = styled(Card)`
   min-height: 260px;
@@ -52,8 +52,8 @@ const Button = styled.button`
   cursor: pointer;
 `;
 
-export function ClaudeChatPanel() {
-  const { history, sendMessage, isSending } = useClaudeChat();
+export function NutritionChatPanel() {
+  const { history, sendMessage, isSending } = useNutritionChat();
   const [text, setText] = useState('');
 
   const submit = async () => {
@@ -69,7 +69,7 @@ export function ClaudeChatPanel() {
 
   return (
     <Panel>
-      <h3 data-halo="heading">Claude • Nutrition Mentor</h3>
+      <h3 data-halo="heading">Monet • Nutrition Mentor</h3>
       <History>
         {history.length === 0 && <Entry $role="assistant">Tell me what you ate today and I’ll log it.</Entry>}
         {history.map((entry) => (

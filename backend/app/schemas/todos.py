@@ -38,13 +38,17 @@ class TodoUpdateRequest(BaseModel):
   time_zone: str | None = Field(default=None, max_length=64)
 
 
-class ClaudeTodoMessageRequest(BaseModel):
+class TodoAssistantMessageRequest(BaseModel):
   session_id: str | None = None
   message: str
 
 
-class ClaudeTodoMessageResponse(BaseModel):
+class TodoAssistantMessageResponse(BaseModel):
   session_id: str
   reply: str
   created_items: list[TodoItemResponse]
   raw_payload: dict[str, Any] | None = None
+
+
+ClaudeTodoMessageRequest = TodoAssistantMessageRequest
+ClaudeTodoMessageResponse = TodoAssistantMessageResponse

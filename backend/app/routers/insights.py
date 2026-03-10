@@ -7,6 +7,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
+from app.core.config import settings
 from app.db.session import get_session
 from app.db.models.entities import User
 from app.schemas.insights import InsightResponse
@@ -30,13 +31,13 @@ async def latest_insight(
             readiness_score=None,
             readiness_label="Pending",
             narrative="Insight not yet generated.",
-            source_model="vertex",
+            source_model=settings.openai_model_name,
             last_updated=now,
             refreshing=True,
         )
 
-    insight = metric.vertex_insight
-    source_model = insight.model_name if insight else "vertex"
+    insight = metric.readiness_insight
+    source_model = insight.model_name if insight else settings.openai_model_name
     metric_datetime = datetime.combine(metric.metric_date, datetime.min.time(), tzinfo=EASTERN_TZ)
     last_updated = insight.updated_at if insight else metric_datetime
     narrative = metric.readiness_narrative or "Insight not yet generated."

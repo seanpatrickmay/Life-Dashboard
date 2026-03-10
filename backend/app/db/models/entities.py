@@ -133,10 +133,10 @@ class DailyMetric(Base):
     insight_training_load_note: Mapped[str | None] = mapped_column(Text)
     insight_training_load_score: Mapped[float | None]
     insight_morning_note: Mapped[str | None] = mapped_column(Text)
-    vertex_insight_id: Mapped[int | None] = mapped_column(ForeignKey("vertexinsight.id"))
+    readiness_insight_id: Mapped[int | None] = mapped_column(ForeignKey("readiness_insight.id"))
 
     user: Mapped[User] = relationship(back_populates="daily_metrics")
-    vertex_insight: Mapped["VertexInsight"] = relationship(back_populates="daily_metric", lazy="joined")
+    readiness_insight: Mapped["ReadinessInsight"] = relationship(back_populates="daily_metric", lazy="joined")
 
 
 class SleepSession(Base):
@@ -147,7 +147,9 @@ class SleepSession(Base):
     raw_payload: Mapped[dict] = mapped_column(JSON)
 
 
-class VertexInsight(Base):
+class ReadinessInsight(Base):
+    __tablename__ = "readiness_insight"
+
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
     metric_date: Mapped[date]
     model_name: Mapped[str]
@@ -156,7 +158,7 @@ class VertexInsight(Base):
     tokens_used: Mapped[int | None]
     readiness_score: Mapped[int | None]
 
-    daily_metric: Mapped[DailyMetric] = relationship(back_populates="vertex_insight", uselist=False)
+    daily_metric: Mapped[DailyMetric] = relationship(back_populates="readiness_insight", uselist=False)
 
 
 class IngestionRun(Base):

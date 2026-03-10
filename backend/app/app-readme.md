@@ -7,7 +7,7 @@ Contains the FastAPI application code: configuration, database access, service l
 
 | Path | Description |
 | --- | --- |
-| `clients/` | Integrations with external services (e.g., Garmin, Vertex). |
+| `clients/` | Integrations with external services (e.g., Garmin, OpenAI). |
 | `core/` | Configuration, logging setup, shared constants. |
 | `db/` | SQLAlchemy models, repositories, and session management. |
 | `main.py` | FastAPI app factory, middleware registration, router mounting. |

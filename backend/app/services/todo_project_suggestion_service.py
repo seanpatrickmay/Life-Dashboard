@@ -1,19 +1,15 @@
 """Suggestion service for mapping todos into projects."""
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
 
-from google.genai.types import GenerateContentConfig
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.genai_client import build_genai_client
-from app.core.config import settings
+from app.clients.openai_client import OpenAIResponsesClient
 from app.db.models.todo import TodoItem
 from app.db.repositories.project_repository import (
   INBOX_PROJECT_NAME,
@@ -21,11 +17,7 @@ from app.db.repositories.project_repository import (
   TodoProjectSuggestionRepository,
 )
 from app.prompts import TODO_PROJECT_MAPPING_PROMPT
-
-try:  # google-genai < 0.5.0 ships HttpOptions elsewhere / omits it entirely
-  from google.genai.types import HttpOptions
-except ImportError:  # pragma: no cover - runtime shim for docker image
-  HttpOptions = None  # type: ignore[assignment]
+from app.schemas.llm_outputs import ProjectAssignmentOutput
 
 
 AUTO_APPLY_CONFIDENCE = 0.75
@@ -44,10 +36,8 @@ class TodoProjectSuggestionService:
     self.session = session
     self.project_repo = ProjectRepository(session)
     self.suggestion_repo = TodoProjectSuggestionRepository(session)
-    self.model_name = settings.vertex_model_name or "gemini-2.5-flash"
-    http_options = HttpOptions(api_version="v1") if HttpOptions else None
     try:
-      self.client = build_genai_client(http_options=http_options)
+      self.client = OpenAIResponsesClient()
     except Exception as exc:  # noqa: BLE001
       logger.warning("[todo-project] failed to init genai client: {}", exc)
       self.client = None
@@ -124,21 +114,17 @@ class TodoProjectSuggestionService:
       todos_json=json.dumps([{"todo_id": todo.id, "text": todo.text} for todo in todos]),
     )
     try:
-      payload_text = await self._call_model(prompt)
-      payload = self._safe_parse_json(payload_text)
-      if not isinstance(payload, dict):
-        return []
-      assignments_raw = payload.get("assignments")
-      if not isinstance(assignments_raw, list):
-        return []
+      result = await self.client.generate_json(
+        prompt,
+        response_model=ProjectAssignmentOutput,
+        temperature=0.2,
+      )
       parsed: list[ProjectAssignment] = []
-      for item in assignments_raw:
-        if not isinstance(item, dict):
-          continue
-        todo_id = item.get("todo_id")
-        project_name = str(item.get("project_name") or "").strip()
-        confidence_raw = item.get("confidence", 0)
-        reason = str(item.get("reason") or "").strip() or None
+      for item in result.data.assignments:
+        todo_id = item.todo_id
+        project_name = item.project_name.strip()
+        confidence_raw = item.confidence
+        reason = (item.reason or "").strip() or None
         try:
           confidence = max(0.0, min(1.0, float(confidence_raw)))
         except (TypeError, ValueError):
@@ -157,30 +143,6 @@ class TodoProjectSuggestionService:
     except Exception as exc:  # noqa: BLE001
       logger.warning("[todo-project] model suggestion failed: {}", exc)
       return []
-
-  async def _call_model(self, prompt: str) -> str:
-    def _invoke() -> str:
-      config = GenerateContentConfig(temperature=0.2)
-      result = self.client.models.generate_content(
-        model=self.model_name,
-        contents=prompt,
-        config=config,
-      )
-      return result.text or ""
-
-    return await asyncio.to_thread(_invoke)
-
-  def _safe_parse_json(self, text: str) -> dict[str, Any] | None:
-    try:
-      return json.loads(text)
-    except json.JSONDecodeError:
-      match = re.search(r"\{.*\}", text, re.DOTALL)
-      if not match:
-        return None
-      try:
-        return json.loads(match.group(0))
-      except json.JSONDecodeError:
-        return None
 
   def _heuristic_assignment(self, todo: TodoItem, project_names: list[str]) -> ProjectAssignment:
     text = todo.text.lower()

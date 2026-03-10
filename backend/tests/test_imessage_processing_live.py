@@ -18,8 +18,7 @@ if str(backend_root) not in sys.path:
     sys.path.insert(0, str(backend_root))
 load_dotenv(backend_root.parent / ".env")
 
-from app.clients.genai_client import build_genai_client
-from app.core.config import settings
+from app.clients.openai_client import OpenAIResponsesClient
 from app.services.imessage_processing_service import IMessageProcessingService
 from app.services.imessage_utils import infer_project_match
 from app.utils.timezone import resolve_time_zone
@@ -143,15 +142,13 @@ def build_payload(
 def live_service() -> IMessageProcessingService:
     _require_live_llm()
     service = object.__new__(IMessageProcessingService)
-    service.client = build_genai_client()
-    service.model_name = settings.vertex_model_name or "gemini-2.5-flash"
+    service.client = OpenAIResponsesClient()
     return service
 
 
 def clone_live_service(base_service: IMessageProcessingService) -> IMessageProcessingService:
     service = object.__new__(IMessageProcessingService)
     service.client = base_service.client
-    service.model_name = base_service.model_name
     return service
 
 
@@ -163,11 +160,12 @@ async def run_pipeline_async(
     responses: list[str] = []
     original_call_model = service._call_model
 
-    async def tracked_call_model(self, prompt: str) -> str:
+    async def tracked_call_model(self, prompt: str, response_model):
         prompts.append(prompt)
-        text = await original_call_model(prompt)
-        responses.append(text)
-        return text
+        result = await original_call_model(prompt, response_model)
+        serializer = getattr(result, "model_dump_json", None)
+        responses.append(serializer() if callable(serializer) else str(result))
+        return result
 
     service._call_model = MethodType(tracked_call_model, service)
     try:
@@ -1111,11 +1109,12 @@ def _validate_project_inference(case: ProjectInferenceCase, live_service: IMessa
     service = clone_live_service(live_service)
     original_call_model = service._call_model
 
-    async def tracked_call_model(self, prompt: str) -> str:
+    async def tracked_call_model(self, prompt: str, response_model):
         prompts.append(prompt)
-        text = await original_call_model(prompt)
-        responses.append(text)
-        return text
+        result = await original_call_model(prompt, response_model)
+        serializer = getattr(result, "model_dump_json", None)
+        responses.append(serializer() if callable(serializer) else str(result))
+        return result
 
     service._call_model = MethodType(tracked_call_model, service)
     try:

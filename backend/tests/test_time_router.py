@@ -65,3 +65,16 @@ def test_time_endpoint_uses_time_zone_and_decimal_hour(monkeypatch: pytest.Monke
     # hour_decimal should include minutes/seconds rounded to 4 decimals
     assert pytest.approx(payload["hour_decimal"], rel=1e-4, abs=1e-4) == 14.7583
     assert payload["moment"] == "noon"
+
+
+def test_time_endpoint_accepts_path_without_trailing_slash(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = build_client()
+    monkeypatch.setattr(time_router, "datetime", FixedDateTime)
+
+    response = client.get("/api/time", follow_redirects=False)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["time_zone"] == time_router.TIME_ZONE_NAME
+    assert pytest.approx(payload["hour_decimal"], rel=1e-4, abs=1e-4) == 14.7583
+    assert payload["moment"] == "noon"

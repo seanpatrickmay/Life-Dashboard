@@ -1,22 +1,21 @@
 """Process synced iMessages into workspace knowledge, todos, calendar, and journal."""
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
+from inspect import signature
 from typing import Any
 
-from google.genai.types import GenerateContentConfig
 from loguru import logger
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.clients.genai_client import build_genai_client
-from app.core.config import settings
+from app.clients.openai_client import OpenAIResponsesClient
 from app.db.models.imessage import (
     IMessageActionAudit,
     IMessageConversation,
@@ -38,6 +37,15 @@ from app.prompts import (
     IMESSAGE_PAGE_SELECTION_PROMPT,
     IMESSAGE_PROJECT_INFERENCE_PROMPT,
 )
+from app.schemas.llm_outputs import (
+    IMessageActionExtractionOutput,
+    IMessageActionJudgeOutput,
+    IMessageCalendarExtractionOutput,
+    IMessageDedupDecisionOutput,
+    IMessagePageMergeOutput,
+    IMessagePageSelectionOutput,
+    IMessageProjectInferenceOutput,
+)
 from app.services.google_calendar_event_service import GoogleCalendarEventService
 from app.services.imessage_utils import (
     ProjectCatalogEntry,
@@ -55,11 +63,6 @@ from app.services.journal_service import JournalService
 from app.services.todo_accomplishment_agent import TodoAccomplishmentAgent
 from app.services.workspace_service import WorkspaceService
 from app.utils.timezone import resolve_time_zone
-
-try:  # pragma: no cover - runtime shim for google-genai versions
-    from google.genai.types import HttpOptions
-except ImportError:  # pragma: no cover - compatibility
-    HttpOptions = None  # type: ignore[assignment]
 
 
 PROJECT_CONFIDENCE_THRESHOLD = 0.72
@@ -190,10 +193,8 @@ class IMessageProcessingService:
         self.calendar_service = GoogleCalendarEventService(session)
         self.workspace_service = WorkspaceService(session)
         self.todo_accomplishment_agent = TodoAccomplishmentAgent(session)
-        self.model_name = settings.vertex_model_name or "gemini-2.5-flash"
-        http_options = HttpOptions(api_version="v1") if HttpOptions else None
         try:
-            self.client = build_genai_client(http_options=http_options)
+            self.client = OpenAIResponsesClient()
         except Exception as exc:  # noqa: BLE001
             logger.warning("[imessage] failed to initialize genai client: {}", exc)
             self.client = None
@@ -1117,13 +1118,14 @@ class IMessageProcessingService:
             "{payload_json}",
             json.dumps(dedup_payload, ensure_ascii=False),
         )
-        text = await self._call_model(prompt)
-        parsed = self._safe_parse_json(text)
-        if not isinstance(parsed, dict):
+        try:
+            parsed = await self._invoke_model(prompt, IMessageDedupDecisionOutput)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[imessage] dedup model failed: {}", exc)
             return DuplicateDecision(is_duplicate=False, reason="Deduplicator returned invalid JSON.")
-        is_duplicate = bool(parsed.get("is_duplicate"))
-        matched_candidate_id = parsed.get("matched_candidate_id")
-        matched_candidate_type = str(parsed.get("matched_candidate_type") or "").strip() or None
+        is_duplicate = parsed.is_duplicate
+        matched_candidate_id = parsed.matched_candidate_id
+        matched_candidate_type = (parsed.matched_candidate_type or "").strip() or None
         try:
             matched_candidate_id = int(matched_candidate_id) if matched_candidate_id is not None else None
         except (TypeError, ValueError):
@@ -1131,7 +1133,7 @@ class IMessageProcessingService:
         if not is_duplicate:
             return DuplicateDecision(
                 is_duplicate=False,
-                reason=str(parsed.get("reason") or "No duplicate candidate identified."),
+                reason=parsed.reason or "No duplicate candidate identified.",
             )
         candidate = next(
             (
@@ -1143,7 +1145,7 @@ class IMessageProcessingService:
         )
         return DuplicateDecision(
             is_duplicate=True,
-            reason=str(parsed.get("reason") or "Existing artifact already represents this action."),
+            reason=parsed.reason or "Existing artifact already represents this action.",
             matched_candidate_type=(candidate or {}).get("artifact_type") or matched_candidate_type,
             matched_candidate_id=(candidate or {}).get("artifact_id") or matched_candidate_id,
         )
@@ -1710,9 +1712,9 @@ class IMessageProcessingService:
             "{payload_json}",
             json.dumps(inference_payload, ensure_ascii=False),
         )
-        text = await self._call_model(prompt)
-        parsed = self._safe_parse_json(text)
-        if not isinstance(parsed, dict):
+        try:
+            parsed = await self._invoke_model(prompt, IMessageProjectInferenceOutput)
+        except Exception:
             return self._normalize_project_inference(payload_messages, {
                 "project_name": heuristic_guess.project_name,
                 "confidence": heuristic_guess.confidence,
@@ -1724,12 +1726,12 @@ class IMessageProcessingService:
             for item in heuristic_guess.candidates
             if isinstance(item, dict)
         }
-        project_name = str(parsed.get("project_name") or "").strip()
+        project_name = str(parsed.project_name or "").strip()
         invalid_candidate = bool(project_name) and project_name not in allowed_names
         if project_name and project_name not in allowed_names:
             project_name = heuristic_guess.project_name or ""
         try:
-            confidence = float(parsed.get("confidence") or 0.0)
+            confidence = float(parsed.confidence or 0.0)
         except (TypeError, ValueError):
             confidence = heuristic_guess.confidence
         if invalid_candidate:
@@ -1738,13 +1740,13 @@ class IMessageProcessingService:
             return self._normalize_project_inference(payload_messages, {
                 "project_name": None,
                 "confidence": 0.0,
-                "reason": str(parsed.get("reason") or "Project inference model rejected all candidates."),
+                "reason": parsed.reason or "Project inference model rejected all candidates.",
             })
         return self._normalize_project_inference(payload_messages, {
             "project_name": project_name,
             "confidence": max(0.0, min(0.98, confidence)),
-            "reason": str(parsed.get("reason") or heuristic_guess.reason),
-            "source_message_ids": parsed.get("source_message_ids"),
+            "reason": parsed.reason or heuristic_guess.reason,
+            "source_message_ids": parsed.source_message_ids,
         })
 
     def _should_use_project_inference_model(self, heuristic_guess: ProjectGuess) -> bool:
@@ -1799,18 +1801,15 @@ class IMessageProcessingService:
             "{payload_json}",
             json.dumps(calendar_payload, ensure_ascii=False),
         )
-        text = await self._call_model(prompt)
-        parsed = self._safe_parse_json(text)
-        if not isinstance(parsed, dict):
-            return heuristic
-        calendar_creates = parsed.get("calendar_creates")
-        if not isinstance(calendar_creates, list):
+        try:
+            parsed = await self._invoke_model(prompt, IMessageCalendarExtractionOutput)
+        except Exception:
             return heuristic
         return {
             "calendar_creates": self._normalize_action_list(
                 payload_messages,
                 action_type="calendar.create",
-                actions=calendar_creates,
+                actions=[item.model_dump() for item in parsed.calendar_creates],
             )
         }
 
@@ -1844,9 +1843,9 @@ class IMessageProcessingService:
             "{payload_json}",
             json.dumps(payload, ensure_ascii=False),
         )
-        text = await self._call_model(prompt)
-        parsed = self._safe_parse_json(text)
-        if not isinstance(parsed, dict):
+        try:
+            parsed = await self._invoke_model(prompt, IMessageActionExtractionOutput)
+        except Exception:
             return {
                 key: self._normalize_action_list(
                     payload_messages,
@@ -1863,7 +1862,7 @@ class IMessageProcessingService:
 
         merged = {}
         for key in ("todo_creates", "todo_completions", "journal_entries", "workspace_updates"):
-            value = parsed.get(key)
+            value = [item.model_dump() for item in getattr(parsed, key)]
             action_type = {
                 "todo_creates": "todo.create",
                 "todo_completions": "todo.complete",
@@ -1889,11 +1888,11 @@ class IMessageProcessingService:
             "{payload_json}",
             json.dumps(judge_payload, ensure_ascii=False),
         )
-        text = await self._call_model(prompt)
-        parsed = self._safe_parse_json(text)
-        if not isinstance(parsed, dict):
+        try:
+            parsed = await self._invoke_model(prompt, IMessageActionJudgeOutput)
+        except Exception:
             return heuristic
-        return parsed
+        return parsed.model_dump()
 
     async def _resolve_project(
         self,
@@ -2581,14 +2580,17 @@ class IMessageProcessingService:
             "{payload_json}",
             json.dumps(payload, ensure_ascii=False),
         )
-        text = await self._call_model(prompt)
-        parsed = self._safe_parse_json(text)
-        if isinstance(parsed, dict) and parsed.get("mode") in {"update_existing", "create_new", "skip"}:
-            if parsed.get("mode") == "update_existing":
+        try:
+            parsed = await self._invoke_model(prompt, IMessagePageSelectionOutput)
+        except Exception:
+            return heuristic_match
+        parsed_payload = parsed.model_dump()
+        if parsed.mode in {"update_existing", "create_new", "skip"}:
+            if parsed.mode == "update_existing":
                 candidate_ids = {page.id for page in candidates}
-                if int(parsed.get("page_id") or 0) not in candidate_ids:
+                if int(parsed.page_id or 0) not in candidate_ids:
                     return heuristic_match
-            return parsed
+            return parsed_payload
         return heuristic_match
 
     def _heuristic_page_selection(self, candidates: list, action: dict[str, Any]) -> dict[str, Any]:
@@ -2650,13 +2652,15 @@ class IMessageProcessingService:
             "{payload_json}",
             json.dumps(payload, ensure_ascii=False),
         )
-        text = await self._call_model(prompt)
-        parsed = self._safe_parse_json(text)
-        if isinstance(parsed, dict) and parsed.get("body"):
+        try:
+            parsed = await self._invoke_model(prompt, IMessagePageMergeOutput)
+        except Exception:
+            return heuristic
+        if parsed.body:
             return {
-                "title": str(parsed.get("title") or heuristic["title"]).strip(),
-                "body": str(parsed.get("body") or heuristic["body"]).strip(),
-                "reason": str(parsed.get("reason") or ""),
+                "title": (parsed.title or heuristic["title"]).strip(),
+                "body": (parsed.body or heuristic["body"]).strip(),
+                "reason": parsed.reason or "",
             }
         return heuristic
 
@@ -2800,29 +2804,35 @@ class IMessageProcessingService:
         )
         await self.session.commit()
 
-    async def _call_model(self, prompt: str) -> str:
-        def _invoke() -> str:
-            config = GenerateContentConfig(temperature=0.0)
-            result = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=config,
-            )
-            return result.text or ""
+    async def _call_model(self, prompt: str, response_model):
+        if self.client is None:
+            raise ValueError("OpenAI client is not available.")
+        result = await self.client.generate_json(
+            prompt,
+            response_model=response_model,
+            temperature=0.0,
+        )
+        return result.data
 
-        return await asyncio.to_thread(_invoke)
-
-    def _safe_parse_json(self, text: str) -> dict[str, Any] | None:
+    async def _invoke_model(self, prompt: str, response_model: type[BaseModel]):
+        model_call = self._call_model
         try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", text, re.DOTALL)
-            if not match:
-                return None
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError:
-                return None
+            parameter_count = len(signature(model_call).parameters)
+        except (TypeError, ValueError):
+            parameter_count = 2
+
+        if parameter_count <= 1:
+            raw_result = await model_call(prompt)
+        else:
+            raw_result = await model_call(prompt, response_model)
+
+        if isinstance(raw_result, response_model):
+            return raw_result
+        if isinstance(raw_result, str):
+            return response_model.model_validate_json(raw_result)
+        if isinstance(raw_result, BaseModel):
+            return response_model.model_validate(raw_result.model_dump())
+        return response_model.model_validate(raw_result)
 
     def _parse_dt(self, value: Any) -> datetime | None:
         if not value:

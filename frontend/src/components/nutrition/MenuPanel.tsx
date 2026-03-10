@@ -196,7 +196,7 @@ export function MenuPanel() {
       </Collapse>
       {!expanded && entries.length > 0 && (
         <p style={{ opacity: 0.65, fontSize: '0.85rem' }}>
-          Expand to adjust the meals Claude logged today.
+          Expand to adjust the meals Monet logged today.
         </p>
       )}
     </Card>

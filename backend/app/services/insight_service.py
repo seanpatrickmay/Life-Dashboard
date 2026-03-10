@@ -1,31 +1,31 @@
-"""Generates readiness insights using Vertex AI."""
+"""Generates readiness insights using OpenAI."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-import asyncio
 import json
 
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.vertex_client import VertexClient
+from app.clients.openai_client import OpenAIResponsesClient
 from app.core.config import settings
-from app.db.models.entities import DailyMetric, VertexInsight
+from app.db.models.entities import DailyMetric, ReadinessInsight
 from app.prompts.llm_prompts import (
     READINESS_PERSONA,
     READINESS_RESPONSE_INSTRUCTIONS,
     READINESS_SCORE_GUIDANCE,
 )
+from app.schemas.llm_outputs import ReadinessInsightOutput
 from app.utils.timezone import eastern_today
 
 
 class InsightService:
-    def __init__(self, session: AsyncSession, vertex: VertexClient | None = None) -> None:
+    def __init__(self, session: AsyncSession, client: OpenAIResponsesClient | None = None) -> None:
         self.session = session
-        self._vertex = vertex
+        self._client = client
 
-    async def refresh_daily_insight(self, user_id: int, metric_date: date | None = None) -> VertexInsight:
+    async def refresh_daily_insight(self, user_id: int, metric_date: date | None = None) -> ReadinessInsight:
         metric_date = metric_date or eastern_today()
         metric = await self._fetch_metric(user_id, metric_date)
         history = await self._fetch_metric_history(user_id, metric_date, days=14)
@@ -42,12 +42,17 @@ class InsightService:
         fallback_score = existing_insight.readiness_score if existing_insight else None
 
         prompt = self._build_prompt(metric, history)
-        logger.debug("Vertex prompt for {}:\n{}", metric_date, prompt)
+        logger.debug("Readiness prompt for {}:\n{}", metric_date, prompt)
         try:
-            vertex = await self._get_vertex()
-            narrative, tokens = await vertex.generate_text(prompt)
+            client = await self._get_client()
+            result = await client.generate_json(
+                prompt,
+                response_model=ReadinessInsightOutput,
+                temperature=0.3,
+                max_output_tokens=30000,
+            )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Vertex insight generation failed: {}. Storing placeholder.", exc)
+            logger.warning("Readiness insight generation failed: {}. Storing placeholder.", exc)
             narrative = fallback_narrative or (
                 "Insight generation is temporarily unavailable. "
                 "Your readiness score will return once connectivity is restored."
@@ -55,21 +60,13 @@ class InsightService:
             tokens = None
             readiness_score = fallback_score if fallback_score is not None else 50
         else:
-            # Attempt to parse structured JSON and extract readiness score
-            parsed_score = None
-            try:
-                obj = json.loads(narrative)
-                mr = obj.get("overall_readiness") or obj.get("morning_readiness") if isinstance(obj, dict) else None
-                if isinstance(mr, dict) and isinstance(mr.get("score"), int):
-                    parsed_score = mr.get("score")
-                if isinstance(mr, dict) and isinstance(mr.get("score_100"), (int, float)):
-                    parsed_score = mr.get("score_100")
-            except Exception:  # noqa: BLE001
-                parsed_score = None
-            readiness_score = parsed_score if parsed_score is not None else self._extract_score(narrative)
+            structured = result.data
+            narrative = json.dumps(structured.model_dump(), ensure_ascii=False)
+            tokens = result.total_tokens
+            readiness_score = self._normalize_score(structured.overall_readiness.score_100) or self._extract_score(narrative)
 
         logger.debug(
-            "Vertex narrative received (len={}, tokens={}):\n{}",
+            "Readiness narrative received (len={}, tokens={}):\n{}",
             len(narrative or ""),
             tokens,
             narrative,
@@ -77,7 +74,7 @@ class InsightService:
 
         preview = narrative.replace("\n", " ") if narrative else ""
         logger.info(
-            "Vertex insight preview for {} -> score {} (tokens={}): {}",
+            "Readiness insight preview for {} -> score {} (tokens={}): {}",
             metric_date,
             readiness_score,
             tokens,
@@ -86,16 +83,16 @@ class InsightService:
 
         if existing_insight:
             insight = existing_insight
-            insight.model_name = settings.vertex_model_name
+            insight.model_name = settings.openai_model_name
             insight.prompt = prompt
             insight.response_text = narrative
             insight.tokens_used = tokens
             insight.readiness_score = readiness_score
         else:
-            insight = VertexInsight(
+            insight = ReadinessInsight(
                 user_id=user_id,
                 metric_date=metric_date,
-                model_name=settings.vertex_model_name,
+                model_name=settings.openai_model_name,
                 prompt=prompt,
                 response_text=narrative,
                 tokens_used=tokens,
@@ -104,7 +101,7 @@ class InsightService:
             self.session.add(insight)
 
         if metric:
-            metric.vertex_insight = insight
+            metric.readiness_insight = insight
             metric.readiness_narrative = narrative
             metric.readiness_score = readiness_score
             structured = self._maybe_parse_structured(narrative)
@@ -128,20 +125,18 @@ class InsightService:
             len(metric.readiness_narrative or "") if metric else 0,
         )
         logger.debug(
-            "Stored Vertex insight for {} (len={}):\n{}",
+            "Stored readiness insight for {} (len={}):\n{}",
             metric_date,
             len(narrative or ""),
             narrative,
         )
-        logger.info("Stored Vertex insight for {}", metric_date)
+        logger.info("Stored readiness insight for {}", metric_date)
         return insight
 
-    async def _get_vertex(self) -> VertexClient:
-        # Vertex client initialization (credentials + vertexai.init) is synchronous and can be slow.
-        # Keep InsightService lightweight for read-only endpoints by initializing lazily in a thread.
-        if self._vertex is None:
-            self._vertex = await asyncio.to_thread(VertexClient)
-        return self._vertex
+    async def _get_client(self) -> OpenAIResponsesClient:
+        if self._client is None:
+            self._client = OpenAIResponsesClient()
+        return self._client
 
     async def _fetch_metric(self, user_id: int, metric_date: date) -> DailyMetric | None:
         stmt = select(DailyMetric).where(DailyMetric.user_id == user_id, DailyMetric.metric_date == metric_date)
@@ -187,8 +182,8 @@ class InsightService:
                     if metric.readiness_score != normalized:
                         metric.readiness_score = normalized
                         dirty = True
-                    if metric.vertex_insight and metric.vertex_insight.readiness_score != normalized:
-                        metric.vertex_insight.readiness_score = normalized
+                    if metric.readiness_insight and metric.readiness_insight.readiness_score != normalized:
+                        metric.readiness_insight.readiness_score = normalized
                         dirty = True
                 if structured_label:
                     if metric.readiness_label != structured_label:
@@ -209,14 +204,14 @@ class InsightService:
                     )
         return metric
 
-    async def _fetch_insight(self, user_id: int, metric_date: date) -> VertexInsight | None:
+    async def _fetch_insight(self, user_id: int, metric_date: date) -> ReadinessInsight | None:
         stmt = (
-            select(VertexInsight)
+            select(ReadinessInsight)
             .where(
-                VertexInsight.user_id == user_id,
-                VertexInsight.metric_date == metric_date,
+                ReadinessInsight.user_id == user_id,
+                ReadinessInsight.metric_date == metric_date,
             )
-            .order_by(VertexInsight.updated_at.desc())
+            .order_by(ReadinessInsight.updated_at.desc())
             .limit(1)
         )
         result = await self.session.execute(stmt)

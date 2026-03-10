@@ -6,7 +6,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.entities import DailyMetric, VertexInsight
+from app.db.models.entities import DailyMetric, ReadinessInsight
 from loguru import logger
 
 
@@ -44,8 +44,8 @@ class MetricsRepository:
             )
         return metric, changed_fields
 
-    async def attach_insight(self, metric: DailyMetric, insight: VertexInsight) -> None:
-        metric.vertex_insight = insight
+    async def attach_insight(self, metric: DailyMetric, insight: ReadinessInsight) -> None:
+        metric.readiness_insight = insight
         metric.readiness_score = insight.readiness_score  # type: ignore[attr-defined]
         if metric.readiness_label is None:
             metric.readiness_label = insight.response_text.split("\n", 1)[0]

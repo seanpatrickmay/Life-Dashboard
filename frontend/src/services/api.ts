@@ -10,8 +10,8 @@ import {
   deleteGuestProjectSuggestion,
   deleteGuestTodo,
   getGuestAuthMe,
-  getGuestClaudeChatResponse,
-  getGuestClaudeTodoResponse,
+  getGuestNutritionChatResponse,
+  getGuestTodoChatResponse,
   getGuestGarminStatus,
   getGuestInsight,
   getGuestJournalDay,
@@ -83,7 +83,7 @@ export type AuthUser = {
 };
 
 export type AuthMeResponse = {
-  user: AuthUser;
+  user: AuthUser | null;
 };
 
 export const fetchAuthMe = async (): Promise<AuthMeResponse> => {
@@ -363,7 +363,7 @@ export type NutritionHistory = {
   }>;
 };
 
-export type ClaudeChatResponse = {
+export type NutritionChatResponse = {
   session_id: string;
   reply: string;
   logged_entries: Array<{
@@ -498,11 +498,14 @@ export const fetchNutritionHistory = async (days = 14): Promise<NutritionHistory
   return data;
 };
 
-export const sendClaudeMessage = async (message: string, session_id?: string): Promise<ClaudeChatResponse> => {
+export const sendNutritionChatMessage = async (
+  message: string,
+  session_id?: string
+): Promise<NutritionChatResponse> => {
   if (isGuestMode()) {
-    return getGuestClaudeChatResponse({ message, session_id });
+    return getGuestNutritionChatResponse({ message, session_id });
   }
-  const { data } = await api.post('/api/nutrition/claude/message', { message, session_id });
+  const { data } = await api.post('/api/nutrition/assistant/message', { message, session_id });
   return data;
 };
 
@@ -520,7 +523,7 @@ export type TodoItem = {
   updated_at: string;
 };
 
-export type ClaudeTodoResponse = {
+export type TodoChatResponse = {
   session_id: string;
   reply: string;
   created_items: TodoItem[];
@@ -575,14 +578,14 @@ export const deleteTodo = async (id: number) => {
   await api.delete(`/api/todos/${id}`);
 };
 
-export const sendClaudeTodoMessage = async (
+export const sendTodoChatMessage = async (
   message: string,
   session_id?: string
-): Promise<ClaudeTodoResponse> => {
+): Promise<TodoChatResponse> => {
   if (isGuestMode()) {
-    return getGuestClaudeTodoResponse({ message, session_id });
+    return getGuestTodoChatResponse({ message, session_id });
   }
-  const { data } = await api.post('/api/todos/claude/message', { message, session_id });
+  const { data } = await api.post('/api/todos/assistant/message', { message, session_id });
   return data;
 };
 

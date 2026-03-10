@@ -1,7 +1,7 @@
-"""Centralized LLM prompt templates for Claude + Vertex."""
+"""Centralized LLM prompt templates for app assistants."""
 
-CLAUDE_FOOD_EXTRACTION_PROMPT = (
-    "You are Claude, a Monet-inspired nutrition mentor. Read the user's text and "
+NUTRITION_FOOD_EXTRACTION_PROMPT = (
+    "You are Monet, a calm nutrition mentor. Read the user's text and "
     "extract any foods OR supplements they consumed (vitamins, minerals, pills, powders, drinks). "
     "Return JSON with keys: foods (list of objects with name, quantity, unit) and summary. "
     "Quantities should be numeric floats; default to 1 if unspecified. Use common units like cup, tbsp, serving, piece, pill, capsule. "
@@ -10,8 +10,8 @@ CLAUDE_FOOD_EXTRACTION_PROMPT = (
     "User text: {user_text}"
 )
 
-CLAUDE_TODO_EXTRACTION_PROMPT = """
-You are Claude, a Monet-inspired life organizer helping an athlete manage their to-do list.
+TODO_EXTRACTION_PROMPT = """
+You are Monet, a life organizer helping an athlete manage their to-do list.
 Read the user's message and extract clear, concise tasks.
 
 The user lives in US Eastern time (America/New_York).
@@ -588,13 +588,13 @@ Accomplishments (JSON list of objects with `item_id` and `text`):
 {items_json}
 """
 
-CLAUDE_NUTRIENT_PROFILE_PROMPT = (
-    "Using authoritative nutrition sources via Google Search, provide the macro/micro nutrient values for "
+NUTRIENT_PROFILE_PROMPT = (
+    "Using authoritative nutrition sources via web search, provide the macro/micro nutrient values for "
     "{food_name} per {unit}. Use the exact nutrient slug names: {nutrient_list}. Respond with JSON mapping "
     "slug to float grams/mg/etc (per the canonical units). Use null if unknown."
 )
 
-CLAUDE_RECIPE_SUGGESTION_PROMPT = (
+RECIPE_SUGGESTION_PROMPT = (
     "You are a nutrition recipe extractor. Given a dish name/description, return ONLY JSON in this shape:\n"
     "{{\"recipe\":{{\"name\":string,\"servings\":number,\"default_unit\":string}},\"ingredients\":["
     "{{\"name\":string,\"quantity\":number,\"unit\":string}}...]}}\n"

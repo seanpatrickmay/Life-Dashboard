@@ -1,29 +1,25 @@
 """Compile journal entries and completed todos into grouped day summaries."""
 from __future__ import annotations
 
-import asyncio
 import json
-import re
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any
 
-from google.genai.types import GenerateContentConfig
-
-try:  # google-genai < 0.5.0 ships HttpOptions elsewhere / omits it entirely
-  from google.genai.types import HttpOptions
-except ImportError:  # pragma: no cover - runtime shim for docker image
-  HttpOptions = None  # type: ignore[assignment]
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.clients.genai_client import build_genai_client
-from app.core.config import settings
+from app.clients.openai_client import OpenAIResponsesClient
 from app.prompts import (
   JOURNAL_CALENDAR_EVENT_EXTRACTION_PROMPT,
   JOURNAL_DEDUP_PROMPT,
   JOURNAL_ENTRY_EXTRACTION_PROMPT,
   JOURNAL_GROUPING_PROMPT,
+)
+from app.schemas.llm_outputs import (
+  JournalDedupedItemsOutput,
+  JournalGroupingOutput,
+  JournalSourceTextItemsOutput,
 )
 
 
@@ -56,9 +52,7 @@ class JournalCompiler:
 
   def __init__(self, session: AsyncSession) -> None:
     self.session = session
-    http_options = HttpOptions(api_version="v1") if HttpOptions else None
-    self.client = build_genai_client(http_options=http_options)
-    self.model_name = settings.vertex_model_name or "gemini-2.5-flash"
+    self.client = OpenAIResponsesClient()
 
   async def compile_day(
     self,
@@ -116,9 +110,15 @@ class JournalCompiler:
       time_zone=time_zone,
       entries_json=json.dumps(prompt_entries, ensure_ascii=False),
     )
-    response = await self._call_model(prompt)
-    payload = self._safe_parse_json(response)
-    extracted = self._parse_source_text_items(payload)
+    result = await self.client.generate_json(
+      prompt,
+      response_model=JournalSourceTextItemsOutput,
+      temperature=0.2,
+    )
+    extracted = [
+      {"source_id": item.source_id, "text": item.text}
+      for item in result.data.items
+    ]
     return self._bind_extracted_items(entries, extracted, source_rank=3)
 
   async def _extract_calendar_events(
@@ -147,9 +147,15 @@ class JournalCompiler:
       events_json=json.dumps(prompt_events, ensure_ascii=False),
     )
     try:
-      response = await self._call_model(prompt)
-      payload = self._safe_parse_json(response)
-      extracted = self._parse_source_text_items(payload)
+      result = await self.client.generate_json(
+        prompt,
+        response_model=JournalSourceTextItemsOutput,
+        temperature=0.2,
+      )
+      extracted = [
+        {"source_id": item.source_id, "text": item.text}
+        for item in result.data.items
+      ]
       bound = self._bind_extracted_items(events, extracted, source_rank=1)
       if bound:
         return bound
@@ -218,9 +224,15 @@ class JournalCompiler:
       todo_items_json=json.dumps(self._serialize_sources(todo_items), ensure_ascii=False),
       journal_items_json=json.dumps(self._serialize_sources(journal_items), ensure_ascii=False),
     )
-    response = await self._call_model(prompt)
-    payload = self._safe_parse_json(response)
-    deduped = self._parse_deduped_items(payload)
+    result = await self.client.generate_json(
+      prompt,
+      response_model=JournalDedupedItemsOutput,
+      temperature=0.2,
+    )
+    deduped = [
+      {"source_ids": item.source_ids, "text": item.text}
+      for item in result.data.items
+    ]
     bound = self._bind_deduped_items(deduped, item_map)
     if bound:
       return bound
@@ -235,9 +247,15 @@ class JournalCompiler:
         ensure_ascii=False,
       )
     )
-    response = await self._call_model(prompt)
-    payload = self._safe_parse_json(response)
-    groups = self._parse_groups(payload)
+    result = await self.client.generate_json(
+      prompt,
+      response_model=JournalGroupingOutput,
+      temperature=0.2,
+    )
+    groups = [
+      {"title": group.title, "item_ids": group.item_ids}
+      for group in result.data.groups
+    ]
     built = self._bind_groups(groups, items)
     if built:
       return {"groups": built}
@@ -359,31 +377,6 @@ class JournalCompiler:
 
   def _serialize_sources(self, items: list[JournalSourceItem]) -> list[dict[str, str]]:
     return [{"source_id": item.source_id, "text": item.text} for item in items]
-
-  async def _call_model(self, prompt: str) -> str:
-    def _invoke() -> str:
-      config = GenerateContentConfig(temperature=0.2)
-      logger.debug("[journal] model invocation payload chars=%s", len(prompt))
-      result = self.client.models.generate_content(
-        model=self.model_name,
-        contents=prompt,
-        config=config,
-      )
-      return result.text or ""
-
-    return await asyncio.to_thread(_invoke)
-
-  def _safe_parse_json(self, text: str) -> dict[str, Any] | None:
-    try:
-      return json.loads(text)
-    except json.JSONDecodeError:
-      match = re.search(r"\{.*\}", text, re.DOTALL)
-      if match:
-        try:
-          return json.loads(match.group(0))
-        except json.JSONDecodeError:
-          return None
-    return None
 
   def _parse_source_text_items(self, payload: dict[str, Any] | None) -> list[dict[str, str]]:
     if not isinstance(payload, dict):

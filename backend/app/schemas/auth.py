@@ -13,4 +13,4 @@ class AuthUserResponse(BaseModel):
 
 
 class AuthMeResponse(BaseModel):
-    user: AuthUserResponse
+    user: AuthUserResponse | None

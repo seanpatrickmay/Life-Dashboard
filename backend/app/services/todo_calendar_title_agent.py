@@ -1,23 +1,14 @@
 """Generate concise calendar titles for todo-linked events."""
 from __future__ import annotations
 
-import asyncio
-import json
 import re
 from dataclasses import dataclass
-from typing import Any
 
-from google.genai.types import GenerateContentConfig
-
-try:  # google-genai < 0.5.0 ships HttpOptions elsewhere / omits it entirely
-    from google.genai.types import HttpOptions
-except ImportError:  # pragma: no cover - runtime shim for docker image
-    HttpOptions = None  # type: ignore[assignment]
 from loguru import logger
 
-from app.clients.genai_client import build_genai_client
-from app.core.config import settings
+from app.clients.openai_client import OpenAIResponsesClient
 from app.prompts import TODO_CALENDAR_TITLE_PROMPT
+from app.schemas.llm_outputs import TodoCalendarTitleOutput
 
 
 DEFAULT_MAX_TITLE_LENGTH = 50
@@ -48,9 +39,7 @@ class TodoCalendarTitleAgent:
         """
         self.max_length = max_length
         self.max_details_length = max_details_length
-        http_options = HttpOptions(api_version="v1") if HttpOptions else None
-        self.client = build_genai_client(http_options=http_options)
-        self.model_name = settings.vertex_model_name or "gemini-2.5-flash"
+        self.client = OpenAIResponsesClient()
 
     def normalize_text(self, text: str) -> str:
         """Normalize todo text for comparisons and hashing."""
@@ -72,47 +61,24 @@ class TodoCalendarTitleAgent:
             max_details=self.max_details_length,
         )
         try:
-            response = await self._call_model(prompt)
+            result = await self.client.generate_json(
+                prompt,
+                response_model=TodoCalendarTitleOutput,
+                temperature=0.2,
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("[todos] calendar title fallback: {}", exc)
             return _fallback_title(normalized, self.max_length, self.max_details_length)
-        payload = self._safe_parse_json(response)
-        if payload:
-            title = _sanitize_title(str(payload.get("title") or ""), self.max_length)
-            details = _sanitize_details(
-                str(payload.get("details") or ""),
-                self.max_details_length,
-                title,
-            )
-            if title:
-                return TodoCalendarTitleResult(title, details)
+        title = _sanitize_title(result.data.title, self.max_length)
+        details = _sanitize_details(
+            result.data.details or "",
+            self.max_details_length,
+            title,
+        )
+        if title:
+            return TodoCalendarTitleResult(title, details)
 
         return _fallback_title(normalized, self.max_length, self.max_details_length)
-
-    async def _call_model(self, prompt: str) -> str:
-        def _invoke() -> str:
-            config = GenerateContentConfig(temperature=0.2)
-            logger.debug("[todos] calendar title model chars=%s", len(prompt))
-            result = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=config,
-            )
-            return result.text or ""
-
-        return await asyncio.to_thread(_invoke)
-
-    def _safe_parse_json(self, text: str) -> dict[str, Any] | None:
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", text, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group(0))
-                except json.JSONDecodeError:
-                    return None
-        return None
 
 
 def _normalize_title(text: str) -> str:

@@ -78,12 +78,17 @@ def clear_session_cookie(response: Response) -> None:
     )
 
 
-async def get_current_session(
-    session: AsyncSession = Depends(get_session),
-    token: str | None = Cookie(None, alias=SESSION_COOKIE),
-) -> UserSession:
+async def _load_session_from_token(
+    session: AsyncSession,
+    token: str | None,
+    *,
+    required: bool,
+) -> UserSession | None:
     if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        if required:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        return None
+
     token_hash = _hash_token(token)
     stmt = (
         select(UserSession)
@@ -93,19 +98,48 @@ async def get_current_session(
     result = await _execute_with_reconnect(session, stmt)
     session_obj = result.scalar_one_or_none()
     now = eastern_now()
+
     if not session_obj or session_obj.revoked_at is not None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+        if required:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+        return None
+
     if session_obj.expires_at <= now:
         session_obj.revoked_at = now
         await session.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+        if required:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired")
+        return None
+
     return session_obj
+
+
+async def get_current_session(
+    session: AsyncSession = Depends(get_session),
+    token: str | None = Cookie(None, alias=SESSION_COOKIE),
+) -> UserSession:
+    session_obj = await _load_session_from_token(session, token, required=True)
+    assert session_obj is not None
+    return session_obj
+
+
+async def get_optional_current_session(
+    session: AsyncSession = Depends(get_session),
+    token: str | None = Cookie(None, alias=SESSION_COOKIE),
+) -> UserSession | None:
+    return await _load_session_from_token(session, token, required=False)
 
 
 async def get_current_user(
     session_obj: UserSession = Depends(get_current_session),
 ) -> User:
     return session_obj.user
+
+
+async def get_optional_current_user(
+    session_obj: UserSession | None = Depends(get_optional_current_session),
+) -> User | None:
+    return session_obj.user if session_obj else None
 
 
 async def require_admin(user: User = Depends(get_current_user)) -> User:

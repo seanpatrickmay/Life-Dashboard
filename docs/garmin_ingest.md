@@ -37,7 +37,7 @@ We intentionally avoid deprecated helpers (`get_daily_summary`, `get_training_lo
    - Authenticates once (tokens or password).
    - Fetches each dataset for the last 30 days using the endpoints above.
    - Logs sample counts so it’s obvious if an endpoint returned zero rows.
-   - Upserts activities and daily metrics, then regenerates the Vertex insight for today.
+   - Upserts activities and daily metrics, then regenerates the readiness insight for today.
 
 ## 4. Spot-checking endpoints
 

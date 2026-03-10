@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import json
-import re
 from datetime import date, datetime
 from dataclasses import dataclass, field
 from textwrap import dedent
@@ -10,13 +8,6 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from dateutil import parser as date_parser
-from google.genai.types import GenerateContentConfig
-
-try:
-    from google.genai.types import HttpOptions
-except ImportError:  # pragma: no cover - google-genai shim
-    HttpOptions = None  # type: ignore[assignment]
-
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,12 +16,12 @@ from app.db.models.calendar import CalendarEvent, GoogleCalendar
 from app.db.repositories.project_note_repository import ProjectNoteRepository
 from app.db.repositories.project_repository import ProjectRepository
 from app.db.repositories.todo_repository import TodoRepository
-from app.core.config import settings
-from app.clients.genai_client import build_genai_client
+from app.clients.openai_client import OpenAIResponsesClient
 from app.schemas.assistant import AssistantAction, AssistantPageContext
+from app.schemas.llm_outputs import AssistantActionPlanOutput, AssistantRouterOutput
 from app.schemas.todos import TodoItemResponse
-from app.services.claude_nutrition_agent import ClaudeNutritionAgent
-from app.services.claude_todo_agent import ClaudeTodoAgent
+from app.services.claude_nutrition_agent import NutritionAssistantAgent
+from app.services.claude_todo_agent import TodoAssistantAgent
 from app.services.google_calendar_event_service import GoogleCalendarEventService
 from app.services.monet_context_service import MonetContextBuilder
 
@@ -131,7 +122,7 @@ class NutritionLogTool:
     )
 
     def __init__(self, session: AsyncSession) -> None:
-        self.agent = ClaudeNutritionAgent(session)
+        self.agent = NutritionAssistantAgent(session)
 
     async def run(self, user_id: int, args: dict[str, Any]) -> dict[str, Any]:
         message = (args.get("message") or "").strip()
@@ -151,7 +142,7 @@ class TodoCreateTool:
     )
 
     def __init__(self, session: AsyncSession) -> None:
-        self.agent = ClaudeTodoAgent(session)
+        self.agent = TodoAssistantAgent(session)
 
     async def run(self, user_id: int, args: dict[str, Any]) -> dict[str, Any]:
         message = (args.get("message") or "").strip()
@@ -186,9 +177,7 @@ class MonetAssistantAgent:
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
-        http_options = HttpOptions(api_version="v1") if HttpOptions else None
-        self.client = build_genai_client(http_options=http_options)
-        self.model_name = settings.vertex_model_name or "gemini-2.5-flash"
+        self.client = OpenAIResponsesClient()
         self.context_builder = MonetContextBuilder(session)
         self.tool_registry = MonetToolRegistry(session)
 
@@ -316,9 +305,12 @@ class MonetAssistantAgent:
             {json.dumps(payload, ensure_ascii=False, default=_json_fallback)}
             """
         )
-        text = await self._call_model(prompt)
-        parsed = self._safe_parse_json(text) or {}
-        raw_actions = parsed.get("actions") if isinstance(parsed, dict) else []
+        result = await self.client.generate_json(
+            prompt,
+            response_model=AssistantActionPlanOutput,
+            temperature=0.2,
+        )
+        raw_actions = [item.model_dump() for item in result.data.actions]
         actions: list[AssistantAction] = []
         for raw_action in raw_actions or []:
             if not isinstance(raw_action, dict):
@@ -604,25 +596,24 @@ class MonetAssistantAgent:
             {json.dumps(payload, ensure_ascii=False, default=_json_fallback)}
             """
         )
-        text = await self._call_model(prompt)
-        plan_data = self._safe_parse_json(text)
-        if not isinstance(plan_data, dict):
+        try:
+            result = await self.client.generate_json(
+                prompt,
+                response_model=AssistantRouterOutput,
+                temperature=0.2,
+            )
+        except Exception:
             logger.warning("[assistant] router returned invalid payload, defaulting to respond_only")
             return RouterDecision("respond_only", "Reply to the user directly.", [])
 
-        reply_mode = plan_data.get("reply_mode") or "respond_only"
-        narrative_intent = plan_data.get("narrative_intent") or "Respond helpfully."
+        reply_mode = result.data.reply_mode or "respond_only"
+        narrative_intent = result.data.narrative_intent or "Respond helpfully."
         calls: list[ToolCall] = []
-        for raw_call in plan_data.get("tool_calls") or []:
-            if not isinstance(raw_call, dict):
-                continue
-            tool_id = str(raw_call.get("tool_id") or "").strip()
+        for raw_call in result.data.tool_calls:
+            tool_id = raw_call.tool_id.strip()
             if not tool_id:
                 continue
-            args = raw_call.get("args") or {}
-            if not isinstance(args, dict):
-                args = {}
-            calls.append(ToolCall(tool_id=tool_id, args=args))
+            calls.append(ToolCall(tool_id=tool_id, args=dict(raw_call.args)))
 
         return RouterDecision(reply_mode=reply_mode, narrative_intent=narrative_intent, tool_calls=calls)
 
@@ -681,36 +672,11 @@ class MonetAssistantAgent:
             {json.dumps(summary, ensure_ascii=False, default=_json_fallback)}
             """
         )
-        text = await self._call_model(prompt)
-        reply = text.strip()
+        result = await self.client.generate_text(prompt, temperature=0.2)
+        reply = result.text.strip()
         if not reply:
             reply = "I'm here whenever you're ready to continue."
         return reply
-
-    async def _call_model(self, prompt: str) -> str:
-        def _invoke() -> str:
-            config = GenerateContentConfig(temperature=0.2)
-            logger.debug("[assistant] model invocation payload chars=%s", len(prompt))
-            result = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=config,
-            )
-            return result.text or ""
-
-        return await asyncio.to_thread(_invoke)
-
-    def _safe_parse_json(self, text: str) -> dict[str, Any] | None:
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", text, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group(0))
-                except json.JSONDecodeError:
-                    return None
-        return None
 
     def _serialize_todo(self, item: Any) -> dict[str, Any]:
         try:

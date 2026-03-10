@@ -1,21 +1,21 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { sendClaudeMessage, type ClaudeChatResponse } from '../services/api';
+import { sendNutritionChatMessage, type NutritionChatResponse } from '../services/api';
 import { getChatErrorMessage } from '../utils/chatErrors';
 
 export type ChatEntry = {
   id: string;
   role: 'user' | 'assistant';
   text: string;
-  meta?: ClaudeChatResponse['logged_entries'];
+  meta?: NutritionChatResponse['logged_entries'];
 };
 
-export function useClaudeChat() {
+export function useNutritionChat() {
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [history, setHistory] = useState<ChatEntry[]>([]);
 
   const mutation = useMutation({
-    mutationFn: (message: string) => sendClaudeMessage(message, sessionId),
+    mutationFn: (message: string) => sendNutritionChatMessage(message, sessionId),
     onSuccess: (response, variables) => {
       setSessionId(response.session_id);
       setHistory((prev) => [

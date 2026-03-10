@@ -8,18 +8,16 @@ backend_root = Path(__file__).resolve().parents[1]
 if str(backend_root) not in sys.path:
     sys.path.insert(0, str(backend_root))
 
-os.environ.setdefault("APP_ENV", "local")
-os.environ.setdefault(
-    "DATABASE_URL", "postgresql://life_dashboard:life_dashboard@localhost:5432/life_dashboard"
-)
-os.environ.setdefault("ADMIN_EMAIL", "admin@example.com")
-os.environ.setdefault("FRONTEND_URL", "http://localhost:3000")
-os.environ.setdefault("GARMIN_PASSWORD_ENCRYPTION_KEY", "x" * 32)
-os.environ.setdefault("VERTEX_PROJECT_ID", "test-project")
-os.environ.setdefault("READINESS_ADMIN_TOKEN", "test-token")
-os.environ.setdefault("GOOGLE_CLIENT_ID_LOCAL", "test-client-id")
-os.environ.setdefault("GOOGLE_CLIENT_SECRET_LOCAL", "test-client-secret")
-os.environ.setdefault("GOOGLE_REDIRECT_URI_LOCAL", "http://localhost:8000/api/auth/google/callback")
+os.environ["APP_ENV"] = "local"
+os.environ["DATABASE_URL"] = "postgresql+asyncpg://life_dashboard:life_dashboard@localhost:5432/life_dashboard"
+os.environ["ADMIN_EMAIL"] = "admin@example.com"
+os.environ["FRONTEND_URL"] = "http://localhost:3000"
+os.environ["GARMIN_PASSWORD_ENCRYPTION_KEY"] = "x" * 32
+os.environ["OPENAI_API_KEY"] = "test-openai-key"
+os.environ["READINESS_ADMIN_TOKEN"] = "test-token"
+os.environ["GOOGLE_CLIENT_ID_LOCAL"] = "test-client-id"
+os.environ["GOOGLE_CLIENT_SECRET_LOCAL"] = "test-client-secret"
+os.environ["GOOGLE_REDIRECT_URI_LOCAL"] = "http://localhost:8000/api/auth/google/callback"
 
 from app.db.models.todo import TodoItem
 from app.services.todo_project_suggestion_service import INBOX_PROJECT_NAME, TodoProjectSuggestionService

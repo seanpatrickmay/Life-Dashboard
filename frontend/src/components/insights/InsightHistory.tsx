@@ -209,7 +209,7 @@ export function InsightHistory() {
         </Header>
 
         {!isLoading && !hasStructured && (
-          <Warning>Structured Monet insight missing. Investigate Vertex generation and parsing pipeline.</Warning>
+          <Warning>Structured Monet insight missing. Investigate AI generation and parsing pipeline.</Warning>
         )}
 
         <MetricsRows>

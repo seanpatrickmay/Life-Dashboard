@@ -1,6 +1,6 @@
 import type {
-  ClaudeChatResponse,
-  ClaudeTodoResponse,
+  NutritionChatResponse,
+  TodoChatResponse,
   GarminStatusResponse,
   InsightResponse,
   JournalCompletedItem,
@@ -1487,14 +1487,20 @@ export const getGuestMonetChatResponse = (payload: {
   };
 };
 
-export const getGuestClaudeChatResponse = (payload: { message: string; session_id?: string }): ClaudeChatResponse => ({
+export const getGuestNutritionChatResponse = (payload: {
+  message: string;
+  session_id?: string;
+}): NutritionChatResponse => ({
   session_id: payload.session_id ?? 'guest-nutrition-session',
   reply:
     'Guest mode is local-only. Sign in to log foods and get personalized nutrient breakdowns.',
   logged_entries: []
 });
 
-export const getGuestClaudeTodoResponse = (payload: { message: string; session_id?: string }): ClaudeTodoResponse => ({
+export const getGuestTodoChatResponse = (payload: {
+  message: string;
+  session_id?: string;
+}): TodoChatResponse => ({
   session_id: payload.session_id ?? 'guest-todo-session',
   reply: 'Guest mode is local-only. Sign in to create and manage real tasks.',
   created_items: [],

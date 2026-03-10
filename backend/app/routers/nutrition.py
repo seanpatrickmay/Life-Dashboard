@@ -13,9 +13,9 @@ from app.db.models.entities import User
 from app.db.repositories.nutrition_goals_repository import NutritionGoalsRepository
 from app.db.session import get_session
 from app.schemas.nutrition import (
-    ClaudeMessageRequest,
-    ClaudeMessageResponse,
     LogIntakeRequest,
+    NutritionAssistantMessageRequest,
+    NutritionAssistantMessageResponse,
     NutritionIntakeUpdateRequest,
     NutrientDefinitionResponse,
     NutritionIntakeEntry,
@@ -31,7 +31,7 @@ from app.schemas.nutrition import (
     NutrientGoalUpdateRequest,
     ScalingRuleListResponse,
 )
-from app.services.claude_nutrition_agent import ClaudeNutritionAgent
+from app.services.claude_nutrition_agent import NutritionAssistantAgent
 from app.services.nutrition_ingredients_service import NutritionIngredientsService
 from app.services.nutrition_recipes_service import NutritionRecipesService
 from app.services.nutrition_goals_service import NutritionGoalsService
@@ -219,7 +219,7 @@ async def suggest_recipe(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> RecipeSuggestion:
-    agent = ClaudeNutritionAgent(session)
+    agent = NutritionAssistantAgent(session)
     suggestion = await agent._suggest_recipe(description)  # re-use agent logic
     if suggestion is None:
         raise HTTPException(status_code=400, detail="Unable to suggest recipe from description")
@@ -378,17 +378,34 @@ async def history(
     return NutritionHistoryResponse(**data)
 
 
-@router.post("/claude/message", response_model=ClaudeMessageResponse)
-async def claude_message(
-    payload: ClaudeMessageRequest,
+async def _assistant_message(
+    payload: NutritionAssistantMessageRequest,
     current_user: User = Depends(enforce_chat_quota),
     session: AsyncSession = Depends(get_session),
-) -> ClaudeMessageResponse:
-    agent = ClaudeNutritionAgent(session)
+) -> NutritionAssistantMessageResponse:
+    agent = NutritionAssistantAgent(session)
     session_id = payload.session_id or str(uuid4())
     response = await agent.respond(current_user.id, payload.message, session_id)
-    return ClaudeMessageResponse(
+    return NutritionAssistantMessageResponse(
         session_id=session_id,
         reply=response.reply,
         logged_entries=response.logged_entries,
     )
+
+
+@router.post("/assistant/message", response_model=NutritionAssistantMessageResponse)
+async def nutrition_assistant_message(
+    payload: NutritionAssistantMessageRequest,
+    current_user: User = Depends(enforce_chat_quota),
+    session: AsyncSession = Depends(get_session),
+) -> NutritionAssistantMessageResponse:
+    return await _assistant_message(payload, current_user, session)
+
+
+@router.post("/claude/message", response_model=NutritionAssistantMessageResponse, deprecated=True)
+async def claude_message(
+    payload: NutritionAssistantMessageRequest,
+    current_user: User = Depends(enforce_chat_quota),
+    session: AsyncSession = Depends(get_session),
+) -> NutritionAssistantMessageResponse:
+    return await _assistant_message(payload, current_user, session)
