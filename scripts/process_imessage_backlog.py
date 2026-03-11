@@ -7,6 +7,7 @@ import asyncio
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import signal
 import sys
 
 from dotenv import load_dotenv
@@ -33,6 +34,9 @@ sys.path.append(str(ROOT / "backend"))
 from app.db.models.imessage import IMessageMessage  # type: ignore  # noqa: E402
 from app.db.session import AsyncSessionLocal  # type: ignore  # noqa: E402
 from app.services.imessage_processing_service import IMessageProcessingService  # type: ignore  # noqa: E402
+
+
+_stop_requested = False
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,7 +75,24 @@ async def main() -> None:
     args = parse_args()
     run_index = 0
 
+    def _request_stop(signum, _frame) -> None:  # type: ignore[no-untyped-def]
+        global _stop_requested
+        _stop_requested = True
+        print(
+            f"{datetime.now(timezone.utc).isoformat()} stop_requested "
+            f"user_id={args.user_id} signal={signum}"
+        )
+
+    signal.signal(signal.SIGTERM, _request_stop)
+    signal.signal(signal.SIGINT, _request_stop)
+
     while True:
+        if _stop_requested:
+            print(
+                f"{datetime.now(timezone.utc).isoformat()} stopping "
+                f"user_id={args.user_id} runs={run_index}"
+            )
+            return
         pending_before = await _pending_count(args.user_id)
         if pending_before == 0:
             print(
@@ -108,6 +129,13 @@ async def main() -> None:
             f"{datetime.now(timezone.utc).isoformat()} run={run_index} "
             f"pending_before={pending_before} pending_after={pending_after}"
         )
+
+        if _stop_requested:
+            print(
+                f"{datetime.now(timezone.utc).isoformat()} stopping_after_run "
+                f"user_id={args.user_id} run={run_index} pending={pending_after}"
+            )
+            return
 
         if pending_after == 0:
             print(

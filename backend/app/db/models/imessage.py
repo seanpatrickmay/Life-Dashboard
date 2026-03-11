@@ -167,7 +167,9 @@ class IMessageActionAudit(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     project_id: Mapped[int | None] = mapped_column(ForeignKey("project.id"), nullable=True, index=True)
     target_page_id: Mapped[int | None] = mapped_column(ForeignKey("workspace_page.id"), nullable=True)
-    target_todo_id: Mapped[int | None] = mapped_column(ForeignKey("todo_item.id"), nullable=True)
+    target_todo_id: Mapped[int | None] = mapped_column(
+        ForeignKey("todo_item.id", ondelete="SET NULL"), nullable=True
+    )
     target_calendar_event_id: Mapped[int | None] = mapped_column(
         ForeignKey("calendar_event.id"), nullable=True
     )

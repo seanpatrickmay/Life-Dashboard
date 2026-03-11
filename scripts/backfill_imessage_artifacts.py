@@ -65,10 +65,50 @@ def _message_payloads(messages: list[IMessageMessage]) -> list[dict]:
             "sent_at_utc": message.sent_at_utc.isoformat() if message.sent_at_utc else None,
             "is_from_me": message.is_from_me,
             "sender": message.sender_label or message.handle_identifier,
+            "sender_handle": message.handle_identifier,
             "text": message.text or "",
         }
         for message in messages
     ]
+
+
+async def _resolve_journal_entry(
+    *,
+    session,
+    user_id: int,
+    audit: IMessageActionAudit,
+    current_text: str | None,
+) -> JournalEntry | None:
+    if audit.target_journal_entry_id:
+        return await session.get(JournalEntry, audit.target_journal_entry_id)
+    if audit.source_occurred_at_utc is not None:
+        exact = (
+            await session.execute(
+                select(JournalEntry).where(
+                    JournalEntry.user_id == user_id,
+                    JournalEntry.created_at == audit.source_occurred_at_utc,
+                )
+            )
+        ).scalars().first()
+        if exact is not None:
+            audit.target_journal_entry_id = exact.id
+            return exact
+    if current_text:
+        match = (
+            await session.execute(
+                select(JournalEntry)
+                .where(
+                    JournalEntry.user_id == user_id,
+                    JournalEntry.text == current_text,
+                )
+                .order_by(JournalEntry.created_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+        if match is not None:
+            audit.target_journal_entry_id = match.id
+            return match
+    return None
 
 
 async def main() -> None:
@@ -143,11 +183,17 @@ async def main() -> None:
                     for item in (conversation.participants if conversation else [])
                     if normalize_message_text(item.display_name or item.identifier)
                 ]
+                participant_handles = [
+                    normalize_message_text(item.identifier)
+                    for item in (conversation.participants if conversation else [])
+                    if normalize_message_text(item.identifier)
+                ]
                 enriched = service.enrich_action_text(
                     action_type=audit.action_type,
                     action=dict(audit.extracted_payload or {}),
                     messages=_message_payloads(messages),
                     participant_names=participant_names,
+                    participant_handles=participant_handles,
                 )
                 changed = False
 
@@ -169,8 +215,16 @@ async def main() -> None:
                         if audit.action_fingerprint != new_fingerprint:
                             audit.action_fingerprint = new_fingerprint
                             changed = True
-                elif audit.action_type == "journal.entry" and audit.target_journal_entry_id:
-                    entry = await session.get(JournalEntry, audit.target_journal_entry_id)
+                elif audit.action_type == "journal.entry":
+                    entry = await _resolve_journal_entry(
+                        session=session,
+                        user_id=args.user_id,
+                        audit=audit,
+                        current_text=normalize_message_text(
+                            (audit.applied_payload or {}).get("text")
+                            or (audit.extracted_payload or {}).get("text")
+                        ),
+                    )
                     if entry is not None:
                         text_value = normalize_message_text(enriched.get("text"))
                         if text_value and entry.text != text_value:

@@ -35,6 +35,7 @@ def _todo_response(item, now_utc: datetime) -> TodoItemResponse:
     project_id=item.project_id,
     text=item.text,
     completed=item.completed,
+    completed_at_utc=item.completed_at_utc,
     deadline_utc=item.deadline_utc,
     deadline_is_date_only=item.deadline_is_date_only,
     is_overdue=bool(
@@ -130,9 +131,10 @@ async def update_todo(
 
   if "completed" in update_data and update_data["completed"] is not None:
     was_completed = todo.completed
-    todo.mark_completed(update_data["completed"])
-    if update_data["completed"] and not was_completed:
-      tz_name = (update_data.get("time_zone") or "UTC").strip() or "UTC"
+    requested_completed_at = update_data.get("completed_at_utc")
+    todo.mark_completed(update_data["completed"], completed_at_utc=requested_completed_at)
+    if update_data["completed"]:
+      tz_name = (update_data.get("time_zone") or todo.completed_time_zone or "UTC").strip() or "UTC"
       todo.completed_time_zone = tz_name
       if todo.completed_at_utc:
         zone = resolve_time_zone(tz_name)
@@ -148,6 +150,12 @@ async def update_todo(
     elif not update_data["completed"]:
       todo.completed_local_date = None
       todo.completed_time_zone = None
+  elif "completed_at_utc" in update_data and update_data["completed_at_utc"] is not None and todo.completed:
+    todo.completed_at_utc = update_data["completed_at_utc"]
+    tz_name = (update_data.get("time_zone") or todo.completed_time_zone or "UTC").strip() or "UTC"
+    todo.completed_time_zone = tz_name
+    zone = resolve_time_zone(tz_name)
+    todo.completed_local_date = todo.completed_at_utc.astimezone(zone).date()
   await session.flush()
   await session.commit()
   link_service = TodoCalendarLinkService(session)
@@ -175,7 +183,7 @@ async def delete_todo(
     raise HTTPException(status_code=404, detail="Todo not found")
   link_service = TodoCalendarLinkService(session)
   await link_service.unlink_todo(todo, delete_event=True)
-  await session.delete(todo)
+  await repo.delete_for_user(current_user.id, todo_id)
   await session.commit()
   return Response(status_code=204)
 

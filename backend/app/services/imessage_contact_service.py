@@ -17,7 +17,10 @@ from app.db.models.imessage import IMessageContactIdentity
 from app.services.imessage_utils import normalize_message_text
 
 
-CONTACTS_DB_PATH = Path("~/Library/Application Support/AddressBook/AddressBook-v22.abcddb").expanduser()
+CONTACTS_ROOT = Path("~/Library/Application Support/AddressBook").expanduser()
+CONTACTS_SOURCES_ROOT = CONTACTS_ROOT / "Sources"
+CONTACTS_DB_FILENAME = "AddressBook-v22.abcddb"
+CONTACTS_DB_PATH = CONTACTS_ROOT / CONTACTS_DB_FILENAME
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _NON_DIGIT_RE = re.compile(r"\D+")
 
@@ -57,27 +60,38 @@ def format_contact_display_name(
     nickname: str | None,
     organization: str | None,
 ) -> str | None:
-    for value in (name, " ".join(part for part in (first_name, last_name) if normalize_message_text(part)), nickname, organization):
-        normalized = normalize_message_text(value)
-        if normalized:
-            return normalized
+    joined_name = " ".join(part for part in (_clean_display_text(first_name), _clean_display_text(last_name)) if part)
+    for value in (
+        _clean_display_text(name),
+        joined_name or None,
+        _clean_display_text(nickname),
+        _clean_display_text(organization),
+    ):
+        if value:
+            return value
     return None
+
+
+def _clean_display_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = re.sub(r"\s+", " ", str(value)).strip()
+    if cleaned and cleaned == cleaned.lower() and re.search(r"[a-z]", cleaned) and not re.search(r"[@\d]", cleaned):
+        cleaned = " ".join(part.capitalize() for part in cleaned.split(" "))
+    return cleaned or None
 
 
 class IMessageContactResolver:
     def __init__(self, session: AsyncSession, *, contacts_db_path: str | Path | None = None) -> None:
         self.session = session
         self.contacts_db_path = Path(contacts_db_path).expanduser() if contacts_db_path else CONTACTS_DB_PATH
+        self._explicit_contacts_path = contacts_db_path is not None
         self._phone_index: dict[str, ResolvedContact] | None = None
         self._email_index: dict[str, ResolvedContact] | None = None
         self._contacts_available: bool | None = None
 
     async def resolve_identifiers(self, *, user_id: int, identifiers: Iterable[str | None]) -> dict[str, str | None]:
-        requested = [
-            normalize_message_text(item)
-            for item in identifiers
-            if normalize_message_text(item)
-        ]
+        requested = self._normalized_identifier_list(identifiers)
         if not requested:
             return {}
         result: dict[str, str | None] = {}
@@ -99,16 +113,23 @@ class IMessageContactResolver:
         user_id: int,
         identifiers: Iterable[str | None],
     ) -> dict[str, str | None]:
-        requested = [
-            normalize_message_text(item)
-            for item in identifiers
-            if normalize_message_text(item)
-        ]
+        requested = self._normalized_identifier_list(identifiers)
         if not requested:
             return {}
         resolved_rows = await self._resolve_from_contacts(requested)
         await self._upsert_cache(user_id=user_id, rows=resolved_rows)
         return {row.identifier: row.resolved_name for row in resolved_rows}
+
+    def _normalized_identifier_list(self, identifiers: Iterable[str | None]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in identifiers:
+            value = normalize_message_text(item)
+            if not value or value in seen:
+                continue
+            normalized.append(value)
+            seen.add(value)
+        return normalized
 
     async def _load_cached(self, *, user_id: int, identifiers: list[str]) -> dict[str, str | None]:
         stmt = select(IMessageContactIdentity).where(
@@ -166,104 +187,71 @@ class IMessageContactResolver:
 
     async def _load_contact_indexes(self) -> tuple[dict[str, ResolvedContact], dict[str, ResolvedContact]]:
         def _load() -> tuple[dict[str, ResolvedContact], dict[str, ResolvedContact]]:
-            source_path = self.contacts_db_path.expanduser()
-            if not source_path.exists():
-                raise FileNotFoundError(f"Contacts database not found at {source_path}")
-            conn = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)
-            conn.row_factory = sqlite3.Row
-            try:
-                phone_rows = conn.execute(
-                    """
-                    SELECT
-                        r.Z_PK AS record_id,
-                        r.ZNAME AS full_name,
-                        r.ZFIRSTNAME AS first_name,
-                        r.ZLASTNAME AS last_name,
-                        r.ZNICKNAME AS nickname,
-                        r.ZORGANIZATION AS organization,
-                        p.ZFULLNUMBER AS phone_number,
-                        p.ZISPRIMARY AS is_primary,
-                        p.ZORDERINGINDEX AS ordering_index
-                    FROM ZABCDPHONENUMBER AS p
-                    JOIN ZABCDRECORD AS r
-                      ON r.Z_PK = COALESCE(p.Z22_OWNER, p.ZOWNER)
-                    WHERE p.ZFULLNUMBER IS NOT NULL AND trim(p.ZFULLNUMBER) <> ''
-                    """
-                ).fetchall()
-                email_rows = conn.execute(
-                    """
-                    SELECT
-                        r.Z_PK AS record_id,
-                        r.ZNAME AS full_name,
-                        r.ZFIRSTNAME AS first_name,
-                        r.ZLASTNAME AS last_name,
-                        r.ZNICKNAME AS nickname,
-                        r.ZORGANIZATION AS organization,
-                        e.ZADDRESS AS email_address,
-                        e.ZADDRESSNORMALIZED AS email_normalized,
-                        e.ZISPRIMARY AS is_primary,
-                        e.ZORDERINGINDEX AS ordering_index
-                    FROM ZABCDEMAILADDRESS AS e
-                    JOIN ZABCDRECORD AS r
-                      ON r.Z_PK = COALESCE(e.Z22_OWNER, e.ZOWNER)
-                    WHERE e.ZADDRESS IS NOT NULL AND trim(e.ZADDRESS) <> ''
-                    """
-                ).fetchall()
-            finally:
-                conn.close()
-
             phone_index: dict[str, tuple[int, ResolvedContact]] = {}
-            for row in phone_rows:
-                name = format_contact_display_name(
-                    name=row["full_name"],
-                    first_name=row["first_name"],
-                    last_name=row["last_name"],
-                    nickname=row["nickname"],
-                    organization=row["organization"],
-                )
-                if not name:
-                    continue
-                _, normalized_phone = normalize_contact_identifier(str(row["phone_number"]))
-                if not normalized_phone:
-                    continue
-                score = int(row["is_primary"] or 0) * 100 - int(row["ordering_index"] or 0)
-                resolved = ResolvedContact(
-                    identifier=str(row["phone_number"]),
-                    normalized_identifier=normalized_phone,
-                    identifier_kind="phone",
-                    resolved_name=name,
-                    source_record_id=str(row["record_id"]),
-                )
-                current = phone_index.get(normalized_phone)
-                if current is None or score > current[0]:
-                    phone_index[normalized_phone] = (score, resolved)
-
             email_index: dict[str, tuple[int, ResolvedContact]] = {}
-            for row in email_rows:
-                name = format_contact_display_name(
-                    name=row["full_name"],
-                    first_name=row["first_name"],
-                    last_name=row["last_name"],
-                    nickname=row["nickname"],
-                    organization=row["organization"],
-                )
-                if not name:
-                    continue
-                email_value = normalize_message_text(row["email_normalized"] or row["email_address"]).lower()
-                _, normalized_email = normalize_contact_identifier(email_value)
-                if not normalized_email:
-                    continue
-                score = int(row["is_primary"] or 0) * 100 - int(row["ordering_index"] or 0)
-                resolved = ResolvedContact(
-                    identifier=str(row["email_address"]),
-                    normalized_identifier=normalized_email,
-                    identifier_kind="email",
-                    resolved_name=name,
-                    source_record_id=str(row["record_id"]),
-                )
-                current = email_index.get(normalized_email)
-                if current is None or score > current[0]:
-                    email_index[normalized_email] = (score, resolved)
+            db_paths = self._candidate_contacts_db_paths()
+            if not db_paths:
+                raise FileNotFoundError(f"No Contacts databases found under {self.contacts_db_path}")
+
+            for source_path in db_paths:
+                conn = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True)
+                conn.row_factory = sqlite3.Row
+                try:
+                    phone_rows = self._contact_rows_for_table(conn, table_name="ZABCDPHONENUMBER")
+                    email_rows = self._contact_rows_for_table(conn, table_name="ZABCDEMAILADDRESS")
+                finally:
+                    conn.close()
+
+                for row in phone_rows:
+                    name = format_contact_display_name(
+                        name=row["full_name"],
+                        first_name=row["first_name"],
+                        last_name=row["last_name"],
+                        nickname=row["nickname"],
+                        organization=row["organization"],
+                    )
+                    if not name:
+                        continue
+                    _, normalized_phone = normalize_contact_identifier(str(row["phone_number"]))
+                    if not normalized_phone:
+                        continue
+                    score = int(row["is_primary"] or 0) * 100 - int(row["ordering_index"] or 0)
+                    resolved = ResolvedContact(
+                        identifier=str(row["phone_number"]),
+                        normalized_identifier=normalized_phone,
+                        identifier_kind="phone",
+                        resolved_name=name,
+                        source_record_id=f"{source_path}:{row['record_id']}",
+                    )
+                    current = phone_index.get(normalized_phone)
+                    if current is None or score > current[0]:
+                        phone_index[normalized_phone] = (score, resolved)
+
+                for row in email_rows:
+                    name = format_contact_display_name(
+                        name=row["full_name"],
+                        first_name=row["first_name"],
+                        last_name=row["last_name"],
+                        nickname=row["nickname"],
+                        organization=row["organization"],
+                    )
+                    if not name:
+                        continue
+                    email_value = normalize_message_text(row["email_normalized"] or row["email_address"]).lower()
+                    _, normalized_email = normalize_contact_identifier(email_value)
+                    if not normalized_email:
+                        continue
+                    score = int(row["is_primary"] or 0) * 100 - int(row["ordering_index"] or 0)
+                    resolved = ResolvedContact(
+                        identifier=str(row["email_address"]),
+                        normalized_identifier=normalized_email,
+                        identifier_kind="email",
+                        resolved_name=name,
+                        source_record_id=f"{source_path}:{row['record_id']}",
+                    )
+                    current = email_index.get(normalized_email)
+                    if current is None or score > current[0]:
+                        email_index[normalized_email] = (score, resolved)
 
             return (
                 {key: value[1] for key, value in phone_index.items()},
@@ -274,10 +262,83 @@ class IMessageContactResolver:
 
         return await to_thread(_load)
 
+    def _candidate_contacts_db_paths(self) -> list[Path]:
+        if self._explicit_contacts_path:
+            path = self.contacts_db_path.expanduser()
+            if path.is_dir():
+                candidates: list[Path] = []
+                direct_db = path / CONTACTS_DB_FILENAME
+                if direct_db.exists():
+                    candidates.append(direct_db)
+                candidates.extend(sorted(path.glob(f"*/{CONTACTS_DB_FILENAME}")))
+                return candidates
+            return [path] if path.exists() else []
+
+        candidates = [CONTACTS_DB_PATH]
+        if CONTACTS_SOURCES_ROOT.exists():
+            candidates.extend(sorted(CONTACTS_SOURCES_ROOT.glob(f"*/{CONTACTS_DB_FILENAME}")))
+        deduped: list[Path] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            resolved = str(candidate.expanduser())
+            if candidate.exists() and resolved not in seen:
+                deduped.append(candidate)
+                seen.add(resolved)
+        return deduped
+
+    def _contact_rows_for_table(self, conn: sqlite3.Connection, *, table_name: str) -> list[sqlite3.Row]:
+        columns = {
+            str(row["name"])
+            for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+        if not columns:
+            return []
+        table_name_alias = "p" if table_name == "ZABCDPHONENUMBER" else "e"
+        # In modern macOS Contacts schemas, ZOWNER is the actual contact-record foreign key.
+        # Auxiliary owner columns such as Z21_OWNER/Z22_OWNER can point at unrelated records and
+        # must only be used as fallbacks when ZOWNER is absent for a given row.
+        owner_columns = [name for name in ("ZOWNER", "Z22_OWNER", "Z21_OWNER") if name in columns]
+        if not owner_columns:
+            return []
+        owner_expr = f"COALESCE({', '.join(f'{table_name_alias}.{name}' for name in owner_columns)})"
+
+        if table_name == "ZABCDPHONENUMBER":
+            value_select = "p.ZFULLNUMBER AS phone_number"
+            value_filter = "p.ZFULLNUMBER IS NOT NULL AND trim(p.ZFULLNUMBER) <> ''"
+        else:
+            value_select = "e.ZADDRESS AS email_address, e.ZADDRESSNORMALIZED AS email_normalized"
+            value_filter = "e.ZADDRESS IS NOT NULL AND trim(e.ZADDRESS) <> ''"
+
+        query = f"""
+            SELECT
+                r.Z_PK AS record_id,
+                r.ZNAME AS full_name,
+                r.ZFIRSTNAME AS first_name,
+                r.ZLASTNAME AS last_name,
+                r.ZNICKNAME AS nickname,
+                r.ZORGANIZATION AS organization,
+                {value_select},
+                {table_name_alias}.ZISPRIMARY AS is_primary,
+                {table_name_alias}.ZORDERINGINDEX AS ordering_index
+            FROM {table_name} AS {table_name_alias}
+            JOIN ZABCDRECORD AS r
+              ON r.Z_PK = {owner_expr}
+            WHERE {value_filter}
+        """
+        return conn.execute(query).fetchall()
+
     async def _upsert_cache(self, *, user_id: int, rows: list[ResolvedContact]) -> None:
         if not rows:
             return
         now_utc = datetime.now(timezone.utc)
+        deduped_rows: dict[str, ResolvedContact] = {}
+        for row in rows:
+            current = deduped_rows.get(row.identifier)
+            if current is None:
+                deduped_rows[row.identifier] = row
+                continue
+            if current.resolved_name is None and row.resolved_name is not None:
+                deduped_rows[row.identifier] = row
         payloads = [
             {
                 "user_id": user_id,
@@ -288,7 +349,7 @@ class IMessageContactResolver:
                 "source_record_id": row.source_record_id,
                 "last_resolved_at_utc": now_utc,
             }
-            for row in rows
+            for row in deduped_rows.values()
         ]
         stmt = pg_insert(IMessageContactIdentity).values(payloads)
         await self.session.execute(

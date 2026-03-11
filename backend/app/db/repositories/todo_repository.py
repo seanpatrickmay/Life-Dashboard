@@ -4,10 +4,14 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Iterable
 
-from sqlalchemy import and_, case, or_, select
+from sqlalchemy import and_, case, delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.imessage import IMessageActionAudit
+from app.db.models.project import TodoProjectSuggestion
+from app.db.models.project_note import project_note_todo_ref
 from app.db.models.todo import TodoItem
+from app.db.models.workspace import WorkspacePage
 
 
 class TodoRepository:
@@ -103,6 +107,34 @@ class TodoRepository:
   async def delete_for_user(self, user_id: int, todo_id: int) -> None:
     todo = await self.get_for_user(user_id, todo_id)
     if todo is not None:
+      await self.session.execute(
+        update(IMessageActionAudit)
+        .where(
+          IMessageActionAudit.target_todo_id == todo.id,
+        )
+        .values(target_todo_id=None)
+      )
+      await self.session.execute(
+        delete(TodoProjectSuggestion).where(
+          TodoProjectSuggestion.user_id == user_id,
+          TodoProjectSuggestion.todo_id == todo.id,
+        )
+      )
+      await self.session.execute(
+        delete(project_note_todo_ref).where(
+          project_note_todo_ref.c.user_id == user_id,
+          project_note_todo_ref.c.todo_id == todo.id,
+        )
+      )
+      await self.session.execute(
+        update(WorkspacePage)
+        .where(
+          WorkspacePage.user_id == user_id,
+          WorkspacePage.legacy_todo_id == todo.id,
+        )
+        .values(legacy_todo_id=None)
+      )
+      await self.session.flush()
       await self.session.delete(todo)
 
   async def list_completed_for_day(self, user_id: int, local_date: date) -> list[TodoItem]:

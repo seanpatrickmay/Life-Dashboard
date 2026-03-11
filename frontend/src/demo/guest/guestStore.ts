@@ -959,6 +959,7 @@ export const updateGuestTodo = (
     deadline_utc?: string | null;
     deadline_is_date_only?: boolean;
     completed?: boolean;
+    completed_at_utc?: string | null;
     time_zone?: string;
   }
 ): TodoItem => {
@@ -970,6 +971,12 @@ export const updateGuestTodo = (
     const completed = payload.completed ?? item.completed;
     const deadline = payload.deadline_utc ?? item.deadline_utc ?? null;
     const isOverdue = !completed && deadline ? new Date(deadline).getTime() < Date.now() : false;
+    const completedAt =
+      payload.completed === true
+        ? payload.completed_at_utc ?? item.completed_at_utc ?? nowIso
+        : payload.completed === false
+          ? null
+          : payload.completed_at_utc ?? item.completed_at_utc ?? null;
     return {
       ...item,
       text: payload.text ?? item.text,
@@ -978,6 +985,7 @@ export const updateGuestTodo = (
           ? payload.project_id
           : item.project_id,
       completed,
+      completed_at_utc: completedAt,
       deadline_utc: deadline,
       deadline_is_date_only: payload.deadline_is_date_only ?? item.deadline_is_date_only,
       is_overdue: isOverdue,

@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 backend_root = Path(__file__).resolve().parents[1]
 if str(backend_root) not in sys.path:
@@ -1742,6 +1743,177 @@ def test_enrich_todo_text_adds_missing_recipient_and_topic() -> None:
     assert ask_action["text"] == "Ask Madelyn about the chem p-set when you text her"
 
 
+def test_enrich_todo_text_replaces_handle_with_participant_name() -> None:
+    service = make_service(client=None)
+    messages = [
+        {
+            "id": 1,
+            "sent_at_utc": "2026-03-10T15:00:00Z",
+            "is_from_me": False,
+            "sender": "Madelyn",
+            "sender_handle": "+14106603626",
+            "text": "Can you let me know what day you're leaving for school?",
+        }
+    ]
+
+    enriched = service.enrich_action_text(
+        action_type="todo.create",
+        action={
+            "text": "Reply to +14106603626 with what day you're leaving for school",
+            "source_message_ids": [1],
+            "reason": "Direct request.",
+        },
+        messages=messages,
+        participant_names=["Madelyn"],
+        participant_handles=["+14106603626"],
+    )
+
+    assert enriched["text"] == "Reply to Madelyn with what day you're leaving for school"
+
+
+@pytest.mark.parametrize(
+    ("current_text", "source_text", "participant_name", "participant_handle", "expected"),
+    [
+        (
+            "Reply to +14106603626 with what day you're leaving for school",
+            "Can you let me know what day you're leaving for school?",
+            "Madelyn",
+            "+14106603626",
+            "Reply to Madelyn with what day you're leaving for school",
+        ),
+        (
+            "Reply to madelyn@example.com about the chem p-set",
+            "Can you reply to me about the chem p-set tonight?",
+            "Madelyn",
+            "madelyn@example.com",
+            "Reply to Madelyn about the chem p-set tonight",
+        ),
+        (
+            "Send the notes to 2405550199",
+            "Please send the notes to me after class.",
+            "Owen Lee",
+            "+1 (240) 555-0199",
+            "Send the notes to Owen Lee after class",
+        ),
+    ],
+)
+def test_enrich_todo_text_replaces_phone_and_email_handles(
+    current_text: str,
+    source_text: str,
+    participant_name: str,
+    participant_handle: str,
+    expected: str,
+) -> None:
+    service = make_service(client=None)
+    messages = [
+        {
+            "id": 1,
+            "sent_at_utc": "2026-03-10T15:00:00Z",
+            "is_from_me": False,
+            "sender": participant_name,
+            "sender_handle": participant_handle,
+            "text": source_text,
+        }
+    ]
+
+    enriched = service.enrich_action_text(
+        action_type="todo.create",
+        action={
+            "text": current_text,
+            "source_message_ids": [1],
+            "reason": "Direct request.",
+        },
+        messages=messages,
+        participant_names=[participant_name],
+        participant_handles=[participant_handle],
+    )
+
+    assert enriched["text"] == expected
+
+
+def test_enrich_todo_text_uses_sender_name_when_participant_names_missing() -> None:
+    service = make_service(client=None)
+    messages = [
+        {
+            "id": 1,
+            "sent_at_utc": "2026-03-10T15:00:00Z",
+            "is_from_me": False,
+            "sender": "Seb Martinez",
+            "sender_handle": "+12404700750",
+            "text": "Can you send me the fire family selfies from last night?",
+        }
+    ]
+
+    enriched = service.enrich_action_text(
+        action_type="todo.create",
+        action={
+            "text": "Send the fire family selfies to +12404700750",
+            "source_message_ids": [1],
+            "reason": "Direct request.",
+        },
+        messages=messages,
+        participant_names=[],
+        participant_handles=[],
+    )
+
+    assert enriched["text"] == "Send the fire family selfies to Seb Martinez"
+
+
+def test_enrich_todo_text_uses_multiple_contact_names_without_cross_replacing() -> None:
+    service = make_service(client=None)
+    messages = [
+        {
+            "id": 1,
+            "sent_at_utc": "2026-03-10T15:00:00Z",
+            "is_from_me": False,
+            "sender": "Madelyn",
+            "sender_handle": "+14106603626",
+            "text": "Please send the notes to Owen and then text me once it's done.",
+        }
+    ]
+
+    enriched = service.enrich_action_text(
+        action_type="todo.create",
+        action={
+            "text": "Send the notes to 2405550199 and text +14106603626 once it's done",
+            "source_message_ids": [1],
+            "reason": "Direct request.",
+        },
+        messages=messages,
+        participant_names=["Madelyn", "Owen"],
+        participant_handles=["+14106603626", "2405550199"],
+    )
+
+    assert enriched["text"] == "Send the notes to Owen and text Madelyn once it's done"
+
+
+def test_enrich_todo_text_does_not_replace_unmatched_numbers() -> None:
+    service = make_service(client=None)
+    messages = [
+        {
+            "id": 1,
+            "sent_at_utc": "2026-03-10T15:00:00Z",
+            "is_from_me": False,
+            "sender": "T-Mobile",
+            "text": "Your order S162436981 is expected to ship next week.",
+        }
+    ]
+
+    enriched = service.enrich_action_text(
+        action_type="todo.create",
+        action={
+            "text": "Track order S162436981",
+            "source_message_ids": [1],
+            "reason": "Shipment reminder.",
+        },
+        messages=messages,
+        participant_names=["T-Mobile"],
+        participant_handles=[],
+    )
+
+    assert enriched["text"] == "Track order S162436981"
+
+
 def test_enrich_journal_text_preserves_specific_show_title() -> None:
     service = make_service(client=None)
     messages = [
@@ -1766,6 +1938,88 @@ def test_enrich_journal_text_preserves_specific_show_title() -> None:
     )
 
     assert enriched["text"] == "Decided to watch Severance"
+
+
+def test_enrich_journal_text_replaces_handle_with_participant_name() -> None:
+    service = make_service(client=None)
+    messages = [
+        {
+            "id": 1,
+            "sent_at_utc": "2026-03-10T15:00:00Z",
+            "is_from_me": True,
+            "sender": "You",
+            "text": "Talked to Madelyn about the chem p-set and graduation plans.",
+        }
+    ]
+
+    enriched = service.enrich_action_text(
+        action_type="journal.entry",
+        action={
+            "text": "Talked to +14106603626 about the chem p-set and graduation plans",
+            "source_message_ids": [1],
+            "reason": "Meaningful conversation.",
+        },
+        messages=messages,
+        participant_names=["Madelyn"],
+        participant_handles=["+14106603626"],
+    )
+
+    assert enriched["text"] == "Talked to Madelyn about the chem p-set and graduation plans"
+
+
+def test_enrich_journal_text_replaces_email_handle_with_contact_name() -> None:
+    service = make_service(client=None)
+    messages = [
+        {
+            "id": 1,
+            "sent_at_utc": "2026-03-10T15:00:00Z",
+            "is_from_me": True,
+            "sender": "You",
+            "text": "Talked with Madelyn about the chem p-set and graduation plans.",
+        }
+    ]
+
+    enriched = service.enrich_action_text(
+        action_type="journal.entry",
+        action={
+            "text": "Talked with madelyn@example.com about the chem p-set and graduation plans",
+            "source_message_ids": [1],
+            "reason": "Meaningful conversation.",
+        },
+        messages=messages,
+        participant_names=["Madelyn"],
+        participant_handles=["madelyn@example.com"],
+    )
+
+    assert enriched["text"] == "Talked with Madelyn about the chem p-set and graduation plans"
+
+
+def test_enrich_journal_text_replaces_contact_placeholder_with_name() -> None:
+    service = make_service(client=None)
+    messages = [
+        {
+            "id": 1,
+            "sent_at_utc": "2026-03-10T15:00:00Z",
+            "is_from_me": False,
+            "sender": "Seb Martinez",
+            "sender_handle": "+12404700750",
+            "text": "i booked my flight, arriving friday at 7:30 and leaving monday at 1:45",
+        }
+    ]
+
+    enriched = service.enrich_action_text(
+        action_type="journal.entry",
+        action={
+            "text": "Contact seb martinez booked a flight: arriving Friday at 7:30 and departing Monday at 1:45.",
+            "source_message_ids": [1],
+            "reason": "Travel update.",
+        },
+        messages=messages,
+        participant_names=["Seb Martinez"],
+        participant_handles=["+12404700750"],
+    )
+
+    assert enriched["text"] == "Seb Martinez booked a flight: arriving Friday at 7:30 and departing Monday at 1:45."
 
 
 def test_enrich_calendar_summary_uses_named_counterparty_when_supported() -> None:
@@ -1803,6 +2057,101 @@ def test_enrich_calendar_summary_uses_named_counterparty_when_supported() -> Non
     assert enriched["summary"] == "Dinner with Owen"
 
 
+def test_enrich_calendar_summary_replaces_phone_handle_with_name() -> None:
+    service = make_service(client=None)
+    messages = [
+        {
+            "id": 1,
+            "sent_at_utc": "2026-03-10T15:00:00Z",
+            "is_from_me": False,
+            "sender": "Jasmin Kim",
+            "sender_handle": "+14105550100",
+            "text": "Dinner tomorrow at 7 works for me.",
+        },
+        {
+            "id": 2,
+            "sent_at_utc": "2026-03-10T15:05:00Z",
+            "is_from_me": True,
+            "sender": "You",
+            "text": "Perfect, let's lock it in.",
+        },
+    ]
+
+    enriched = service.enrich_action_text(
+        action_type="calendar.create",
+        action={
+            "summary": "Dinner with +14105550100",
+            "start_time": "2026-03-11T23:00:00Z",
+            "end_time": "2026-03-12T00:00:00Z",
+            "source_message_ids": [1, 2],
+            "reason": "Concrete dinner plan.",
+        },
+        messages=messages,
+        participant_names=["Jasmin Kim"],
+        participant_handles=["+14105550100"],
+    )
+
+    assert enriched["summary"] == "Dinner with Jasmin Kim"
+
+
+def test_enrich_calendar_summary_replaces_stale_wrong_contact_name_from_extracted_payload() -> None:
+    service = make_service(client=None)
+    messages = [
+        {
+            "id": 1,
+            "sent_at_utc": "2026-01-05T03:24:41.575479Z",
+            "is_from_me": False,
+            "sender": "Dad",
+            "sender_handle": "+14435616671",
+            "text": "ok - heading to bed. See you at 09:30",
+        }
+    ]
+
+    enriched = service.enrich_action_text(
+        action_type="calendar.create",
+        action={
+            "summary": "Meeting with Jasmin Kim",
+            "start_time": "2026-01-05T14:30:00Z",
+            "end_time": "2026-01-05T15:00:00Z",
+            "source_message_ids": [1],
+            "reason": "Explicit meeting time.",
+        },
+        messages=messages,
+        participant_names=["Dad"],
+        participant_handles=["+14435616671"],
+    )
+
+    assert enriched["summary"] == "Meeting with Dad"
+
+
+def test_enrich_action_text_canonicalizes_lowercase_contact_names() -> None:
+    service = make_service(client=None)
+    messages = [
+        {
+            "id": 1,
+            "sent_at_utc": "2026-03-10T15:00:00Z",
+            "is_from_me": False,
+            "sender": "Seb Martinez",
+            "sender_handle": "+12404700750",
+            "text": "Can you send the trip details to me after you finalize them?",
+        }
+    ]
+
+    enriched = service.enrich_action_text(
+        action_type="todo.create",
+        action={
+            "text": "send the trip details to seb martinez",
+            "source_message_ids": [1],
+            "reason": "Direct request.",
+        },
+        messages=messages,
+        participant_names=["Seb Martinez"],
+        participant_handles=["+12404700750"],
+    )
+
+    assert enriched["text"] == "Send the trip details to Seb Martinez after you finalize them"
+
+
 def test_enrich_action_text_does_not_hallucinate_missing_detail() -> None:
     service = make_service(client=None)
     messages = [
@@ -1827,3 +2176,65 @@ def test_enrich_action_text_does_not_hallucinate_missing_detail() -> None:
     )
 
     assert enriched["text"] == "Ask Madelyn"
+
+
+class _RetryOutput(BaseModel):
+    value: str
+
+
+class _TransientModelError(Exception):
+    def __init__(self, status_code: int = 503, message: str = "503 UNAVAILABLE") -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def test_call_model_retries_transient_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = IMessageProcessingService(SimpleNamespace())
+    sleep_calls: list[int] = []
+
+    async def fake_sleep(delay: int) -> None:
+        sleep_calls.append(delay)
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def generate_json(self, prompt: str, *, response_model, temperature: float):
+            self.calls += 1
+            if self.calls < 3:
+                raise _TransientModelError()
+            return SimpleNamespace(data=_RetryOutput(value="ok"))
+
+    service.client = FakeClient()
+    monkeypatch.setattr("app.services.imessage_processing_service.asyncio.sleep", fake_sleep)
+
+    result = run(service._call_model("prompt", _RetryOutput))
+
+    assert result.value == "ok"
+    assert service.client.calls == 3
+    assert sleep_calls == [1, 2]
+
+
+def test_call_model_does_not_retry_non_transient_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = IMessageProcessingService(SimpleNamespace())
+    sleep_calls: list[int] = []
+
+    async def fake_sleep(delay: int) -> None:
+        sleep_calls.append(delay)
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def generate_json(self, prompt: str, *, response_model, temperature: float):
+            self.calls += 1
+            raise ValueError("invalid output schema")
+
+    service.client = FakeClient()
+    monkeypatch.setattr("app.services.imessage_processing_service.asyncio.sleep", fake_sleep)
+
+    with pytest.raises(ValueError, match="invalid output schema"):
+        run(service._call_model("prompt", _RetryOutput))
+
+    assert service.client.calls == 1
+    assert sleep_calls == []

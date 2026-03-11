@@ -1,6 +1,7 @@
 """Process synced iMessages into workspace knowledge, todos, calendar, and journal."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass
@@ -74,7 +75,9 @@ PROJECT_ROUTER_MIN_CONFIDENCE = 0.32
 PROJECT_ROUTER_SKIP_CONFIDENCE = 0.88
 PROJECT_ROUTER_MARGIN = 0.18
 MAX_DEDUP_CANDIDATES = 8
+MODEL_RETRY_ATTEMPTS = 4
 _HANDLE_LIKE_RE = re.compile(r"@|\d{7,}")
+_NON_DIGIT_RE = re.compile(r"\D+")
 _LEADING_PRONOUN_RE = re.compile(r"^(?:i|we)\s+", re.IGNORECASE)
 _TODO_PHRASE_RE = re.compile(
     r"(?:^|\b)(?:i need to|i have to|i should|i will|i'll|i gotta|need to|have to|remember to|remind me to|don't let me forget to|can you|could you|please)\s+(.+)$",
@@ -813,6 +816,7 @@ class IMessageProcessingService:
                     "sent_at_utc": message.sent_at_utc.isoformat() if message.sent_at_utc else None,
                     "is_from_me": message.is_from_me,
                     "sender": message.sender_label or message.handle_identifier,
+                    "sender_handle": message.handle_identifier,
                     "text": message.text or "",
                 }
                 for message in cluster.messages
@@ -832,6 +836,18 @@ class IMessageProcessingService:
 
     def _message_is_from_me(self, message: Any) -> bool:
         return bool(message.get("is_from_me") if isinstance(message, dict) else getattr(message, "is_from_me", False))
+
+    def _message_sender(self, message: Any) -> str:
+        raw = message.get("sender") if isinstance(message, dict) else getattr(message, "sender_label", None)
+        return normalize_message_text(raw)
+
+    def _message_sender_handle(self, message: Any) -> str:
+        raw = (
+            message.get("sender_handle")
+            if isinstance(message, dict)
+            else getattr(message, "handle_identifier", None)
+        )
+        return normalize_message_text(raw)
 
     def _message_sent_at_utc(self, message: Any) -> datetime | None:
         raw = message.get("sent_at_utc") if isinstance(message, dict) else getattr(message, "sent_at_utc", None)
@@ -1001,6 +1017,7 @@ class IMessageProcessingService:
         action: dict[str, Any],
         messages: list[Any],
         participant_names: list[str] | None = None,
+        participant_handles: list[str] | None = None,
     ) -> dict[str, Any]:
         enriched = dict(action)
         enriched["source_message_ids"] = self._normalize_action_source_message_ids(messages, action_type, enriched)
@@ -1012,23 +1029,32 @@ class IMessageProcessingService:
         if not support_messages:
             return enriched
         participant_names = participant_names or []
+        participant_handles = participant_handles or []
+        handle_map = self._participant_handle_map(
+            messages=support_messages,
+            participant_names=participant_names,
+            participant_handles=participant_handles,
+        )
         if action_type == "todo.create":
             enriched["text"] = self._enrich_todo_text(
                 current=str(enriched.get("text") or ""),
                 messages=support_messages,
                 participant_names=participant_names,
+                handle_map=handle_map,
             )
         elif action_type == "journal.entry":
             enriched["text"] = self._enrich_journal_text(
                 current=str(enriched.get("text") or ""),
                 messages=support_messages,
                 participant_names=participant_names,
+                handle_map=handle_map,
             )
         elif action_type == "calendar.create":
             enriched["summary"] = self._enrich_calendar_summary(
                 current=str(enriched.get("summary") or ""),
                 messages=support_messages,
                 participant_names=participant_names,
+                handle_map=handle_map,
             )
         return enriched
 
@@ -1042,6 +1068,11 @@ class IMessageProcessingService:
         participant_names = [
             normalize_message_text(item)
             for item in (payload.get("conversation") or {}).get("participants") or []
+            if normalize_message_text(item)
+        ]
+        participant_handles = [
+            normalize_message_text(item)
+            for item in (payload.get("conversation") or {}).get("participant_handles") or []
             if normalize_message_text(item)
         ]
         enriched = dict(extracted)
@@ -1058,6 +1089,7 @@ class IMessageProcessingService:
                     action=action,
                     messages=messages,
                     participant_names=participant_names,
+                    participant_handles=participant_handles,
                 )
                 for action in list(extracted.get(key) or [])
             ]
@@ -1107,6 +1139,7 @@ class IMessageProcessingService:
                     "sent_at_utc": message.sent_at_utc.isoformat() if message.sent_at_utc else None,
                     "is_from_me": message.is_from_me,
                     "sender": message.sender_label or message.handle_identifier,
+                    "sender_handle": message.handle_identifier,
                     "text": message.text or "",
                 }
                 for message in cluster.messages
@@ -1462,14 +1495,118 @@ class IMessageProcessingService:
         for message in messages:
             if self._message_is_from_me(message):
                 continue
-            sender = normalize_message_text(
-                message.get("sender") if isinstance(message, dict) else getattr(message, "sender_label", None)
-            )
+            sender = self._message_sender(message)
             if not sender or sender.lower() == "you" or self._looks_like_handle_label(sender):
                 continue
             if sender not in names:
                 names.append(sender)
         return names
+
+    def _handle_variants(self, handle: str) -> list[str]:
+        normalized = normalize_message_text(handle)
+        if not normalized:
+            return []
+        variants: list[str] = [normalized]
+        lowered = normalized.lower()
+        if lowered != normalized:
+            variants.append(lowered)
+        digits = _NON_DIGIT_RE.sub("", normalized)
+        if len(digits) >= 7:
+            variants.append(digits)
+            if len(digits) == 10:
+                variants.extend([f"1{digits}", f"+1{digits}"])
+            elif len(digits) == 11 and digits.startswith("1"):
+                variants.extend([digits[1:], f"+{digits}"])
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in variants:
+            key = item.lower()
+            if item and key not in seen:
+                deduped.append(item)
+                seen.add(key)
+        return deduped
+
+    def _participant_handle_map(
+        self,
+        *,
+        messages: list[Any],
+        participant_names: list[str],
+        participant_handles: list[str],
+    ) -> dict[str, str]:
+        mapping: dict[str, str] = {}
+
+        def _add(name: str | None, handle: str | None) -> None:
+            display_name = normalize_message_text(name)
+            raw_handle = normalize_message_text(handle)
+            if not display_name or not raw_handle:
+                return
+            if display_name.lower() == "you" or self._looks_like_handle_label(display_name):
+                return
+            for variant in self._handle_variants(raw_handle):
+                mapping.setdefault(variant, display_name)
+
+        for name, handle in zip(participant_names, participant_handles):
+            _add(name, handle)
+        for message in messages:
+            if self._message_is_from_me(message):
+                continue
+            _add(self._message_sender(message), self._message_sender_handle(message))
+        return mapping
+
+    def _replace_known_handles(self, text: str, handle_map: dict[str, str]) -> str:
+        result = normalize_message_text(text)
+        if not result or not handle_map:
+            return result
+        for handle in sorted(handle_map.keys(), key=len, reverse=True):
+            replacement = handle_map[handle]
+            if not replacement:
+                continue
+            if handle.isdigit():
+                pattern = rf"(?<!\d){re.escape(handle)}(?!\d)"
+                result = re.sub(pattern, replacement, result)
+            else:
+                result = re.sub(re.escape(handle), replacement, result, flags=re.IGNORECASE)
+        return normalize_message_text(result)
+
+    def _canonicalize_known_names(self, text: str, participant_names: list[str]) -> str:
+        result = normalize_message_text(text)
+        if not result:
+            return result
+        canonical_names = [
+            normalize_message_text(name)
+            for name in participant_names
+            if normalize_message_text(name) and not self._looks_like_handle_label(name)
+        ]
+        for canonical in sorted(set(canonical_names), key=len, reverse=True):
+            result = re.sub(re.escape(canonical), canonical, result, flags=re.IGNORECASE)
+        return normalize_message_text(result)
+
+    def _replace_contact_placeholder(self, text: str, counterparties: list[str]) -> str:
+        result = normalize_message_text(text)
+        if not result or not counterparties:
+            return result
+        if re.match(r"^Contact\b", result, re.IGNORECASE):
+            canonical = counterparties[0]
+            if re.match(rf"^Contact\s+{re.escape(canonical)}\b", result, re.IGNORECASE):
+                return normalize_message_text(re.sub(r"^Contact\s+", "", result, count=1, flags=re.IGNORECASE))
+            return normalize_message_text(re.sub(r"^Contact\b", canonical, result, count=1, flags=re.IGNORECASE))
+        return result
+
+    def _replace_single_counterparty_pronouns(self, text: str, counterparties: list[str]) -> str:
+        result = normalize_message_text(text)
+        if not result or len(counterparties) != 1:
+            return result
+        canonical = counterparties[0]
+        replacements = (
+            (r"\bto me\b", f"to {canonical}"),
+            (r"\btext me\b", f"text {canonical}"),
+            (r"\bcall me\b", f"call {canonical}"),
+            (r"\breply to me\b", f"reply to {canonical}"),
+            (r"\bwith me\b", f"with {canonical}"),
+        )
+        for pattern, replacement in replacements:
+            result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+        return normalize_message_text(result)
 
     def _sentence_case(self, text: str) -> str:
         normalized = normalize_message_text(text)
@@ -1547,15 +1684,32 @@ class IMessageProcessingService:
         if candidate.lower().startswith("meet ") and " with " not in candidate.lower() and len(counterparties) == 1:
             remainder = candidate[5:].strip()
             candidate = f"meet with {counterparties[0]} {remainder}".strip()
+        candidate = self._replace_single_counterparty_pronouns(candidate, counterparties)
         return self._sentence_case(self._cleanup_action_phrase(candidate))
 
-    def _enrich_todo_text(self, *, current: str, messages: list[Any], participant_names: list[str]) -> str:
-        current_text = self._sentence_case(current)
+    def _enrich_todo_text(
+        self,
+        *,
+        current: str,
+        messages: list[Any],
+        participant_names: list[str],
+        handle_map: dict[str, str],
+    ) -> str:
+        current_text = self._sentence_case(
+            self._canonicalize_known_names(
+                self._replace_known_handles(current, handle_map),
+                participant_names,
+            )
+        )
         candidate = self._extract_source_todo_phrase(messages, participant_names)
+        candidate = self._canonicalize_known_names(
+            self._replace_known_handles(candidate or "", handle_map),
+            participant_names,
+        )
         if not candidate:
             return current_text
         if self._todo_text_needs_enrichment(current_text) or self._detail_score(candidate) > self._detail_score(current_text):
-            return candidate
+            return self._sentence_case(candidate)
         return current_text
 
     def _extract_source_journal_phrase(self, messages: list[Any], participant_names: list[str]) -> str | None:
@@ -1574,22 +1728,62 @@ class IMessageProcessingService:
                 return self._sentence_case(cleaned)
         return None
 
-    def _enrich_journal_text(self, *, current: str, messages: list[Any], participant_names: list[str]) -> str:
-        current_text = self._sentence_case(current)
+    def _enrich_journal_text(
+        self,
+        *,
+        current: str,
+        messages: list[Any],
+        participant_names: list[str],
+        handle_map: dict[str, str],
+    ) -> str:
+        counterparties = self._counterparty_names(messages, participant_names)
+        current_text = self._sentence_case(
+            self._replace_contact_placeholder(
+                self._canonicalize_known_names(
+                    self._replace_known_handles(current, handle_map),
+                    participant_names,
+                ),
+                counterparties,
+            )
+        )
         candidate = self._extract_source_journal_phrase(messages, participant_names)
+        candidate = self._replace_contact_placeholder(
+            self._canonicalize_known_names(
+                self._replace_known_handles(candidate or "", handle_map),
+                participant_names,
+            ),
+            counterparties,
+        )
         if not candidate:
             return current_text
         if self._detail_score(candidate) > self._detail_score(current_text) or " a show" in current_text.lower():
-            return candidate
+            return self._sentence_case(candidate)
         return current_text
 
-    def _enrich_calendar_summary(self, *, current: str, messages: list[Any], participant_names: list[str]) -> str:
-        current_text = self._sentence_case(current)
+    def _enrich_calendar_summary(
+        self,
+        *,
+        current: str,
+        messages: list[Any],
+        participant_names: list[str],
+        handle_map: dict[str, str],
+    ) -> str:
+        current_text = self._sentence_case(
+            self._canonicalize_known_names(
+                self._replace_known_handles(current, handle_map),
+                participant_names,
+            )
+        )
         counterparties = self._counterparty_names(messages, participant_names)
         if not counterparties:
             return current_text
         if any(name.lower() in current_text.lower() for name in counterparties):
             return current_text
+        if len(counterparties) == 1:
+            replacement_target = counterparties[0]
+            for prefix in ("Meeting with ", "Call with ", "Dinner with "):
+                if current_text.lower().startswith(prefix.lower()):
+                    return self._sentence_case(f"{prefix}{replacement_target}")
         joined = " ".join(self._message_text(message) for message in messages).lower()
         if "dinner" in joined:
             return self._sentence_case(f"Dinner with {counterparties[0]}")
@@ -2807,12 +3001,32 @@ class IMessageProcessingService:
     async def _call_model(self, prompt: str, response_model):
         if self.client is None:
             raise ValueError("OpenAI client is not available.")
-        result = await self.client.generate_json(
-            prompt,
-            response_model=response_model,
-            temperature=0.0,
-        )
-        return result.data
+        last_exc: Exception | None = None
+        for attempt in range(1, MODEL_RETRY_ATTEMPTS + 1):
+            try:
+                result = await self.client.generate_json(
+                    prompt,
+                    response_model=response_model,
+                    temperature=0.0,
+                )
+                return result.data
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if not self._is_transient_model_error(exc) or attempt >= MODEL_RETRY_ATTEMPTS:
+                    raise
+                delay_seconds = 2 ** (attempt - 1)
+                logger.warning(
+                    "[imessage] transient model error schema={} attempt={}/{} delay={}s error={}",
+                    response_model.__name__,
+                    attempt,
+                    MODEL_RETRY_ATTEMPTS,
+                    delay_seconds,
+                    exc,
+                )
+                await asyncio.sleep(delay_seconds)
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Model call failed without an exception.")
 
     async def _invoke_model(self, prompt: str, response_model: type[BaseModel]):
         model_call = self._call_model
@@ -2846,3 +3060,31 @@ class IMessageProcessingService:
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=timezone.utc)
         return parsed.astimezone(timezone.utc)
+
+    def _is_transient_model_error(self, exc: Exception) -> bool:
+        status_code = getattr(exc, "status_code", None)
+        response = getattr(exc, "response", None)
+        if status_code is None and response is not None:
+            status_code = getattr(response, "status_code", None)
+        if isinstance(status_code, int) and status_code in {408, 409, 429, 500, 502, 503, 504}:
+            return True
+
+        message = str(exc).lower()
+        transient_markers = (
+            "rate limit",
+            "resource_exhausted",
+            "temporarily unavailable",
+            "visibility check was unavailable",
+            "service unavailable",
+            "unavailable",
+            "timeout",
+            "timed out",
+            "connection reset",
+            "connection aborted",
+            "connection refused",
+            "internal server error",
+            "bad gateway",
+            "gateway timeout",
+            "overloaded",
+        )
+        return any(marker in message for marker in transient_markers)

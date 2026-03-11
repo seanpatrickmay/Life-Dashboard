@@ -104,7 +104,7 @@ TODO_CALENDAR_TITLE_PROMPT = """
 You are a concise editor. Shorten the todo into a clear calendar title.
 
 Return ONLY valid JSON with this shape:
-{"title": "string", "details": "string"}
+{{"title": "string", "details": "string"}}
 
 Rules:
 - title must be <= {max_length} characters, no ellipses.

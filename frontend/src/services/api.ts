@@ -516,6 +516,7 @@ export type TodoItem = {
   project_id: number;
   text: string;
   completed: boolean;
+  completed_at_utc?: string | null;
   deadline_utc: string | null;
   deadline_is_date_only: boolean;
   is_overdue: boolean;
@@ -560,6 +561,7 @@ export const updateTodo = async (
     deadline_utc?: string | null;
     deadline_is_date_only?: boolean;
     completed?: boolean;
+    completed_at_utc?: string | null;
     time_zone?: string;
   }
 ) => {
