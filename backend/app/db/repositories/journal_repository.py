@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.imessage import IMessageActionAudit
 from app.db.models.journal import JournalDaySummary, JournalEntry
+from app.utils.timezone import eastern_now
 
 
 class JournalRepository:
@@ -42,6 +45,15 @@ class JournalRepository:
     return list(result.scalars().all())
 
   async def delete_entries_for_day(self, user_id: int, local_date: date) -> None:
+    entry_ids = select(JournalEntry.id).where(
+      JournalEntry.user_id == user_id,
+      JournalEntry.local_date == local_date,
+    )
+    await self.session.execute(
+      update(IMessageActionAudit)
+      .where(IMessageActionAudit.target_journal_entry_id.in_(entry_ids))
+      .values(target_journal_entry_id=None)
+    )
     await self.session.execute(
       delete(JournalEntry).where(
         JournalEntry.user_id == user_id, JournalEntry.local_date == local_date
@@ -81,6 +93,57 @@ class JournalRepository:
     )
     self.session.add(summary)
     return summary
+
+  async def upsert_summary(
+    self,
+    *,
+    user_id: int,
+    local_date: date,
+    time_zone: str,
+    status: str,
+    summary_json: dict,
+    source_hash: str | None,
+    finalized_at: datetime | None,
+    model_name: str | None,
+    version: str | None,
+  ) -> JournalDaySummary:
+    now = eastern_now()
+    stmt = pg_insert(JournalDaySummary).values(
+      user_id=user_id,
+      local_date=local_date,
+      time_zone=time_zone,
+      status=status,
+      summary_json=summary_json,
+      source_hash=source_hash,
+      finalized_at_utc=finalized_at,
+      model_name=model_name,
+      version=version,
+      created_at=now,
+      updated_at=now,
+    )
+    stmt = stmt.on_conflict_do_update(
+      constraint="uq_journal_day_summary_user_date",
+      set_={
+        "time_zone": stmt.excluded.time_zone,
+        "status": stmt.excluded.status,
+        "summary_json": stmt.excluded.summary_json,
+        "source_hash": stmt.excluded.source_hash,
+        "finalized_at_utc": stmt.excluded.finalized_at_utc,
+        "model_name": stmt.excluded.model_name,
+        "version": stmt.excluded.version,
+        "updated_at": now,
+      },
+    )
+    await self.session.execute(stmt)
+    result = await self.session.execute(
+      select(JournalDaySummary)
+      .execution_options(populate_existing=True)
+      .where(
+        JournalDaySummary.user_id == user_id,
+        JournalDaySummary.local_date == local_date,
+      )
+    )
+    return result.scalar_one()
 
   async def update_summary(
     self,

@@ -24,18 +24,10 @@ def run(coro):
 class FakeSession:
     def __init__(self) -> None:
         self.executed: list[object] = []
-        self.flush_calls = 0
-        self.deleted: list[object] = []
 
     async def execute(self, stmt):  # noqa: ANN001
         self.executed.append(stmt)
         return None
-
-    async def flush(self) -> None:
-        self.flush_calls += 1
-
-    async def delete(self, obj) -> None:  # noqa: ANN001
-        self.deleted.append(obj)
 
 
 def test_delete_for_user_nulls_imessage_audit_refs_before_delete() -> None:
@@ -61,9 +53,10 @@ def test_delete_for_user_nulls_imessage_audit_refs_before_delete() -> None:
     run(repo.delete_for_user(1, 83))
 
     statements = [str(stmt) for stmt in session.executed]
-    assert any(
-        "UPDATE imessage_action_audit SET target_todo_id" in stmt and "user_id" not in stmt
-        for stmt in statements
+    audit_update_index = next(
+        i
+        for i, stmt in enumerate(statements)
+        if "UPDATE imessage_action_audit SET target_todo_id" in stmt and "user_id" not in stmt
     )
-    assert session.flush_calls == 1
-    assert session.deleted == [todo]
+    todo_delete_index = next(i for i, stmt in enumerate(statements) if "DELETE FROM todo_item" in stmt)
+    assert audit_update_index < todo_delete_index

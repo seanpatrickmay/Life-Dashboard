@@ -6,7 +6,6 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.logging import configure_logging
-from app.db.models import Base
 from app.db.session import engine
 from app.routers import (
   admin,
@@ -67,17 +66,9 @@ async def startup_event() -> None:
 
 
 async def _init_database() -> None:
+    # Schema changes are applied by Alembic in the container entrypoint.
+    # Running DDL here can block startup indefinitely behind unrelated read locks.
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # Guard against older databases that predate the todo date-only flag migration.
-        await conn.execute(
-            text(
-                """
-                ALTER TABLE todo_item
-                ADD COLUMN IF NOT EXISTS deadline_is_date_only BOOLEAN NOT NULL DEFAULT false
-                """
-            )
-        )
         await conn.execute(
             text(
                 """

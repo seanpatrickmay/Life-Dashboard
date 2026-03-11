@@ -134,8 +134,12 @@ class TodoRepository:
         )
         .values(legacy_todo_id=None)
       )
-      await self.session.flush()
-      await self.session.delete(todo)
+      await self.session.execute(
+        delete(TodoItem).where(
+          TodoItem.user_id == user_id,
+          TodoItem.id == todo.id,
+        )
+      )
 
   async def list_completed_for_day(self, user_id: int, local_date: date) -> list[TodoItem]:
     """Return completed todos for a specific local date."""

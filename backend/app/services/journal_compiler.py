@@ -54,6 +54,10 @@ class JournalCompiler:
     self.session = session
     self.client = OpenAIResponsesClient()
 
+  @property
+  def model_name(self) -> str:
+    return self.client.model_name
+
   async def compile_day(
     self,
     *,

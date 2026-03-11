@@ -147,10 +147,14 @@ class JournalService:
     ):
       return summary
 
+    # Release the DB connection before the LLM compile step so concurrent
+    # journal requests don't monopolize the pool while waiting on OpenAI.
+    await self.session.close()
+
     now_utc = datetime.now(timezone.utc)
     summary_payload = {"groups": []}
     status = "final"
-    model_name = None
+    model_name = getattr(self.compiler, "model_name", None)
     try:
       summary_payload = await self.compiler.compile_day(
         local_date=local_date,
@@ -159,38 +163,26 @@ class JournalService:
         todo_items=compiler_todos,
         calendar_events=calendar_events,
       )
-      model_name = self.compiler.model_name
     except Exception as exc:  # noqa: BLE001
       logger.exception(
-        "[journal] failed to compile summary user=%s date=%s: %s",
+        "[journal] failed to compile summary user={} date={}: {}",
         user_id,
         local_date,
         exc,
       )
       status = "error"
 
-    if summary:
-      await self.journal_repo.update_summary(
-        summary,
-        status=status,
-        summary_json=summary_payload,
-        source_hash=source_hash,
-        finalized_at=now_utc if status == "final" else None,
-        model_name=model_name,
-        version=self.compiler.VERSION,
-      )
-    else:
-      summary = await self.journal_repo.create_summary(
-        user_id=user_id,
-        local_date=local_date,
-        time_zone=effective_time_zone,
-        status=status,
-        summary_json=summary_payload,
-        source_hash=source_hash,
-        finalized_at=now_utc if status == "final" else None,
-        model_name=model_name,
-        version=self.compiler.VERSION,
-      )
+    summary = await self.journal_repo.upsert_summary(
+      user_id=user_id,
+      local_date=local_date,
+      time_zone=effective_time_zone,
+      status=status,
+      summary_json=summary_payload,
+      source_hash=source_hash,
+      finalized_at=now_utc if status == "final" else None,
+      model_name=model_name,
+      version=self.compiler.VERSION,
+    )
 
     if status == "final":
       await self.journal_repo.delete_entries_for_day(user_id, local_date)

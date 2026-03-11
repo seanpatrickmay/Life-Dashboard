@@ -38,6 +38,13 @@ def make_service() -> JournalService:
   return service
 
 
+def test_journal_compiler_exposes_client_model_name() -> None:
+  compiler = object.__new__(JournalCompiler)
+  compiler.client = SimpleNamespace(model_name="gpt-test-journal")
+
+  assert compiler.model_name == "gpt-test-journal"
+
+
 def test_ensure_summary_reuses_final_summary_when_source_hash_matches() -> None:
   service = make_service()
   zone = resolve_time_zone("America/New_York")
@@ -124,13 +131,13 @@ def test_ensure_summary_rebuilds_final_summary_when_late_entry_changes_hash() ->
   async def list_completed_for_day(self, user_id, local_date):
     return []
 
-  async def update_summary(self, summary_obj, **kwargs):
+  async def upsert_summary(self, **kwargs):
     updated.update(kwargs)
-    summary_obj.status = kwargs["status"]
-    summary_obj.summary_json = kwargs["summary_json"]
-    summary_obj.source_hash = kwargs["source_hash"]
-    summary_obj.version = kwargs["version"]
-    return summary_obj
+    summary.status = kwargs["status"]
+    summary.summary_json = kwargs["summary_json"]
+    summary.source_hash = kwargs["source_hash"]
+    summary.version = kwargs["version"]
+    return summary
 
   async def delete_entries_for_day(self, user_id, local_date):
     deleted["user_id"] = user_id
@@ -160,7 +167,7 @@ def test_ensure_summary_rebuilds_final_summary_when_late_entry_changes_hash() ->
   service.journal_repo.get_summary_for_day = MethodType(get_summary_for_day, service.journal_repo)
   service.journal_repo.list_entries_for_day = MethodType(list_entries_for_day, service.journal_repo)
   service.todo_repo.list_completed_for_day = MethodType(list_completed_for_day, service.todo_repo)
-  service.journal_repo.update_summary = MethodType(update_summary, service.journal_repo)
+  service.journal_repo.upsert_summary = MethodType(upsert_summary, service.journal_repo)
   service.journal_repo.delete_entries_for_day = MethodType(delete_entries_for_day, service.journal_repo)
   service.compiler.compile_day = compile_day
   service._list_calendar_events_for_day = MethodType(list_calendar_events_for_day, service)
@@ -181,6 +188,60 @@ def test_ensure_summary_rebuilds_final_summary_when_late_entry_changes_hash() ->
   assert compile_kwargs["entries"][0]["source_id"] == "entry:88"
   assert compile_kwargs["entries"][0]["time_label"] == "3:05 PM"
   assert deleted == {"user_id": 7, "local_date": date(2026, 3, 10)}
+
+
+def test_ensure_summary_persists_model_name_from_journal_compiler() -> None:
+  service = make_service()
+  created: dict[str, object] = {}
+  deleted: dict[str, object] = {}
+  compiler = object.__new__(JournalCompiler)
+  compiler.client = SimpleNamespace(model_name="gpt-test-journal")
+
+  async def get_summary_for_day(self, user_id, local_date):
+    return None
+
+  async def list_entries_for_day(self, user_id, local_date):
+    return []
+
+  async def list_completed_for_day(self, user_id, local_date):
+    return []
+
+  async def upsert_summary(self, **kwargs):
+    created.update(kwargs)
+    return SimpleNamespace(**kwargs)
+
+  async def delete_entries_for_day(self, user_id, local_date):
+    deleted["user_id"] = user_id
+    deleted["local_date"] = local_date
+
+  async def compile_day(**kwargs):
+    created["compile_kwargs"] = kwargs
+    return {"groups": []}
+
+  async def list_calendar_events_for_day(self, *, user_id, local_date, time_zone):
+    return []
+
+  service.journal_repo.get_summary_for_day = MethodType(get_summary_for_day, service.journal_repo)
+  service.journal_repo.list_entries_for_day = MethodType(list_entries_for_day, service.journal_repo)
+  service.todo_repo.list_completed_for_day = MethodType(list_completed_for_day, service.todo_repo)
+  service.journal_repo.upsert_summary = MethodType(upsert_summary, service.journal_repo)
+  service.journal_repo.delete_entries_for_day = MethodType(delete_entries_for_day, service.journal_repo)
+  compiler.compile_day = compile_day
+  service.compiler = compiler
+  service._list_calendar_events_for_day = MethodType(list_calendar_events_for_day, service)
+
+  run(
+    service._ensure_summary(
+      user_id=2,
+      local_date=date(2026, 3, 10),
+      time_zone="America/New_York",
+    )
+  )
+
+  assert created["status"] == "final"
+  assert created["model_name"] == "gpt-test-journal"
+  assert "compile_kwargs" in created
+  assert deleted == {"user_id": 2, "local_date": date(2026, 3, 10)}
 
 
 @pytest.mark.parametrize(
@@ -241,9 +302,9 @@ def test_ensure_summary_rebuilds_when_completed_or_calendar_inputs_change(
   async def list_completed_for_day(self, user_id, local_date):
     return completed_items
 
-  async def update_summary(self, summary_obj, **kwargs):
+  async def upsert_summary(self, **kwargs):
     updated.update(kwargs)
-    return summary_obj
+    return summary
 
   async def delete_entries_for_day(self, user_id, local_date):
     return None
@@ -258,7 +319,7 @@ def test_ensure_summary_rebuilds_when_completed_or_calendar_inputs_change(
   service.journal_repo.get_summary_for_day = MethodType(get_summary_for_day, service.journal_repo)
   service.journal_repo.list_entries_for_day = MethodType(list_entries_for_day, service.journal_repo)
   service.todo_repo.list_completed_for_day = MethodType(list_completed_for_day, service.todo_repo)
-  service.journal_repo.update_summary = MethodType(update_summary, service.journal_repo)
+  service.journal_repo.upsert_summary = MethodType(upsert_summary, service.journal_repo)
   service.journal_repo.delete_entries_for_day = MethodType(delete_entries_for_day, service.journal_repo)
   service.compiler.compile_day = compile_day
   service._list_calendar_events_for_day = MethodType(list_calendar_events_for_day, service)

@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.db.models.entities import User, UserRole, UserSession
-from app.db.session import get_session
+from app.db.session import AsyncSessionLocal
 from app.utils.timezone import eastern_now
 
 
@@ -115,19 +115,28 @@ async def _load_session_from_token(
 
 
 async def get_current_session(
-    session: AsyncSession = Depends(get_session),
     token: str | None = Cookie(None, alias=SESSION_COOKIE),
 ) -> UserSession:
-    session_obj = await _load_session_from_token(session, token, required=True)
-    assert session_obj is not None
-    return session_obj
+    async with AsyncSessionLocal() as session:
+        session_obj = await _load_session_from_token(session, token, required=True)
+        assert session_obj is not None
+        if session_obj.user is not None:
+            session.expunge(session_obj.user)
+        session.expunge(session_obj)
+        return session_obj
 
 
 async def get_optional_current_session(
-    session: AsyncSession = Depends(get_session),
     token: str | None = Cookie(None, alias=SESSION_COOKIE),
 ) -> UserSession | None:
-    return await _load_session_from_token(session, token, required=False)
+    async with AsyncSessionLocal() as session:
+        session_obj = await _load_session_from_token(session, token, required=False)
+        if session_obj is None:
+            return None
+        if session_obj.user is not None:
+            session.expunge(session_obj.user)
+        session.expunge(session_obj)
+        return session_obj
 
 
 async def get_current_user(
