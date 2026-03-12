@@ -10,7 +10,6 @@ const Panel = styled(Card)`
   flex-direction: column;
   gap: clamp(12px, 2vw, 18px);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 32px rgba(120, 170, 255, 0.35);
-  height: 100%;
   overflow: hidden;
 `;
 
@@ -28,8 +27,6 @@ const EventsList = styled.div`
   flex-direction: column;
   gap: clamp(10px, 1.5vw, 14px);
   overflow-y: auto;
-  flex: 1;
-  min-height: 0;
 
   /* Subtle scrollbar styling */
   &::-webkit-scrollbar {
