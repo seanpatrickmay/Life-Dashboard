@@ -1,7 +1,7 @@
 import styled from 'styled-components';
 
 import { MonetChatPanel } from '../components/dashboard/MonetChatPanel';
-import { DashboardNutritionSnapshot } from '../components/dashboard/DashboardNutritionSnapshot';
+import { DashboardUpcomingEvents } from '../components/dashboard/DashboardUpcomingEvents';
 import { TodoScrollPad } from '../components/todo/TodoScrollPad';
 
 const Grid = styled.div`
@@ -16,7 +16,7 @@ export function DashboardPage() {
     <Grid>
       <MonetChatPanel />
       <TodoScrollPad />
-      <DashboardNutritionSnapshot />
+      <DashboardUpcomingEvents />
     </Grid>
   );
 }

@@ -1,7 +1,7 @@
 # Pixels Folder
 
 ## Purpose
-Holds the procedurally generated Monet sprite sheet used by the scene composer (lilies, blossoms, water, reflections, reeds, willow strands, feature overlays, stroke tiles, etc.). All files are PNGs emitted by `scripts/generate_pixel_assets.py`.
+Holds the checked-in Monet sprite sheet used by the scene composer (lilies, blossoms, water, reflections, reeds, willow strands, feature overlays, stroke tiles, etc.). These PNGs are treated as source art for the frontend scene.
 
 ## File Overview
 

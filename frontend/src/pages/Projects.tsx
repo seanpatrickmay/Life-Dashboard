@@ -2867,11 +2867,11 @@ export function ProjectsPage() {
   const [status, setStatus] = useState<Status>(null);
   const [titleDrafts, setTitleDrafts] = useState<Record<number, string>>({});
   const [collapsedSections, setCollapsedSections] = useState({
-    favorites: false,
-    workspace: false,
-    templates: false,
-    recent: false,
-    trash: false
+    favorites: false,     // Open by default
+    workspace: true,      // Hidden by default
+    templates: true,      // Hidden by default
+    recent: true,         // Hidden by default
+    trash: true           // Hidden by default
   });
   const [collapsedPages, setCollapsedPages] = useState<Record<number, boolean>>({});
   const [pageComposer, setPageComposer] = useState<PageComposerState | null>(null);

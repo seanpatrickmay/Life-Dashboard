@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Race Condition Test</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        .test { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+        .success { background: #d4edda; }
+        .fail { background: #f8d7da; }
+        button { padding: 10px 20px; margin: 10px; cursor: pointer; }
+        #log { margin-top: 20px; border: 1px solid #ddd; padding: 10px; height: 300px; overflow-y: auto; }
+        .log-entry { margin: 5px 0; }
+        .optimistic { color: #0066cc; }
+        .server { color: #009900; }
+        .error { color: #cc0000; }
+    </style>
+</head>
+<body>
+    <h1>Todo Race Condition Test</h1>
+
+    <div class="test">
+        <h2>Test Scenarios</h2>
+        <button onclick="testSingleUpdate()">Test Single Update</button>
+        <button onclick="testMultipleUpdates()">Test Multiple Updates (Race Condition)</button>
+        <button onclick="testBatchUpdate()">Test Batch Update</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div id="log">
+        <div class="log-entry">Ready to test...</div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api';
+        let authToken = localStorage.getItem('auth_token') || '';
+
+        function log(message, type = '') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '<div class="log-entry">Log cleared. Ready to test...</div>';
+        }
+
+        async function simulateOptimisticUpdate(todoId, completed) {
+            log(`UI: Optimistically marking todo ${todoId} as ${completed ? 'complete' : 'incomplete'}`, 'optimistic');
+            // Simulate UI update
+            return new Promise(resolve => setTimeout(resolve, 10));
+        }
+
+        async function updateTodo(todoId, completed) {
+            try {
+                log(`API: Sending update for todo ${todoId}...`);
+                const response = await fetch(`${API_URL}/todos/${todoId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        completed: completed,
+                        time_zone: 'America/New_York'
+                    })
+                });
+
+                if (response.ok) {
+                    log(`API: Todo ${todoId} updated successfully`, 'server');
+                    return await response.json();
+                } else {
+                    throw new Error(`Failed: ${response.status}`);
+                }
+            } catch (error) {
+                log(`API: Error updating todo ${todoId}: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        async function testSingleUpdate() {
+            log('\n=== Testing Single Update ===');
+            try {
+                // Simulate optimistic update
+                await simulateOptimisticUpdate(1, true);
+
+                // Send actual update
+                await updateTodo(1, true);
+
+                log('✅ Single update completed without issues', 'success');
+            } catch (error) {
+                log('❌ Single update failed: ' + error.message, 'error');
+            }
+        }
+
+        async function testMultipleUpdates() {
+            log('\n=== Testing Multiple Updates (Potential Race Condition) ===');
+            const todoIds = [1, 2, 3, 4, 5];
+
+            try {
+                // Simulate rapid clicking - all optimistic updates first
+                log('UI: User rapidly clicks 5 todos...');
+                for (const id of todoIds) {
+                    await simulateOptimisticUpdate(id, true);
+                    await new Promise(resolve => setTimeout(resolve, 50)); // 50ms between clicks
+                }
+
+                // Send all updates concurrently (simulating the race condition)
+                log('API: Sending all updates concurrently...');
+                const promises = todoIds.map(id => updateTodo(id, true));
+
+                // Wait for all to complete
+                const results = await Promise.allSettled(promises);
+
+                // Check results
+                const succeeded = results.filter(r => r.status === 'fulfilled').length;
+                const failed = results.filter(r => r.status === 'rejected').length;
+
+                log(`Results: ${succeeded} succeeded, ${failed} failed`);
+
+                if (failed === 0) {
+                    log('✅ All updates completed without race condition issues', 'success');
+                } else {
+                    log('⚠️ Some updates failed - possible race condition', 'error');
+                }
+
+                // Simulate query refetch
+                log('UI: Refetching todo list...');
+                await new Promise(resolve => setTimeout(resolve, 300));
+                log('UI: Todo list refreshed', 'optimistic');
+
+            } catch (error) {
+                log('❌ Multiple update test failed: ' + error.message, 'error');
+            }
+        }
+
+        async function testBatchUpdate() {
+            log('\n=== Testing Batch Update ===');
+            try {
+                const updates = [
+                    { id: 1, completed: true },
+                    { id: 2, completed: true },
+                    { id: 3, completed: true }
+                ];
+
+                log('UI: Optimistically updating all todos at once', 'optimistic');
+
+                log('API: Sending batch update...');
+                const response = await fetch(`${API_URL}/todos/batch`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        updates: updates,
+                        time_zone: 'America/New_York'
+                    })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    log(`✅ Batch update successful: ${result.updated_count} todos updated`, 'success');
+                } else {
+                    throw new Error(`Failed: ${response.status}`);
+                }
+            } catch (error) {
+                log('❌ Batch update failed: ' + error.message, 'error');
+            }
+        }
+
+        // Add auth token input
+        const authDiv = document.createElement('div');
+        authDiv.className = 'test';
+        authDiv.innerHTML = `
+            <h2>Authentication</h2>
+            <input type="text" id="authToken" placeholder="Enter auth token" value="${authToken}" style="width: 300px;">
+            <button onclick="saveToken()">Save Token</button>
+        `;
+        document.body.insertBefore(authDiv, document.querySelector('.test'));
+
+        function saveToken() {
+            authToken = document.getElementById('authToken').value;
+            localStorage.setItem('auth_token', authToken);
+            log('Auth token saved', 'success');
+        }
+    </script>
+</body>
+</html>

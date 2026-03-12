@@ -1,6 +1,6 @@
 Monet Pixel Assets (PNG)
 
-This folder contains hand‑generated pixel PNGs produced by `scripts/generate_pixel_assets.py` (pure Python, no external deps). They are small tiles/sprites intended for CSS layering and component decoration.
+This folder contains checked-in pixel PNGs used for CSS layering and component decoration in the Monet scene. Treat these files as source art rather than generated build output.
 
 Files (PNG RGBA, nearest-neighbor safe)
 - lily_light_{1..4}.png / lily_dark_{1..4}.png — 24×24 pads with subtle notch and shading
@@ -37,8 +37,3 @@ Usage Plan (not yet wired)
   - use `dither_*` and `stroke_*` tiles as `<pattern>` fills for HRV/RHR/Sleep/Load series.
 - ReadinessCard: place a blossom or lily badge sprite in corner.
 - Feature overlays: `bridge_arc_*` + reflections, `koi_silhouette`, `boat_silhouette`, `willow_frond_*` used sparingly per time-of-day.
-
-Regenerating
-```
-python3 scripts/generate_pixel_assets.py
-```

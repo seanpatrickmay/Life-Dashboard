@@ -23,6 +23,7 @@ from app.services.claude_todo_agent import TodoAssistantAgent
 from app.services.todo_accomplishment_agent import TodoAccomplishmentAgent
 from app.services.todo_calendar_link_service import TodoCalendarLinkService
 from app.services.todo_project_suggestion_service import TodoProjectSuggestionService
+from app.services.async_ai_service import AsyncAIService
 from app.utils.timezone import local_today, resolve_time_zone
 
 
@@ -57,11 +58,18 @@ async def list_todos(
   current_user: User = Depends(get_current_user),
   session: AsyncSession = Depends(get_session),
   time_zone: str | None = Query(None),
+  limit: int = Query(default=50, le=200, description="Maximum items to return"),
+  offset: int = Query(default=0, ge=0, description="Number of items to skip"),
 ) -> list[TodoItemResponse]:
   repo = TodoRepository(session)
-  items = await repo.list_for_user(current_user.id, local_date=local_today(time_zone))
+  # Get all todos for the date (we'll paginate in memory for simplicity)
+  all_items = await repo.list_for_user(current_user.id, local_date=local_today(time_zone))
+
+  # Apply pagination
+  paginated_items = all_items[offset:offset + limit]
+
   now_utc = datetime.now(timezone.utc)
-  return [_todo_response(item, now_utc) for item in items]
+  return [_todo_response(item, now_utc) for item in paginated_items]
 
 
 @router.post("", response_model=TodoItemResponse)
@@ -140,13 +148,16 @@ async def update_todo(
         zone = resolve_time_zone(tz_name)
         todo.completed_local_date = todo.completed_at_utc.astimezone(zone).date()
       if not todo.accomplishment_text:
-        agent = TodoAccomplishmentAgent(session)
-        try:
-          todo.accomplishment_text = await agent.rewrite(todo.text)
-        except Exception as exc:  # noqa: BLE001
-          logger.warning("[todos] failed to generate accomplishment: {}", exc)
+        # Check cache first for instant response
+        cached_accomplishment = AsyncAIService.get_cached_accomplishment(todo.text)
+        if cached_accomplishment:
+          todo.accomplishment_text = cached_accomplishment
+          todo.accomplishment_generated_at_utc = datetime.now(timezone.utc)
+        else:
+          # Set a placeholder and generate async
           todo.accomplishment_text = f"Completed {todo.text}".strip()
-        todo.accomplishment_generated_at_utc = datetime.now(timezone.utc)
+          # Schedule async generation in background
+          AsyncAIService.schedule_accomplishment_generation(todo.id, current_user.id, todo.text)
     elif not update_data["completed"]:
       todo.completed_local_date = None
       todo.completed_time_zone = None

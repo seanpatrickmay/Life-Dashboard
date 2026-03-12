@@ -227,12 +227,13 @@ export function TodoScrollPad(_props: Props) {
 
   const items = todosQuery.data ?? [];
 
-  const handleToggle = async (item: TodoItem) => {
+  const handleToggle = (item: TodoItem) => {
     if (historyTodoId === item.id) {
       setHistoryTodoId(null);
       setHistoryValue('');
     }
-    await updateTodo({ id: item.id, completed: !item.completed });
+    // Use non-async version for immediate optimistic update
+    updateTodo({ id: item.id, completed: !item.completed });
   };
 
   const handleDelete = async (id: number) => {
@@ -244,13 +245,14 @@ export function TodoScrollPad(_props: Props) {
     setEditingText(item.text);
   };
 
-  const commitEdit = async (item: TodoItem) => {
+  const commitEdit = (item: TodoItem) => {
     const trimmed = editingText.trim();
     if (!trimmed || trimmed === item.text) {
       setEditingId(null);
       return;
     }
-    await updateTodo({ id: item.id, text: trimmed });
+    // Use non-async version for immediate optimistic update
+    updateTodo({ id: item.id, text: trimmed });
     setEditingId(null);
   };
 
@@ -270,11 +272,12 @@ export function TodoScrollPad(_props: Props) {
     setHistoryValue('');
   };
 
-  const applyHistoricalCompletion = async (item: TodoItem) => {
+  const applyHistoricalCompletion = (item: TodoItem) => {
     if (!historyValue) return;
     const completedAt = new Date(historyValue);
     if (Number.isNaN(completedAt.getTime())) return;
-    await updateTodo({
+    // Use non-async version for immediate optimistic update
+    updateTodo({
       id: item.id,
       completed: true,
       completed_at_utc: completedAt.toISOString()

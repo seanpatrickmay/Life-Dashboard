@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,10 @@ from app.utils.timezone import eastern_midnight, eastern_now, eastern_today
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
+# Simple in-memory cache for personal use
+_cache: Dict[str, tuple[Any, datetime]] = {}
+CACHE_TTL = 300  # 5 minutes
+
 
 @router.get("/overview", response_model=MetricsOverviewResponse)
 async def metrics_overview(
@@ -27,6 +32,13 @@ async def metrics_overview(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> MetricsOverviewResponse:
+    # Check cache first
+    cache_key = f"metrics_overview:{current_user.id}:{range_days}"
+    if cache_key in _cache:
+        cached_data, cached_time = _cache[cache_key]
+        if (datetime.now() - cached_time).seconds < CACHE_TTL:
+            return cached_data
+
     cutoff = eastern_today() - timedelta(days=range_days - 1)
     repo = MetricsRepository(session)
     records = await repo.list_metrics_since(current_user.id, cutoff)
@@ -55,7 +67,7 @@ async def metrics_overview(
         if records
         else None
     )
-    return MetricsOverviewResponse(
+    response = MetricsOverviewResponse(
         generated_at=eastern_now(),
         range_label=f"last {range_days} days",
         training_volume_hours=round(volume_hours_total, 2),
@@ -66,6 +78,10 @@ async def metrics_overview(
         rhr_trend_bpm=rhr_series,
         sleep_trend_hours=sleep_series,
     )
+
+    # Cache the response
+    _cache[cache_key] = (response, datetime.now())
+    return response
 
 
 @router.get("/daily", response_model=list[DailyMetricResponse])

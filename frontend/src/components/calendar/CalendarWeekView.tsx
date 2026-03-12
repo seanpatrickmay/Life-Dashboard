@@ -26,10 +26,10 @@ type Props = {
   onMoveAllDayItem?: (item: CalendarItem, targetDay: Date) => void;
 };
 
-const TIMED_CARD_HEIGHT = 66;
-const TIMED_CARD_GAP = 10;
-const ALL_DAY_CARD_HEIGHT = 30;
-const ALL_DAY_CARD_GAP = 6;
+const TIMED_CARD_HEIGHT = 36;
+const TIMED_CARD_GAP = 4;
+const ALL_DAY_CARD_HEIGHT = 22;
+const ALL_DAY_CARD_GAP = 2;
 const ALL_DAY_SECTION_HEIGHT = 86;
 const RESIZE_STEP_MINUTES = 15;
 const RESIZE_STEP_PX = 10;
@@ -38,7 +38,7 @@ const MIN_EVENT_DURATION_MINUTES = 15;
 const WeekGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 12px;
+  gap: 4px;
   width: 100%;
   height: 100%;
 `;
@@ -46,9 +46,9 @@ const WeekGrid = styled.div`
 const DayColumn = styled.div<{ $muted: boolean }>`
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 3px;
   min-height: 0;
-  padding: 12px;
+  padding: 2px;
   border-radius: 20px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   background: ${({ theme }) => hexToRgba(theme.colors.textPrimary, theme.mode === 'dark' ? 0.08 : 0.04)};
@@ -77,7 +77,7 @@ const DayDate = styled.span`
 const AllDaySection = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   min-height: ${ALL_DAY_SECTION_HEIGHT}px;
   max-height: ${ALL_DAY_SECTION_HEIGHT}px;
 `;
@@ -100,7 +100,7 @@ const AllDayList = styled.div`
 const TimedSection = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 3px;
   min-height: 0;
   flex: 1;
 `;
@@ -133,10 +133,10 @@ const CardButton = styled.div<{
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  gap: 6px;
-  padding: ${({ $allDay }) => ($allDay ? '6px 8px' : '8px 10px')};
+  gap: 2px;
+  padding: ${({ $allDay }) => ($allDay ? '2px 4px' : '3px 5px')};
   min-height: ${({ $allDay }) => ($allDay ? `${ALL_DAY_CARD_HEIGHT}px` : `${TIMED_CARD_HEIGHT}px`)};
-  border-radius: 14px;
+  border-radius: 8px;
   border: 1px ${({ $kind }) => ($kind === 'todo' ? 'dashed' : 'solid')}
     ${({ theme, $kind }) => ($kind === 'todo' ? theme.palette.lilac['200'] : theme.colors.borderSubtle)};
   background: ${({ theme }) => hexToRgba(theme.colors.textPrimary, theme.mode === 'dark' ? 0.12 : 0.05)};
@@ -175,15 +175,15 @@ const TimeRow = styled.div`
 `;
 
 const CardTitle = styled.span`
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: ${({ theme }) => theme.colors.textPrimary};
-  line-height: 1.2;
+  line-height: 1.15;
   white-space: normal;
   word-break: break-word;
 `;
 
 const TimeBadge = styled.span`
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   color: ${({ theme }) => theme.colors.textSecondary};
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

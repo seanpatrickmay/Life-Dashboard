@@ -191,7 +191,6 @@ Useful utilities live in `scripts/`:
 
 - `manual_ingest.py` - trigger ingestion locally
 - `debug_metrics.py` - inspect raw metric payloads
-- `generate_pixel_assets.py` - rebuild Monet pixel sprites
 - `sanity_db.py` - quick DB connectivity check
 
 ## Documentation

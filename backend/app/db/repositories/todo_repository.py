@@ -6,6 +6,7 @@ from typing import Iterable
 
 from sqlalchemy import and_, case, delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db.models.imessage import IMessageActionAudit
 from app.db.models.project import TodoProjectSuggestion
@@ -32,7 +33,15 @@ class TodoRepository:
       (TodoItem.deadline_utc.is_(None), 2),
       else_=1,
     )
-    stmt = select(TodoItem).where(TodoItem.user_id == user_id)
+    stmt = (
+      select(TodoItem)
+      .options(
+        selectinload(TodoItem.project),  # Eager load project
+        selectinload(TodoItem.calendar_link),  # Eager load calendar link
+        selectinload(TodoItem.project_suggestion),  # Eager load suggestions
+      )
+      .where(TodoItem.user_id == user_id)
+    )
     if local_date is not None:
       stmt = stmt.where(
         or_(TodoItem.completed.is_(False), TodoItem.completed_local_date == local_date)

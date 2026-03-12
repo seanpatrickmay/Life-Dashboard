@@ -149,7 +149,8 @@ class JournalService:
 
     # Release the DB connection before the LLM compile step so concurrent
     # journal requests don't monopolize the pool while waiting on OpenAI.
-    await self.session.close()
+    if self.session is not None:
+      await self.session.close()
 
     now_utc = datetime.now(timezone.utc)
     summary_payload = {"groups": []}

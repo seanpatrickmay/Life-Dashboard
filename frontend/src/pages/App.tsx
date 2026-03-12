@@ -1,18 +1,34 @@
+import { lazy, Suspense } from 'react';
 import { Outlet, Route, Routes } from 'react-router-dom';
 
-import { DashboardPage } from './Dashboard';
-import { InsightsPage } from './Insights';
-import { JournalPage } from './Journal';
-import { CalendarPage } from './Calendar';
-import { NutritionPage } from './Nutrition';
-import { ProjectsPage } from './Projects';
-import { UserPage } from './User';
-import { LoginPage } from './Login';
+// Lazy load all page components for code splitting
+const DashboardPage = lazy(() => import('./Dashboard').then(m => ({ default: m.DashboardPage })));
+const InsightsPage = lazy(() => import('./Insights').then(m => ({ default: m.InsightsPage })));
+const JournalPage = lazy(() => import('./Journal').then(m => ({ default: m.JournalPage })));
+const CalendarPage = lazy(() => import('./Calendar').then(m => ({ default: m.CalendarPage })));
+const NutritionPage = lazy(() => import('./Nutrition').then(m => ({ default: m.NutritionPage })));
+const ProjectsPage = lazy(() => import('./Projects').then(m => ({ default: m.ProjectsPage })));
+const UserPage = lazy(() => import('./User').then(m => ({ default: m.UserPage })));
+const LoginPage = lazy(() => import('./Login').then(m => ({ default: m.LoginPage })));
+
 import { PageShell } from '../components/layout/PageShell';
 import { PageBackground } from '../components/layout/PageBackground';
 import { useVisitRefresh } from '../hooks/useVisitRefresh';
 import { useLocalMidnightInvalidation } from '../hooks/useLocalMidnightInvalidation';
 import { RequireAuth } from '../components/auth/RequireAuth';
+
+// Simple loading component
+const PageLoader = () => (
+  <div style={{
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: '200px',
+    color: 'rgba(43,27,19,0.5)'
+  }}>
+    Loading...
+  </div>
+);
 
 const routes = [
   { path: '/', element: <DashboardPage /> },
@@ -29,7 +45,9 @@ function ShellLayout() {
   useLocalMidnightInvalidation();
   return (
     <PageShell>
-      <Outlet />
+      <Suspense fallback={<PageLoader />}>
+        <Outlet />
+      </Suspense>
     </PageShell>
   );
 }
@@ -38,7 +56,11 @@ function App() {
   return (
     <PageBackground className="flatten-textures">
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/login" element={
+          <Suspense fallback={<PageLoader />}>
+            <LoginPage />
+          </Suspense>
+        } />
         <Route element={<RequireAuth />}>
           <Route element={<ShellLayout />}>
             {routes.map((route) => (
