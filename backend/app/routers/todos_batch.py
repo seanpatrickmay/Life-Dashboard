@@ -24,6 +24,7 @@ class BatchUpdateItem(BaseModel):
     completed_at_utc: datetime | None = None
     deadline_utc: datetime | None = None
     deadline_is_date_only: bool | None = None
+    time_horizon: str | None = None
 
 
 class BatchUpdateRequest(BaseModel):
@@ -63,6 +64,9 @@ async def batch_update_todos(
 
         if update_item.deadline_is_date_only is not None:
             todo.deadline_is_date_only = update_item.deadline_is_date_only
+
+        if update_item.time_horizon is not None:
+            todo.time_horizon = update_item.time_horizon
 
         updated_count += 1
 

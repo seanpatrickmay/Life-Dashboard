@@ -16,11 +16,15 @@ from dotenv import load_dotenv
 backend_root = Path(__file__).resolve().parents[1]
 if str(backend_root) not in sys.path:
     sys.path.insert(0, str(backend_root))
-load_dotenv(backend_root.parent / ".env")
+load_dotenv(backend_root.parent / ".env", override=True)
+
+# Bust the lru_cache so Settings picks up the freshly loaded env vars.
+from app.core.config import get_settings
+get_settings.cache_clear()
 
 from app.clients.openai_client import OpenAIResponsesClient
 from app.services.imessage_processing_service import IMessageProcessingService
-from app.services.imessage_utils import infer_project_match
+from app.services.imessage_utils import classify_conversation_type, infer_project_match
 from app.utils.timezone import resolve_time_zone
 
 
@@ -30,6 +34,21 @@ pytestmark = pytest.mark.live_llm
 def _require_live_llm() -> None:
     if os.getenv("RUN_LIVE_LLM_TESTS") != "1":
         pytest.skip("Set RUN_LIVE_LLM_TESTS=1 to run live LLM evaluations.")
+    try:
+        client = OpenAIResponsesClient()
+        import asyncio
+
+        async def _ping():
+            from app.schemas.llm_outputs import IMessageProjectInferenceOutput
+            await client.generate_json(
+                "Return valid JSON: {\"project_name\": null, \"confidence\": 0, \"source_message_ids\": [], \"reason\": \"ping\"}",
+                response_model=IMessageProjectInferenceOutput,
+                temperature=0.0,
+            )
+
+        asyncio.run(_ping())
+    except Exception as exc:
+        pytest.skip(f"Live LLM unavailable (API key may be invalid): {exc}")
 
 
 @dataclass(frozen=True)
@@ -84,6 +103,8 @@ def build_payload(
     open_todos: tuple[dict[str, Any], ...] = (),
     projects: tuple[str, ...] = ("Forest Fire", "Personal Ops", "Splitwise"),
     participants: tuple[str, ...] = ("alice@example.com", "bob@example.com"),
+    chat_identifier: str | None = None,
+    conversation_type: str | None = None,
 ) -> dict[str, Any]:
     heuristic_guess = infer_project_match(
         project_names=list(projects),
@@ -97,12 +118,19 @@ def build_payload(
         for index, item in enumerate(messages)
     ]
     zone = resolve_time_zone("America/New_York")
+    resolved_chat_identifier = chat_identifier or conversation_name.lower().replace(" ", "-")
+    resolved_conversation_type = conversation_type or classify_conversation_type(
+        chat_identifier=resolved_chat_identifier,
+        service_name="iMessage",
+        participant_count=len(participants),
+    )
     return {
         "conversation": {
             "id": 11,
             "name": conversation_name,
-            "chat_identifier": conversation_name.lower().replace(" ", "-"),
+            "chat_identifier": resolved_chat_identifier,
             "service_name": "iMessage",
+            "conversation_type": resolved_conversation_type,
             "participants": list(participants),
         },
         "time_context": {
@@ -509,7 +537,7 @@ def validate_mixed_capital_one_cluster(extracted: dict[str, Any], raw: str) -> N
     assert_any_action_field_matches(
         extracted["workspace_updates"],
         "summary",
-        ("pdf", "documents"),
+        ("pdf", "document"),
         label="workspace_updates.summary",
         raw_text=raw,
     )
@@ -588,7 +616,7 @@ TODO_CREATE_CASES = [
     ExtractionCase(
         name="named_person_trip_planning_todo_create",
         conversation_name="Owen",
-        messages=(MessageExample("Can you meet Owen to plan the poker trip and play HU?"),),
+        messages=(MessageExample("I need to meet up with Owen to plan the poker trip and play HU", is_from_me=True),),
         action_key="todo_creates",
         participants=("Owen", "Sean"),
         validate=validate_todo_create_named_meetup,
@@ -596,17 +624,17 @@ TODO_CREATE_CASES = [
     ExtractionCase(
         name="named_recipient_todo_create",
         conversation_name="Madelyn",
-        messages=(MessageExample("Please send 18.01 to Madelyn tonight."),),
+        messages=(MessageExample("I need to send 18.01 to Madelyn tonight", is_from_me=True),),
         action_key="todo_creates",
         participants=("Madelyn", "Sean"),
         validate=validate_todo_create_named_recipient,
     ),
     ExtractionCase(
         name="named_topic_todo_create",
-        conversation_name="Madelyn",
-        messages=(MessageExample("Can you ask Madelyn about the chem p-set when you text her?"),),
+        conversation_name="Aidan",
+        messages=(MessageExample("Can you ask Madelyn about the chem p-set when you text her?", sender="Aidan"),),
         action_key="todo_creates",
-        participants=("Madelyn", "Sean"),
+        participants=("Aidan", "Sean"),
         validate=validate_todo_create_named_topic,
     ),
 ]
@@ -957,17 +985,17 @@ MIXED_EXTRACTION_CASES = [
         name="capital_one_cluster_emits_deadline_todo_and_workspace",
         conversation_name="Capital One",
         messages=(
-            MessageExample("The Venture X dispute filing deadline is March 14, 2026."),
+            MessageExample("The Venture X dispute filing deadline is March 14, 2026.", sender="Dad"),
             MessageExample("I need to upload the travel receipts tonight.", is_from_me=True),
-            MessageExample("Capital One wants every supporting document bundled into one PDF."),
+            MessageExample("Capital One wants every supporting document bundled into one PDF.", sender="Dad"),
             MessageExample(
                 "Agreed, let's add the one-PDF requirement to the dispute notes.",
-                sender="bob@example.com",
+                is_from_me=True,
             ),
         ),
         expected_non_empty_keys=("todo_creates", "calendar_creates", "workspace_updates"),
         projects=("Capital One", "Ironman Training", "Personal Ops"),
-        participants=("support@capitalone.com", "sean@example.com"),
+        participants=("Dad", "Sean"),
         validate=validate_mixed_capital_one_cluster,
     ),
     MixedExtractionCase(
@@ -997,6 +1025,545 @@ MIXED_EXTRACTION_CASES = [
         projects=("Capital One", "Ironman Training", "Personal Ops"),
         participants=("coach@example.com", "sean@example.com"),
         validate=validate_mixed_training_cluster,
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Negative cases: automated / business messages must NOT produce actions
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class NegativeCase:
+    """A scenario where the LLM should produce NO actions of the given type."""
+
+    name: str
+    conversation_name: str
+    messages: tuple[MessageExample, ...]
+    forbidden_action_keys: tuple[str, ...]
+    participants: tuple[str, ...] = ("alice@example.com",)
+    projects: tuple[str, ...] = ("Personal Ops",)
+    chat_identifier: str | None = None
+    conversation_type: str | None = None
+
+
+def validate_no_actions(
+    extracted: dict[str, Any],
+    judged: dict[str, Any],
+    forbidden_keys: tuple[str, ...],
+    raw: str,
+    case_name: str,
+) -> None:
+    for key in forbidden_keys:
+        actions = extracted.get(key) or []
+        if not actions:
+            continue
+        verdicts = judged.get(key) or []
+        approved = [
+            action
+            for index, action in enumerate(actions)
+            if index < len(verdicts) and bool(verdicts[index].get("approved"))
+        ]
+        assert not approved, (
+            f"{case_name}: expected no approved {key} but got {len(approved)}.\n"
+            f"Approved actions: {json.dumps(approved, indent=2)}\n"
+            f"Raw response:\n{raw}"
+        )
+
+
+AUTOMATED_NEGATIVE_CASES = [
+    NegativeCase(
+        name="verification_code_no_todo",
+        conversation_name="32665",
+        messages=(
+            MessageExample("Your verification code is 483921. It expires in 10 minutes."),
+        ),
+        forbidden_action_keys=("todo_creates", "calendar_creates"),
+        chat_identifier="32665",
+        conversation_type="business",
+    ),
+    NegativeCase(
+        name="delivery_notification_no_todo",
+        conversation_name="Amazon",
+        messages=(
+            MessageExample(
+                "Your Amazon package has been delivered to the front door. Track your delivery at amzn.to/track123"
+            ),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        chat_identifier="22000",
+        conversation_type="business",
+    ),
+    NegativeCase(
+        name="marketing_promo_no_todo",
+        conversation_name="RetailStore",
+        messages=(
+            MessageExample(
+                "FLASH SALE! 40% off all items today only. Shop now at retailstore.com. Reply STOP to unsubscribe."
+            ),
+        ),
+        forbidden_action_keys=("todo_creates", "calendar_creates", "journal_entries"),
+        chat_identifier="54321",
+        conversation_type="business",
+    ),
+    NegativeCase(
+        name="bank_alert_no_todo",
+        conversation_name="Chase",
+        messages=(
+            MessageExample(
+                "Chase: Your checking account ending in 4829 has a deposit of $1,250.00. "
+                "Current balance: $3,412.55. Reply STOP to cancel alerts."
+            ),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        chat_identifier="24273",
+        conversation_type="business",
+    ),
+    NegativeCase(
+        name="appointment_reminder_from_business_no_todo",
+        conversation_name="Dr Smith Office",
+        messages=(
+            MessageExample(
+                "Reminder: Your appointment with Dr. Smith is scheduled for tomorrow, "
+                "March 11 at 2:00 PM. Reply C to confirm or R to reschedule."
+            ),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        chat_identifier="87654",
+        conversation_type="business",
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Negative cases: group chat ownership — other people's tasks
+# ---------------------------------------------------------------------------
+
+
+GROUP_CHAT_NEGATIVE_CASES = [
+    NegativeCase(
+        name="group_chat_other_persons_task",
+        conversation_name="Squad",
+        messages=(
+            MessageExample(
+                "I need to pick up the groceries tonight",
+                is_from_me=False,
+                sender="Jake",
+            ),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Jake", "Owen", "Sean"),
+        conversation_type="group",
+    ),
+    NegativeCase(
+        name="group_chat_person_a_tells_person_b",
+        conversation_name="Squad",
+        messages=(
+            MessageExample("Jake, can you grab the tickets?", is_from_me=False, sender="Alex"),
+            MessageExample("Yeah I'll get them", is_from_me=False, sender="Jake"),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Jake", "Alex", "Sean"),
+        conversation_type="group",
+    ),
+    NegativeCase(
+        name="group_chat_vague_group_plan",
+        conversation_name="Squad",
+        messages=(
+            MessageExample("We should hang out sometime next week", is_from_me=False, sender="Owen"),
+            MessageExample("Yeah that would be fun", is_from_me=False, sender="Jake"),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Owen", "Jake", "Sean"),
+        conversation_type="group",
+    ),
+    NegativeCase(
+        name="oneone_other_persons_obligation",
+        conversation_name="Owen",
+        messages=(
+            MessageExample(
+                "I have to finish my essay before Friday",
+                is_from_me=False,
+                sender="Owen",
+            ),
+            MessageExample("Good luck!", is_from_me=True),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Owen", "Sean"),
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Negative cases: aspirational / casual / inferred-sub-task todos
+# ---------------------------------------------------------------------------
+
+
+ASPIRATIONAL_NEGATIVE_CASES = [
+    NegativeCase(
+        name="casual_biking_plan_no_todo",
+        conversation_name="Kat",
+        messages=(
+            MessageExample(
+                "It would be so fun to bike together in Richmond over the summer since we both have road bikes",
+                is_from_me=True,
+            ),
+            MessageExample("Omg yes we totally should!", sender="Kat"),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Kat", "Sean"),
+    ),
+    NegativeCase(
+        name="inferred_subtask_internship_no_todo",
+        conversation_name="Kat",
+        messages=(
+            MessageExample(
+                "My internship is in Richmond this summer so I'll be down there",
+                is_from_me=True,
+            ),
+            MessageExample("Nice! I'll be nearby too", sender="Kat"),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Kat", "Sean"),
+    ),
+    NegativeCase(
+        name="wishful_guitar_no_todo",
+        conversation_name="Owen",
+        messages=(
+            MessageExample("I'd love to learn guitar someday", is_from_me=True),
+            MessageExample("You should! It's not that hard to start", sender="Owen"),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Owen", "Sean"),
+    ),
+    NegativeCase(
+        name="maybe_podcast_no_todo",
+        conversation_name="Owen",
+        messages=(
+            MessageExample("Maybe I'll start a podcast over break", is_from_me=True),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Owen", "Sean"),
+    ),
+    NegativeCase(
+        name="group_chat_vague_aspiration_no_todo",
+        conversation_name="Squad",
+        messages=(
+            MessageExample("We should totally go skydiving this year", is_from_me=False, sender="Jake"),
+            MessageExample("I'm so down for that", is_from_me=True),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Jake", "Owen", "Sean"),
+        conversation_type="group",
+    ),
+    NegativeCase(
+        name="background_context_not_obligation_no_todo",
+        conversation_name="Mom",
+        messages=(
+            MessageExample("I have a road bike I haven't used in a while", is_from_me=True),
+            MessageExample("You should get back into it!", sender="Mom"),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Mom", "Sean"),
+    ),
+    NegativeCase(
+        name="hypothetical_brainstorming_no_todo",
+        conversation_name="Owen",
+        messages=(
+            MessageExample("What if we drove to Montreal for spring break?", is_from_me=True),
+            MessageExample("That could be fun, let's think about it", sender="Owen"),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Owen", "Sean"),
+    ),
+    NegativeCase(
+        name="someday_travel_no_todo",
+        conversation_name="Aidan",
+        messages=(
+            MessageExample("I really want to visit Japan at some point", is_from_me=True),
+            MessageExample("Same, the food alone would be worth it", sender="Aidan"),
+        ),
+        forbidden_action_keys=("todo_creates",),
+        participants=("Aidan", "Sean"),
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Time horizon validation cases
+# ---------------------------------------------------------------------------
+
+
+def validate_time_horizon(expected_horizon: str) -> Callable[[dict[str, Any], str], None]:
+    def validator(extracted: dict[str, Any], raw: str) -> None:
+        actions = extracted.get("todo_creates") or []
+        assert actions, f"Expected at least one todo_create.\nRaw response:\n{raw}"
+        horizons = [str(action.get("time_horizon") or "").lower() for action in actions]
+        assert any(horizon == expected_horizon for horizon in horizons), (
+            f"Expected time_horizon='{expected_horizon}' but got {horizons}.\nRaw response:\n{raw}"
+        )
+    return validator
+
+
+TIME_HORIZON_CASES = [
+    ExtractionCase(
+        name="tonight_is_this_week",
+        conversation_name="Owen",
+        messages=(
+            MessageExample(
+                "I need to send Owen the money tonight",
+                is_from_me=True,
+                sent_at_utc=datetime(2026, 3, 10, 20, 0, tzinfo=timezone.utc),
+            ),
+        ),
+        action_key="todo_creates",
+        participants=("Owen", "Sean"),
+        validate=validate_time_horizon("this_week"),
+    ),
+    ExtractionCase(
+        name="tomorrow_is_this_week",
+        conversation_name="Owen",
+        messages=(
+            MessageExample(
+                "I have to submit the report to Owen tomorrow",
+                is_from_me=True,
+                sent_at_utc=datetime(2026, 3, 10, 15, 0, tzinfo=timezone.utc),
+            ),
+        ),
+        action_key="todo_creates",
+        participants=("Owen", "Sean"),
+        validate=validate_time_horizon("this_week"),
+    ),
+    ExtractionCase(
+        name="next_week_is_this_month",
+        conversation_name="Madelyn",
+        messages=(
+            MessageExample(
+                "I need to send Madelyn the notes next week",
+                is_from_me=True,
+                sent_at_utc=datetime(2026, 3, 10, 15, 0, tzinfo=timezone.utc),
+            ),
+        ),
+        action_key="todo_creates",
+        participants=("Madelyn", "Sean"),
+        validate=validate_time_horizon("this_month"),
+    ),
+    ExtractionCase(
+        name="this_month_is_this_month",
+        conversation_name="Owen",
+        messages=(
+            MessageExample(
+                "I need to get my car inspected this month",
+                is_from_me=True,
+                sent_at_utc=datetime(2026, 3, 10, 15, 0, tzinfo=timezone.utc),
+            ),
+        ),
+        action_key="todo_creates",
+        participants=("Owen", "Sean"),
+        validate=validate_time_horizon("this_month"),
+    ),
+    ExtractionCase(
+        name="this_summer_is_this_year",
+        conversation_name="Owen",
+        messages=(
+            MessageExample(
+                "I need to renew my passport before this summer",
+                is_from_me=True,
+                sent_at_utc=datetime(2026, 3, 10, 15, 0, tzinfo=timezone.utc),
+            ),
+        ),
+        action_key="todo_creates",
+        participants=("Owen", "Sean"),
+        validate=validate_time_horizon("this_year"),
+    ),
+    ExtractionCase(
+        name="end_of_semester_is_this_year",
+        conversation_name="Madelyn",
+        messages=(
+            MessageExample(
+                "I need to finish the research paper for Madelyn's lab by end of semester",
+                is_from_me=True,
+                sent_at_utc=datetime(2026, 3, 10, 15, 0, tzinfo=timezone.utc),
+            ),
+        ),
+        action_key="todo_creates",
+        participants=("Madelyn", "Sean"),
+        validate=validate_time_horizon("this_year"),
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Positive cases: specificity and context
+# ---------------------------------------------------------------------------
+
+
+def validate_todo_has_counterparty_name(extracted: dict[str, Any], raw: str) -> None:
+    actions = extracted.get("todo_creates") or []
+    assert actions, f"Expected at least one todo_create.\nRaw response:\n{raw}"
+    texts = [str(action.get("text") or "").lower() for action in actions]
+    assert any("owen" in text for text in texts), (
+        f"Expected counterparty name 'Owen' in todo text.\nTexts: {texts}\nRaw response:\n{raw}"
+    )
+
+
+def validate_todo_has_deadline(extracted: dict[str, Any], raw: str) -> None:
+    actions = extracted.get("todo_creates") or []
+    assert actions, f"Expected at least one todo_create.\nRaw response:\n{raw}"
+    assert any(action.get("deadline_utc") for action in actions), (
+        f"Expected at least one todo with a deadline_utc.\n"
+        f"Actions: {json.dumps(actions, indent=2)}\nRaw response:\n{raw}"
+    )
+
+
+def validate_todo_has_specific_subject(extracted: dict[str, Any], raw: str) -> None:
+    actions = extracted.get("todo_creates") or []
+    assert actions, f"Expected at least one todo_create.\nRaw response:\n{raw}"
+    # The todo text should contain both who and what
+    texts = [str(action.get("text") or "").lower() for action in actions]
+    assert any("madelyn" in text and "chem" in text for text in texts), (
+        f"Expected todo to mention both 'Madelyn' and 'chem'.\nTexts: {texts}\nRaw response:\n{raw}"
+    )
+
+
+SPECIFICITY_CASES = [
+    ExtractionCase(
+        name="todo_includes_counterparty_in_1on1",
+        conversation_name="Owen",
+        messages=(
+            MessageExample("Can you settle up on Splitwise?", is_from_me=False, sender="Owen"),
+        ),
+        action_key="todo_creates",
+        participants=("Owen", "Sean"),
+        validate=validate_todo_has_counterparty_name,
+    ),
+    ExtractionCase(
+        name="todo_includes_specific_subject_and_person",
+        conversation_name="Madelyn",
+        messages=(
+            MessageExample(
+                "Can you ask Madelyn about the chem p-set when you get a chance?",
+                is_from_me=False,
+                sender="Madelyn",
+            ),
+        ),
+        action_key="todo_creates",
+        participants=("Madelyn", "Sean"),
+        validate=validate_todo_has_specific_subject,
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Timing / deadline enforcement
+# ---------------------------------------------------------------------------
+
+
+DEADLINE_CASES = [
+    ExtractionCase(
+        name="tonight_produces_deadline",
+        conversation_name="Owen",
+        messages=(
+            MessageExample(
+                "I need to send Owen the money tonight",
+                is_from_me=True,
+                sent_at_utc=datetime(2026, 3, 10, 20, 0, tzinfo=timezone.utc),
+            ),
+        ),
+        action_key="todo_creates",
+        participants=("Owen", "Sean"),
+        validate=validate_todo_has_deadline,
+    ),
+    ExtractionCase(
+        name="tomorrow_produces_deadline",
+        conversation_name="Owen",
+        messages=(
+            MessageExample(
+                "I have to submit the report tomorrow",
+                is_from_me=True,
+                sent_at_utc=datetime(2026, 3, 10, 15, 0, tzinfo=timezone.utc),
+            ),
+        ),
+        action_key="todo_creates",
+        participants=("Owen", "Sean"),
+        validate=validate_todo_has_deadline,
+    ),
+    ExtractionCase(
+        name="by_friday_produces_deadline",
+        conversation_name="Owen",
+        messages=(
+            MessageExample(
+                "I should finish the presentation by Friday",
+                is_from_me=True,
+                sent_at_utc=datetime(2026, 3, 10, 15, 0, tzinfo=timezone.utc),
+            ),
+        ),
+        action_key="todo_creates",
+        participants=("Owen", "Sean"),
+        validate=validate_todo_has_deadline,
+    ),
+    ExtractionCase(
+        name="this_week_produces_deadline",
+        conversation_name="Owen",
+        messages=(
+            MessageExample(
+                "I need to get my car inspected this week",
+                is_from_me=True,
+                sent_at_utc=datetime(2026, 3, 10, 15, 0, tzinfo=timezone.utc),
+            ),
+        ),
+        action_key="todo_creates",
+        participants=("Owen", "Sean"),
+        validate=validate_todo_has_deadline,
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Positive cases: group chat — user's own commitments
+# ---------------------------------------------------------------------------
+
+
+def validate_group_chat_user_commitment(extracted: dict[str, Any], raw: str) -> None:
+    actions = extracted.get("todo_creates") or []
+    assert actions, f"Expected at least one todo_create.\nRaw response:\n{raw}"
+    texts = [str(action.get("text") or "").lower() for action in actions]
+    assert any("reservation" in text or "book" in text for text in texts), (
+        f"Expected todo about reservations.\nTexts: {texts}\nRaw response:\n{raw}"
+    )
+
+
+def validate_group_chat_user_addressed(extracted: dict[str, Any], raw: str) -> None:
+    actions = extracted.get("todo_creates") or []
+    assert actions, f"Expected at least one todo_create.\nRaw response:\n{raw}"
+    texts = [str(action.get("text") or "").lower() for action in actions]
+    assert any("playlist" in text for text in texts), (
+        f"Expected todo about playlist.\nTexts: {texts}\nRaw response:\n{raw}"
+    )
+
+
+GROUP_CHAT_POSITIVE_CASES = [
+    ExtractionCase(
+        name="group_chat_user_volunteers",
+        conversation_name="Squad",
+        messages=(
+            MessageExample("Who's making the reservation for Saturday?", is_from_me=False, sender="Owen"),
+            MessageExample("I'll handle it, I'll book a table for 6", is_from_me=True),
+        ),
+        action_key="todo_creates",
+        participants=("Owen", "Jake", "Sean"),
+        validate=validate_group_chat_user_commitment,
+    ),
+    ExtractionCase(
+        name="group_chat_user_addressed_by_name",
+        conversation_name="Squad",
+        messages=(
+            MessageExample("Sean, can you make the playlist for the road trip?", is_from_me=False, sender="Owen"),
+        ),
+        action_key="todo_creates",
+        participants=("Owen", "Jake", "Sean"),
+        validate=validate_group_chat_user_addressed,
     ),
 ]
 
@@ -1210,13 +1777,156 @@ def test_live_llm_workspace_update_cases(live_service: IMessageProcessingService
     _run_cases_concurrently(cases=WORKSPACE_CASES, live_service=live_service)
 
 
-@pytest.mark.parametrize("case", PROJECT_INFERENCE_CASES, ids=lambda case: case.name)
-def test_live_llm_project_inference_cases(case: ProjectInferenceCase, live_service: IMessageProcessingService) -> None:
-    _validate_project_inference(case, live_service)
+async def _validate_project_inference_async(
+    case: ProjectInferenceCase,
+    base_service: IMessageProcessingService,
+    semaphore: asyncio.Semaphore,
+) -> str | None:
+    async with semaphore:
+        service = clone_live_service(base_service)
+        payload = build_payload(
+            conversation_name=case.conversation_name,
+            messages=case.messages,
+            projects=case.projects,
+        )
+        payload["heuristic_project_guess"] = {
+            "project_name": case.heuristic_project_name,
+            "confidence": case.heuristic_confidence,
+            "reason": "Deterministic retrieval result under review.",
+        }
+        payload["project_candidates"] = list(case.project_candidates)
+
+        prompts: list[str] = []
+        responses: list[str] = []
+        original_call_model = service._call_model
+
+        async def tracked_call_model(self, prompt: str, response_model):
+            prompts.append(prompt)
+            result = await original_call_model(prompt, response_model)
+            serializer = getattr(result, "model_dump_json", None)
+            responses.append(serializer() if callable(serializer) else str(result))
+            return result
+
+        service._call_model = MethodType(tracked_call_model, service)
+        try:
+            project_inference = await service._extract_project_inference(payload)
+        finally:
+            service._call_model = original_call_model
+
+        raw = responses[-1] if responses else json.dumps(project_inference, ensure_ascii=False, indent=2)
+        try:
+            assert any("You infer whether an iMessage cluster belongs to one existing project." in prompt for prompt in prompts), (
+                f"{case.name}: expected the dedicated project inference prompt to run."
+            )
+            assert project_inference["project_name"] == case.expected_project_name, (
+                f"{case.name}: wrong project inference.\nRaw response:\n{raw}"
+            )
+            if case.expected_project_name is not None:
+                assert project_inference["confidence"] >= case.min_confidence, (
+                    f"{case.name}: confidence too low.\nRaw response:\n{raw}"
+                )
+                source_ids = project_inference.get("source_message_ids")
+                assert isinstance(source_ids, list) and source_ids, (
+                    f"{case.name}: expected source_message_ids.\nRaw response:\n{raw}"
+                )
+            else:
+                assert project_inference["confidence"] <= 0.35, (
+                    f"{case.name}: expected low confidence null routing.\nRaw response:\n{raw}"
+                )
+            return None
+        except AssertionError as exc:
+            return str(exc)
+
+
+def test_live_llm_project_inference_cases(live_service: IMessageProcessingService) -> None:
+    async def _runner() -> list[str]:
+        semaphore = asyncio.Semaphore(3)
+        results = await asyncio.gather(
+            *(_validate_project_inference_async(case, live_service, semaphore) for case in PROJECT_INFERENCE_CASES)
+        )
+        return [item for item in results if item]
+
+    failures = asyncio.run(_runner())
+    assert not failures, "\n\n".join(failures)
 
 
 def test_live_llm_mixed_cluster_cases(live_service: IMessageProcessingService) -> None:
     _run_mixed_cases_concurrently(cases=MIXED_EXTRACTION_CASES, live_service=live_service)
+
+
+def test_live_llm_specificity_cases(live_service: IMessageProcessingService) -> None:
+    _run_cases_concurrently(cases=SPECIFICITY_CASES, live_service=live_service)
+
+
+def test_live_llm_deadline_enforcement_cases(live_service: IMessageProcessingService) -> None:
+    _run_cases_concurrently(cases=DEADLINE_CASES, live_service=live_service)
+
+
+def test_live_llm_group_chat_positive_cases(live_service: IMessageProcessingService) -> None:
+    _run_cases_concurrently(cases=GROUP_CHAT_POSITIVE_CASES, live_service=live_service)
+
+
+async def _validate_negative_case_async(
+    case: NegativeCase,
+    base_service: IMessageProcessingService,
+    semaphore: asyncio.Semaphore,
+) -> str | None:
+    async with semaphore:
+        service = clone_live_service(base_service)
+        payload = build_payload(
+            conversation_name=case.conversation_name,
+            messages=case.messages,
+            projects=case.projects,
+            participants=case.participants,
+            chat_identifier=case.chat_identifier,
+            conversation_type=case.conversation_type,
+        )
+        try:
+            extracted, judged, prompts, responses = await run_pipeline_async(service, payload)
+            raw = "\n\n".join(responses) or json.dumps(
+                {"extracted": extracted, "judged": judged}, indent=2
+            )
+            validate_no_actions(extracted, judged, case.forbidden_action_keys, raw, case.name)
+            return None
+        except AssertionError as exc:
+            return str(exc)
+
+
+def _run_negative_cases_concurrently(
+    *,
+    cases: list[NegativeCase],
+    live_service: IMessageProcessingService,
+    limit: int = 4,
+) -> None:
+    async def _runner() -> list[str]:
+        semaphore = asyncio.Semaphore(limit)
+        results = await asyncio.gather(
+            *(_validate_negative_case_async(case, live_service, semaphore) for case in cases)
+        )
+        return [item for item in results if item]
+
+    failures = asyncio.run(_runner())
+    assert not failures, "\n\n".join(failures)
+
+
+def test_live_llm_automated_message_rejection(live_service: IMessageProcessingService) -> None:
+    """Automated/business messages must not produce approved actions."""
+    _run_negative_cases_concurrently(cases=AUTOMATED_NEGATIVE_CASES, live_service=live_service)
+
+
+def test_live_llm_group_chat_ownership_rejection(live_service: IMessageProcessingService) -> None:
+    """Other people's obligations in group chats must not produce approved user todos."""
+    _run_negative_cases_concurrently(cases=GROUP_CHAT_NEGATIVE_CASES, live_service=live_service)
+
+
+def test_live_llm_aspirational_casual_rejection(live_service: IMessageProcessingService) -> None:
+    """Aspirational, casual, and inferred-sub-task todos must not produce approved actions."""
+    _run_negative_cases_concurrently(cases=ASPIRATIONAL_NEGATIVE_CASES, live_service=live_service)
+
+
+def test_live_llm_time_horizon_cases(live_service: IMessageProcessingService) -> None:
+    """Time horizon must be correctly assigned based on timing cues."""
+    _run_cases_concurrently(cases=TIME_HORIZON_CASES, live_service=live_service)
 
 
 def test_live_llm_deduplicator_todo_case(live_service: IMessageProcessingService) -> None:

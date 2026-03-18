@@ -59,24 +59,29 @@ class TodoRepository:
     self,
     user_id: int,
     project_id: int,
-    items: Iterable[tuple[str, datetime | None] | tuple[str, datetime | None, bool]],
+    items: Iterable[tuple[str, datetime | None] | tuple[str, datetime | None, bool] | tuple[str, datetime | None, bool, str]],
     *,
     created_at: datetime | None = None,
   ) -> list[TodoItem]:
     """Create multiple todo items."""
     created: list[TodoItem] = []
     for item in items:
-      if len(item) == 3:
+      if len(item) == 4:
+        text, deadline, date_only, horizon = item
+      elif len(item) == 3:
         text, deadline, date_only = item
+        horizon = "this_week"
       else:
         text, deadline = item
         date_only = False
+        horizon = "this_week"
       todo = TodoItem(
         user_id=user_id,
         project_id=project_id,
         text=text.strip(),
         deadline_utc=_to_utc(deadline),
         deadline_is_date_only=bool(date_only),
+        time_horizon=horizon,
       )
       if created_at is not None:
         todo.created_at = _to_utc(created_at) or todo.created_at
@@ -94,6 +99,7 @@ class TodoRepository:
     deadline_is_date_only: bool = False,
     *,
     created_at: datetime | None = None,
+    time_horizon: str = "this_week",
   ) -> TodoItem:
     todo = TodoItem(
       user_id=user_id,
@@ -101,6 +107,7 @@ class TodoRepository:
       text=text.strip(),
       deadline_utc=_to_utc(deadline),
       deadline_is_date_only=deadline_is_date_only,
+      time_horizon=time_horizon,
     )
     if created_at is not None:
       todo.created_at = _to_utc(created_at) or todo.created_at

@@ -57,14 +57,17 @@ class TodoAssistantAgent:
         raw_payload=parsed,
       )
 
-    todo_specs: list[tuple[str, datetime | None]] = []
+    todo_specs: list[tuple[str, datetime | None, bool, str]] = []
     for item in items:
       text = (item.get("text") or "").strip() if isinstance(item, dict) else ""
       if not text:
         continue
       raw_deadline = item.get("deadline_utc") if isinstance(item, dict) else None
       deadline = self._parse_deadline(raw_deadline)
-      todo_specs.append((text, deadline))
+      horizon = item.get("time_horizon", "this_week") if isinstance(item, dict) else "this_week"
+      if horizon not in ("this_week", "this_month", "this_year"):
+        horizon = "this_week"
+      todo_specs.append((text, deadline, False, horizon))
 
     if not todo_specs:
       logger.info("[todo-assistant] parsed items but none usable for request id={}", request_id)

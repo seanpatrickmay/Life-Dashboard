@@ -27,7 +27,8 @@ Return ONLY valid JSON with this shape (no extra text, no backticks):
     {{
       "text": string,              // rewritten, specific todo description
       "deadline_utc": string|null, // ISO 8601 in UTC when a deadline is explicit or clearly implied
-      "deadline_inferred": boolean // true if you inferred a reasonable deadline, false if none exists
+      "deadline_inferred": boolean, // true if you inferred a reasonable deadline, false if none exists
+      "time_horizon": "this_week" | "this_month" | "this_year"
     }}
   ],
   "summary": string // 1–2 sentence friendly confirmation of what you added
@@ -40,6 +41,11 @@ Rules:
 - If the text strongly implies timing (e.g., "before bed", "by tomorrow morning"), pick a reasonable Eastern timestamp and set deadline_inferred = true.
 - For open-ended chores like "Do the laundry" or "Organize photos" with no clear timing, set deadline_utc to null and deadline_inferred = false (these stay until completed).
 - If nothing that looks like a to-do is present, return {{ "items": [], "summary": "…" }} explaining why.
+
+Time horizon:
+- "this_week": tasks due within the next 7 days, or immediate/near-term tasks with no explicit date.
+- "this_month": tasks due within the next ~30 days, or tasks with phrases like "next week", "this month", "in a couple weeks".
+- "this_year": longer-range tasks — "this summer", "by end of semester", "this year", or tasks with no deadline but a clear eventual obligation.
 
 User message:
 {user_text}
@@ -122,6 +128,11 @@ You are the non-calendar action extractor for an iMessage processing engine.
 Read the conversation metadata, recent messages, open todos, project list, and current project inference.
 Do not mention or rely on any chatbot behavior. Your job is to extract non-calendar structured actions.
 
+The payload includes `conversation.conversation_type` which is one of:
+- "personal": A 1-on-1 conversation with a known contact.
+- "group": A group chat with 3+ participants.
+- "business": A conversation with a business, service, or automated sender (short code numbers, email-based identifiers).
+
 Return ONLY valid JSON with this shape:
 {
   "todo_creates": [
@@ -129,6 +140,7 @@ Return ONLY valid JSON with this shape:
       "text": string,
       "deadline_utc": string | null,
       "deadline_is_date_only": boolean,
+      "time_horizon": "this_week" | "this_month" | "this_year",
       "source_message_ids": number[],
       "reason": string
     }
@@ -158,40 +170,85 @@ Return ONLY valid JSON with this shape:
   ]
 }
 
-Rules:
+=== AUTOMATED / BUSINESS MESSAGE RULES ===
+- NEVER create todos from automated or system-generated messages. Use your judgment to identify these — common examples include verification codes, delivery/shipping notifications, bank balance alerts, marketing/promotional texts, appointment reminders sent by businesses, carrier messages, "reply STOP" messages, and auto-replies.
+- If `conversation_type` is "business", apply extreme skepticism. The conversation originates from a short code or business identifier. Only create a todo if the user (is_from_me=true) explicitly states a personal obligation in response (e.g., "I need to call them back about this"). The automated messages themselves are never todos.
+- Even in "personal" conversations, ignore forwarded automated content (e.g., someone pasting a tracking number or a screenshot description of a notification).
+
+=== OWNERSHIP RULES (CRITICAL) ===
+- Every todo MUST be an obligation that belongs to the user — something the user personally needs to do.
+- When `is_from_me` is true and the message says "I need to...", "I have to...", "I should..." — this is the user's own obligation. Create a todo.
+- When `is_from_me` is false and another participant says "Can you..." or directly asks the user to do something — create a todo for the user.
+- When `is_from_me` is false and another participant says "I need to...", "I have to...", "I'll..." — this is THEIR obligation, NOT the user's. Do NOT create a todo.
+- In GROUP CHATS (`conversation_type` is "group"), be extra strict:
+  - Only create a todo when the user (is_from_me=true) personally commits to something, OR when another participant explicitly addresses the user by name or with "you".
+  - If participant A tells participant B to do something, that is NOT a todo for the user.
+  - Generic group plans like "we should do X sometime" are NOT todos unless the user explicitly volunteers.
+
+=== CONTEXT AND SPECIFICITY RULES ===
+- Todo text must be specific and self-contained. A todo should make sense weeks later without seeing the original conversation.
+- ALWAYS include the relevant person's name when the todo involves or is about another person. Use conversation participant names from `conversation.participants`.
+  - BAD: "Follow up on the request" — vague, who? what request?
+  - GOOD: "Follow up with Owen about the poker trip logistics"
+  - BAD: "Send the document" — what document? to whom?
+  - GOOD: "Send the signed permit packet to Sam"
+  - BAD: "Check on that" — check on what?
+  - GOOD: "Check with Madelyn about the chem problem set"
+- When the conversation is 1-on-1 (personal), the counterparty name should appear in the todo if the task relates to them.
+- Include the specific subject matter: the deliverable, the topic, the event, the class, the amount, the item name.
+- Preserve salient nouns from the source messages: person names, the specific thing being sent or asked about, the show being watched, the trip or event being planned, the class/problem set/document name, and the exact deliverable.
+- Prefer richer wording over compressed wording when compression would drop the who/what details needed to make the action useful.
+
+=== TIMING / DEADLINE RULES ===
+- When a message contains an explicit or strongly implied time reference, you MUST populate `deadline_utc`.
+- Time phrases that REQUIRE a deadline: "tonight", "today", "tomorrow", "by Friday", "before dinner", "this weekend", "this week", "next Monday", "before bed", "in the morning", "by end of day", "before noon".
+- Anchor all relative time phrases to the `sent_at_utc` of the message containing them, NOT the current processing time.
+- "tonight" = end of that calendar day (23:59 local). "tomorrow" = end of the next day. "by Friday" = 17:00 local on that Friday.
+- Only leave `deadline_utc` null for genuinely open-ended tasks with zero time pressure: "eventually", "when you get a chance", "at some point", or no timing mentioned at all.
+
+=== ACTIONABILITY FILTER (CRITICAL) ===
+- Only create a todo when the user has made a CONCRETE, ACTIONABLE commitment or received a direct, specific request.
+- Do NOT create todos from:
+  - Aspirational or wishful statements: "I'd love to...", "it would be cool to...", "we should totally...", "maybe I'll..."
+  - Casual future plans with no concrete next step: "I want to bike there over the summer", "we could try that restaurant sometime"
+  - Brainstorming or hypothetical discussion: "what if we...", "I've been thinking about..."
+  - Inferred sub-tasks that the user never explicitly stated: if the user says "my internship is in Richmond", do NOT create "move to Richmond" or "bring bike to Richmond" — those are your inferences, not the user's stated obligations.
+  - Background context or facts about the user's life: "I have a road bike", "my internship starts in June"
+- A valid todo requires the user to have explicitly stated or clearly agreed to a specific action they will take.
+- When in doubt, do NOT create a todo. Prefer false negatives over false positives.
+
+=== TIME HORIZON RULES ===
+- Every todo_create must include `time_horizon` with one of: "this_week", "this_month", "this_year".
+- "this_week": Tasks the user needs to do within the next 7 days. Includes tasks with deadlines this week, tasks with words like "today", "tonight", "tomorrow", "this week", "by Friday".
+- "this_month": Tasks the user needs to do within the next ~30 days. Includes tasks with deadlines this month, tasks with words like "next week", "this month", "in a couple weeks".
+- "this_year": Tasks with longer timelines — "this summer", "by the end of semester", "before graduation", "this year", or tasks with no deadline but a clear eventual obligation.
+- Default to "this_week" for tasks with immediate deadlines or no timing cues but a clear near-term obligation.
+- Default to "this_month" when timing is vague but within the next few weeks.
+- Only use "this_year" for genuinely long-range items with no near-term urgency.
+
+=== GENERAL EXTRACTION RULES ===
 - Return every distinct, well-supported action in the chunk. A single chunk can yield multiple todos, multiple journal entries, and multiple workspace updates.
 - Do not choose one "best" action. If two actions are independently supported, emit both.
 - Every action must include `source_message_ids`, using the exact `messages[].id` values that support that action.
 - If one message introduces the action and another confirms it, include both message IDs in chronological order.
-- Each message includes `sent_at_utc`, and `time_context` provides the cluster bounds. Interpret relative phrases like today, tomorrow, tonight, this afternoon, Friday, or next week from the message timestamp that contains the phrase, not from the current runtime date.
-- If multiple messages contribute to one action, anchor the timing to the latest relevant confirming message. Use `time_context.cluster_end_time_local` only as a fallback when the relevant message lacks a timestamp.
-- Create todos for explicit or strongly implied obligations that belong to the user.
-- Treat first-person obligation statements such as "I need to...", "I have to...", or "I should..." as todo creates when `is_from_me` is true, unless the same message clearly says the work is already finished.
-- Also create a todo when another participant directly asks the user to do something.
-- Do not create a user todo when another participant is describing their own task or plan.
 - Use todo_completions only when user-authored messages strongly indicate an existing todo is done.
 - Ignore calendar events in this prompt. They are handled separately.
 - Task-like obligations such as "I need to send...", "I have to submit...", or "remind me to..." belong in todos even when they mention time words like "tonight", "tomorrow", or "before Friday". Do not convert those into calendar items here.
-- When a todo has an explicit or strongly implied due time, populate `deadline_utc` as an ISO 8601 UTC timestamp anchored to the source message time. If the text is not specific enough, leave `deadline_utc` null.
 - journal_entries can describe concrete actions, accomplishments, meaningful conversations, learning moments, decisions the user participated in, or planning discussions worth remembering.
 - If a chunk contains both a completed action and a meaningful conversation, you may emit multiple journal_entries.
 - workspace_updates should be factual project knowledge updates, not message digests.
 - Only create workspace_updates when `project_inference.project_name` is non-null and the messages contain a durable project fact, constraint, decision, or agreed strategy.
 - A single chunk can produce multiple workspace_updates if it contains multiple distinct durable facts or decisions.
 - If a chunk contains both a durable project fact and an agreed follow-up task, emit both the workspace_update and the todo_create.
-- Preserve salient nouns from the source messages whenever they are explicitly present: person names, the specific thing being sent or asked about, the show being watched, the trip or event being planned, the class/problem set/document name, and the exact deliverable.
-- Prefer richer wording over compressed wording when compression would drop the who/what details needed to make the action useful.
-- Good todo wording: "Meet with Owen to plan the poker trip and play heads-up", "Send 18.01 to Madelyn", "Ask Madelyn about the chem p-set", "Book dinner with Aidan for Thursday".
-- Good journal wording: "Talked with Aidan about philosophy and compared deontology with consequentialism", "Decided to watch Severance", "Planned the poker trip with Owen and played heads-up".
 
 Examples:
-1. Input idea: "I need to send Sam the signed permit packet tonight."
+1. Input idea (personal chat with Sam): "I need to send Sam the signed permit packet tonight."
    Output idea:
-   {"todo_creates":[{"text":"Send Sam the signed permit packet tonight","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[1],"reason":"First-person obligation describing a clear personal task."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+   {"todo_creates":[{"text":"Send Sam the signed permit packet","deadline_utc":"2026-01-15T04:59:00Z","deadline_is_date_only":false,"time_horizon":"this_week","source_message_ids":[1],"reason":"First-person obligation with tonight deadline and named recipient."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
 
-2. Input idea: "Can you settle up on Splitwise before dinner?"
+2. Input idea (personal chat with Owen): "Can you settle up on Splitwise before dinner?"
    Output idea:
-   {"todo_creates":[{"text":"Settle up on Splitwise before dinner","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[1],"reason":"Direct request to complete a personal obligation."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+   {"todo_creates":[{"text":"Settle up on Splitwise with Owen before dinner","deadline_utc":null,"deadline_is_date_only":false,"time_horizon":"this_week","source_message_ids":[1],"reason":"Direct request from Owen to settle a specific payment."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
 
 3. Input idea: "Done, I paid Splitwise."
    Output idea:
@@ -201,7 +258,7 @@ Examples:
    Output idea:
    {"todo_creates":[],"todo_completions":[],"journal_entries":[{"source_message_ids":[1],"text":"Submitted the permit packet","reason":"Concrete completed action worth journaling."}],"workspace_updates":[]}
 
-5. Input idea: "Talked to Aidan about philosophy and compared deontology against consequentialism."
+5. Input idea (chat with Aidan): "Talked to Aidan about philosophy and compared deontology against consequentialism."
    Output idea:
    {"todo_creates":[],"todo_completions":[],"journal_entries":[{"source_message_ids":[1],"text":"Talked with Aidan about philosophy and compared deontology with consequentialism","reason":"Meaningful conversation summary worth preserving in the journal."}],"workspace_updates":[]}
 
@@ -211,43 +268,60 @@ Examples:
    Output idea:
    {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[{"page_title":"Forest Fire Rollout Strategy","search_query":"Forest Fire rollout phasing permitting risk","summary":"Keep the Forest Fire rollout phased so permitting risk stays manageable while crews ramp up.","source_message_ids":[1,2],"reason":"Agreed project strategy that should be preserved as project knowledge."}]}
 
-7. Input idea with project inference = Capital One:
-   "The filing deadline is March 14."
-   "Capital One wants every supporting document bundled into one PDF."
-   "Agreed, let's add the one-PDF requirement to the dispute notes."
-   Output idea:
-   {"todo_creates":[{"text":"Add the one-PDF requirement to the dispute notes","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[3],"reason":"Agreed follow-up task to document a project requirement."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[{"page_title":"Capital One Venture X Dispute","search_query":"Venture X dispute filing deadline","summary":"The filing deadline for the Venture X dispute is March 14.","source_message_ids":[1],"reason":"Durable project deadline that belongs in project knowledge."},{"page_title":"Capital One Venture X Dispute","search_query":"Capital One one PDF document requirement","summary":"Capital One requires all supporting dispute documents to be bundled into a single PDF.","source_message_ids":[2],"reason":"Durable project constraint explicitly stated in the conversation."}]}
-
-8. Negative example:
-   "Sounds good, thanks."
+7. NEGATIVE — Automated message: "Your verification code is 483921. It expires in 10 minutes."
    Output idea:
    {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
 
-9. Boundary example:
-   "I need to upload the receipts tonight."
+8. NEGATIVE — Delivery notification: "Your Amazon package has been delivered. Track: amzn.to/abc123"
    Output idea:
-   {"todo_creates":[{"text":"Upload the receipts tonight","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[1],"reason":"Personal obligation with time pressure; this belongs in todos, not calendar."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
 
-10. Historical timing example:
-   Message `sent_at_utc` = "2026-01-14T15:00:00Z"
-   Text: "I need to upload the receipts tomorrow morning."
+9. NEGATIVE — Group chat, someone else's task: In a group chat, participant Jake (is_from_me=false) says "I need to pick up the groceries tonight."
    Output idea:
-   {"todo_creates":[{"text":"Upload the receipts tomorrow morning","deadline_utc":"2026-01-15T15:00:00Z","deadline_is_date_only":false,"source_message_ids":[1],"reason":"Relative deadline anchored to the message timestamp, not the processing date."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
 
-11. Detail-preserving todo example:
+10. POSITIVE — Group chat, user's own commitment: In a group chat, the user (is_from_me=true) says "I'll handle the reservations for Saturday."
+   Output idea:
+   {"todo_creates":[{"text":"Make reservations for the group for Saturday","deadline_utc":"2026-01-18T22:00:00Z","deadline_is_date_only":true,"time_horizon":"this_week","source_message_ids":[1],"reason":"User personally committed to handling reservations with a Saturday deadline."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+
+11. Timing example — "tonight" must produce a deadline:
+   Message sent_at_utc = "2026-01-14T20:00:00Z" (3 PM ET)
+   Text: "I need to upload the receipts tonight."
+   Output idea:
+   {"todo_creates":[{"text":"Upload the receipts","deadline_utc":"2026-01-15T04:59:00Z","deadline_is_date_only":false,"time_horizon":"this_week","source_message_ids":[1],"reason":"Personal obligation with tonight deadline anchored to message timestamp."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+
+12. Detail-preserving todo example (chat with Owen):
    "Can you meet Owen to plan the poker trip and play HU?"
    Output idea:
-   {"todo_creates":[{"text":"Meet with Owen to plan the poker trip and play heads-up","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[1],"reason":"Direct request with a named person and specific purpose."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+   {"todo_creates":[{"text":"Meet with Owen to plan the poker trip and play heads-up","deadline_utc":null,"deadline_is_date_only":false,"time_horizon":"this_week","source_message_ids":[1],"reason":"Direct request with a named person and specific purpose."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
 
-12. Detail-preserving todo example:
+13. Detail-preserving todo example (chat with Madelyn):
    "Send 18.01 to Madelyn tonight."
    Output idea:
-   {"todo_creates":[{"text":"Send 18.01 to Madelyn tonight","deadline_utc":null,"deadline_is_date_only":false,"source_message_ids":[1],"reason":"Clear first-person or directed obligation with a named recipient and deliverable."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+   {"todo_creates":[{"text":"Send 18.01 to Madelyn","deadline_utc":"2026-01-15T04:59:00Z","deadline_is_date_only":false,"time_horizon":"this_week","source_message_ids":[1],"reason":"Clear obligation with named recipient, specific deliverable, and tonight deadline."}],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
 
-13. Detail-preserving journal example:
-   "We decided to watch Severance."
+14. NEGATIVE — Promotional text: "FLASH SALE! 40% off all items today only. Reply STOP to unsubscribe."
    Output idea:
-   {"todo_creates":[],"todo_completions":[],"journal_entries":[{"source_message_ids":[1],"text":"Decided to watch Severance","reason":"Specific decision and show title are worth preserving."}],"workspace_updates":[]}
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+
+15. NEGATIVE — Appointment reminder from business: "Reminder: Your appointment with Dr. Smith is tomorrow at 2:00 PM."
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+
+16. NEGATIVE — Aspirational/casual future plan (chat with Kat): "It would be so fun to bike together in Richmond over the summer since we both have road bikes."
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+   Reason: This is aspirational conversation, not a concrete commitment. No specific action was stated.
+
+17. NEGATIVE — Inferred sub-task from context: User mentions "my internship is in Richmond this summer" in conversation.
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+   Reason: Do NOT infer "bring bike to Richmond" or "move to Richmond" — the user never stated these as obligations.
+
+18. NEGATIVE — Wishful thinking: "I'd love to learn piano someday" or "Maybe I'll start running again"
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+   Reason: Aspirational statements without concrete commitment are not todos.
 
 DATA:
 {payload_json}
@@ -256,6 +330,11 @@ DATA:
 IMESSAGE_ACTION_JUDGE_PROMPT = """
 You are the judge for an iMessage processing engine.
 Given the source conversation plus extracted actions, verify whether each action is sufficiently supported and safe to auto-apply.
+
+The cluster includes `conversation.conversation_type`:
+- "personal": 1-on-1 conversation with a known contact.
+- "group": Group chat with 3+ participants.
+- "business": Conversation from a short code or business sender.
 
 Return ONLY valid JSON with this shape:
 {
@@ -270,41 +349,71 @@ Return ONLY valid JSON with this shape:
   "workspace_updates": [{"approved": boolean, "reason": string}]
 }
 
-Rules:
+=== AUTOMATED MESSAGE REJECTION ===
+- Reject any action derived from automated, system-generated, or business notification messages (verification codes, delivery alerts, bank notifications, marketing texts, appointment reminders from businesses, "reply STOP" messages).
+- If `conversation_type` is "business", reject all actions UNLESS the user (is_from_me=true) explicitly states a personal commitment in their own words. The automated messages themselves should never produce approved actions.
+
+=== OWNERSHIP VERIFICATION (CRITICAL) ===
+- Every todo MUST be something the user personally needs to do.
+- Check `is_from_me` on the source messages:
+  - If is_from_me=true and the user says "I need to..." / "I have to..." / "I should..." → APPROVE (user's own obligation).
+  - If is_from_me=false and the other participant says "Can you..." / directly asks the user → APPROVE (request directed at user).
+  - If is_from_me=false and the other participant says "I need to..." / "I have to..." / "I'll..." → REJECT (that is THEIR task, not the user's).
+- In GROUP CHATS, apply stricter ownership checks:
+  - Reject when participant A tells participant B to do something — that is not the user's todo.
+  - Reject generic group plans ("we should hang out", "someone needs to grab ice") unless the user explicitly volunteers.
+  - Only approve when the user (is_from_me=true) personally commits, or when another participant explicitly addresses the user by name or "you".
+
+=== ACTIONABILITY CHECK (CRITICAL) ===
+- Reject todos derived from aspirational, wishful, or casual conversation rather than concrete commitments.
+  - Reject: any todo inferred from "it would be fun to...", "I'd love to...", "we should totally...", "maybe I'll..."
+  - Reject: any todo that is a sub-task the extractor invented but the user never explicitly stated. If the user says "my internship is in Richmond", reject "bring bike to Richmond" — that was never the user's stated obligation.
+  - Reject: any todo from casual future plans with no concrete next step: "we could bike there over the summer", "I want to try that restaurant sometime"
+  - Reject: any todo from background facts or context about the user's life
+- Only approve todos where the user explicitly stated or clearly agreed to do a specific thing.
+
+=== SPECIFICITY CHECK ===
+- Reject vague todos that would be useless without the original conversation context.
+  - Reject: "Follow up", "Check on that", "Handle it", "Send the thing", "Look into it"
+  - These lack who, what, or both. The extractor should have included specifics.
+- Approve only when the todo text includes enough context to be actionable on its own: who is involved, what specifically needs to be done.
+  - Approve: "Follow up with Owen about poker trip logistics", "Send the signed permit packet to Sam", "Check with Madelyn about the chem problem set"
+
+=== TIMING VERIFICATION ===
+- When checking deadlines derived from words like today, tomorrow, tonight, or Friday, verify the extracted time is anchored to the source message `sent_at_utc`, not the current runtime date.
+- Reject a time-bearing action if its resolved date appears to be based on processing time rather than the message timestamp.
+
+=== GENERAL RULES ===
 - Evaluate each proposed action independently. A single chunk may validly support multiple approved actions of the same type.
 - Do not reject one action just because another action from the same chunk is also valid.
 - Reject anything that is ambiguous, weakly supported, or likely duplicative.
 - The extracted actions include `source_message_ids`. Reject an action when those IDs do not point to genuinely supporting messages.
 - Project approval requires strong evidence that the conversation belongs to that project.
-- The source messages include `sent_at_utc`. When checking deadlines or events derived from words like today, tomorrow, tonight, or Friday, verify that the extracted time is anchored to the source message time rather than the current runtime date.
 - Use `is_from_me` as the primary ownership signal for first-person todos, completions, and journal entries, but not an absolute veto when the message is clearly a retrospective summary of the user's own experience.
-- Approve a todo_create when the obligation clearly belongs to the user or when another participant clearly asks the user to do it.
-- Reject a todo_create when another participant is merely describing their own task.
 - It is acceptable to approve personal todos/journal entries while rejecting project updates.
 - Meaningful conversation summaries can be valid journal entries even when no concrete accomplishment happened.
-- Approve a journal entry when the message is a clear first-person recap of the user's conversation or experience, such as "Talked to Aidan about philosophy..." or "Had a call with Mom about July travel...", even if the content is not an accomplishment.
+- Approve a journal entry when the message is a clear first-person recap of the user's conversation or experience.
 - Inferred calendar durations or time windows are acceptable when the wording strongly supports them.
-- Explicit hard deadlines such as filing deadlines, renewal deadlines, and submission deadlines are valid calendar items and should generally be approved as all-day events when the extracted date is correct.
+- Explicit hard deadlines (filing, renewal, submission) are valid calendar items as all-day events when the date is correct.
 - Prefer false negatives over false positives for knowledge-page edits.
-- Prefer the more specific action wording when two candidate phrasings describe the same supported action and one preserves a named person or explicit deliverable that appears in the source messages.
+- Prefer the more specific action wording when two candidate phrasings describe the same action.
 
 Examples:
-- Approve a todo completion when the user's outgoing message says "Done, I paid Splitwise."
-- Approve a journal entry like "Talked with Aidan about philosophy and compared deontology with consequentialism."
-- Approve a journal entry like "Had a call with Mom about July travel and narrowed down the best dates."
-- Approve a todo like "Meet with Owen to plan the poker trip and play heads-up" when the source messages include Owen and the poker trip details.
-- Approve a todo like "Send 18.01 to Madelyn" when the source messages clearly specify both the deliverable and recipient.
-- Approve a journal entry like "Decided to watch Severance" when the source messages name the show explicitly.
-- Approve multiple workspace updates from one chunk when the chunk contains multiple distinct durable facts.
-- Approve a workspace update and a todo_create together when the chunk contains both a durable project fact and an agreed follow-up task.
-- Approve a calendar create when the chunk gives a concrete start time and the duration can be reasonably inferred from wording like "keep it quick" or "dinner at 6."
-- Reject a calendar create when the message is only vague scheduling language like "we should find time next week."
-- Approve a calendar create for an explicit hard deadline such as "The filing deadline is March 14, 2026." Hard deadlines may be valid all-day calendar items.
-- Reject a calendar create when the chunk is really a personal obligation rather than a scheduled event or explicit hard deadline, such as "I need to send Sam the permit packet tonight." That belongs in todos, not calendar.
-- Reject a time-bearing action if its resolved date appears to be based on processing time rather than the message timestamp.
-- Approve a workspace update when the cluster contains an agreed project strategy or durable decision.
-- Reject a workspace update when it comes from a single speculative message with no confirmation.
-- Reject a todo_create when another participant says "I need to..." and `is_from_me` is false.
+- Approve "Meet with Owen to plan the poker trip and play heads-up" — specific person, specific purpose.
+- Approve "Send 18.01 to Madelyn" — specific deliverable, specific recipient.
+- Reject "Follow up" — no person, no subject, useless without context.
+- Reject "Check on that" — completely vague.
+- Reject a todo from automated text "Your package has been delivered" — no personal obligation.
+- Reject in group chat when Jake (is_from_me=false) says "I need to pick up groceries" — Jake's task, not user's.
+- Approve in group chat when user (is_from_me=true) says "I'll bring the drinks Saturday" — user's commitment.
+- Reject in group chat when Alex tells Jordan to "grab the tickets" — not addressed to user.
+- Reject "Bring bike to Richmond" when the user only mentioned wanting to bike over the summer — aspirational, not an obligation.
+- Reject any todo the user never explicitly stated — do not approve inferred sub-tasks from casual context.
+- Approve a calendar create when the chunk gives a concrete start time and duration.
+- Reject a calendar create for vague scheduling like "we should find time next week."
+- Reject a calendar create when it's really a personal obligation, not a scheduled event.
+- Approve a workspace update for an agreed project strategy or durable decision.
+- Reject a workspace update from a single speculative message with no confirmation.
 
 DATA:
 {payload_json}

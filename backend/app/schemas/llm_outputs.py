@@ -65,6 +65,7 @@ class TodoExtractionItemOutput(LLMOutputModel):
     text: str
     deadline_utc: str | None = None
     deadline_inferred: bool = False
+    time_horizon: Literal["this_week", "this_month", "this_year"] = "this_week"
 
 
 class TodoExtractionOutput(LLMOutputModel):
@@ -163,6 +164,7 @@ class IMessageTodoCreateOutput(LLMOutputModel):
     text: str
     deadline_utc: str | None = None
     deadline_is_date_only: bool = False
+    time_horizon: Literal["this_week", "this_month", "this_year"] = "this_week"
     source_message_ids: list[int] = Field(default_factory=list)
     reason: str
 

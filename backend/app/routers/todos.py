@@ -39,6 +39,7 @@ def _todo_response(item, now_utc: datetime) -> TodoItemResponse:
     completed_at_utc=item.completed_at_utc,
     deadline_utc=item.deadline_utc,
     deadline_is_date_only=item.deadline_is_date_only,
+    time_horizon=item.time_horizon or "this_week",
     is_overdue=bool(
       not item.completed and item.deadline_utc is not None and item.deadline_utc < now_utc
     ),
@@ -92,6 +93,7 @@ async def create_todo(
     payload.text,
     payload.deadline_utc,
     deadline_is_date_only=payload.deadline_is_date_only,
+    time_horizon=payload.time_horizon,
   )
   await session.flush()
   await session.commit()
@@ -129,6 +131,9 @@ async def update_todo(
       raise HTTPException(status_code=404, detail="Project not found")
     todo.project_id = project.id
     await suggestion_repo.delete_for_todo(current_user.id, todo.id)
+
+  if "time_horizon" in update_data and update_data["time_horizon"] is not None:
+    todo.time_horizon = update_data["time_horizon"]
 
   if "deadline_utc" in update_data:
     todo.deadline_utc = update_data["deadline_utc"]

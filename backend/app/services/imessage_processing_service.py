@@ -51,6 +51,7 @@ from app.services.google_calendar_event_service import GoogleCalendarEventServic
 from app.services.imessage_utils import (
     ProjectCatalogEntry,
     ProjectGuess,
+    classify_conversation_type,
     content_tokens,
     conversation_display_name,
     derive_project_aliases,
@@ -782,12 +783,18 @@ class IMessageProcessingService:
             message_texts=message_texts,
         )
         time_context = self._cluster_time_context(cluster=cluster, time_zone=time_zone)
+        conversation_type = classify_conversation_type(
+            chat_identifier=cluster.conversation.chat_identifier,
+            service_name=cluster.conversation.service_name,
+            participant_count=len(participant_labels),
+        )
         return {
             "conversation": {
                 "id": cluster.conversation.id,
                 "name": conversation_name,
                 "chat_identifier": cluster.conversation.chat_identifier,
                 "service_name": cluster.conversation.service_name,
+                "conversation_type": conversation_type,
                 "participants": participant_labels,
                 "participant_handles": participant_handles,
             },
@@ -2353,6 +2360,9 @@ class IMessageProcessingService:
         )
         if await self._audit_exists(run.user_id, fingerprint):
             return False
+        horizon = str(action.get("time_horizon", "this_week"))
+        if horizon not in ("this_week", "this_month", "this_year"):
+            horizon = "this_week"
         inbox = await self.project_repo.ensure_inbox_project(run.user_id)
         todo = await self.todo_repo.create_one(
             run.user_id,
@@ -2361,6 +2371,7 @@ class IMessageProcessingService:
             deadline,
             deadline_is_date_only=bool(action.get("deadline_is_date_only", False)),
             created_at=created_at,
+            time_horizon=horizon,
         )
         await self.session.flush()
         if todo.deadline_utc is not None and not todo.completed:

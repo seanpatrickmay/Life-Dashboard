@@ -14,6 +14,7 @@ class TodoItemResponse(BaseModel):
   completed_at_utc: datetime | None = None
   deadline_utc: datetime | None = None
   deadline_is_date_only: bool = False
+  time_horizon: str = "this_week"
   is_overdue: bool
   created_at: datetime
   updated_at: datetime
@@ -27,6 +28,7 @@ class TodoCreateRequest(BaseModel):
   project_id: int | None = None
   deadline_utc: datetime | None = None
   deadline_is_date_only: bool = False
+  time_horizon: str = "this_week"
   time_zone: str | None = Field(default=None, max_length=64)
 
 
@@ -35,6 +37,7 @@ class TodoUpdateRequest(BaseModel):
   project_id: int | None = Field(default=None)
   deadline_utc: datetime | None = Field(default=None)
   deadline_is_date_only: bool | None = Field(default=None)
+  time_horizon: str | None = Field(default=None)
   completed: bool | None = None
   completed_at_utc: datetime | None = None
   time_zone: str | None = Field(default=None, max_length=64)

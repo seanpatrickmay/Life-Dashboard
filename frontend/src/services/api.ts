@@ -511,6 +511,8 @@ export const sendNutritionChatMessage = async (
 
 // Todos
 
+export type TimeHorizon = 'this_week' | 'this_month' | 'this_year';
+
 export type TodoItem = {
   id: number;
   project_id: number;
@@ -519,6 +521,7 @@ export type TodoItem = {
   completed_at_utc?: string | null;
   deadline_utc: string | null;
   deadline_is_date_only: boolean;
+  time_horizon: TimeHorizon;
   is_overdue: boolean;
   created_at: string;
   updated_at: string;

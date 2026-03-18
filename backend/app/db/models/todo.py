@@ -9,6 +9,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base
 from .entities import User
 
+VALID_TIME_HORIZONS = ("this_week", "this_month", "this_year")
+
 
 class TodoItem(Base):
   """Per-user to-do item with optional UTC deadline."""
@@ -21,6 +23,7 @@ class TodoItem(Base):
   completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
   deadline_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
   deadline_is_date_only: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+  time_horizon: Mapped[str] = mapped_column(String(16), nullable=False, default="this_week", index=True)
   completed_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
   completed_local_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
   completed_time_zone: Mapped[str | None] = mapped_column(String(64), nullable=True)

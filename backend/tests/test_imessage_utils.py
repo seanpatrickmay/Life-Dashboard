@@ -13,6 +13,7 @@ if str(backend_root) not in sys.path:
 from app.services.imessage_utils import (
     ProjectCatalogEntry,
     apple_timestamp_to_datetime,
+    classify_conversation_type,
     conversation_display_name,
     extract_attributed_body_text,
     extract_message_text,
@@ -411,3 +412,60 @@ def test_fetch_message_batch_extracts_attributed_body_when_text_is_missing(tmp_p
     row = batch[0]
     assert row.text == "Hello from attributed body"
     assert row.content_source == "attributedBody"
+
+
+def test_classify_conversation_type_short_code_is_business() -> None:
+    assert classify_conversation_type(
+        chat_identifier="32665",
+        service_name="SMS",
+        participant_count=1,
+    ) == "business"
+
+
+def test_classify_conversation_type_five_digit_short_code_is_business() -> None:
+    assert classify_conversation_type(
+        chat_identifier="72645",
+        service_name="SMS",
+        participant_count=1,
+    ) == "business"
+
+
+def test_classify_conversation_type_phone_number_is_personal() -> None:
+    assert classify_conversation_type(
+        chat_identifier="+14155551234",
+        service_name="iMessage",
+        participant_count=1,
+    ) == "personal"
+
+
+def test_classify_conversation_type_email_is_personal() -> None:
+    assert classify_conversation_type(
+        chat_identifier="friend@gmail.com",
+        service_name="iMessage",
+        participant_count=1,
+    ) == "personal"
+
+
+def test_classify_conversation_type_three_plus_participants_is_group() -> None:
+    assert classify_conversation_type(
+        chat_identifier="chat12345",
+        service_name="iMessage",
+        participant_count=3,
+    ) == "group"
+
+
+def test_classify_conversation_type_two_participants_is_personal() -> None:
+    assert classify_conversation_type(
+        chat_identifier="chat12345",
+        service_name="iMessage",
+        participant_count=2,
+    ) == "personal"
+
+
+def test_classify_conversation_type_short_code_overrides_group_count() -> None:
+    """A short code is business even if there happen to be multiple participants."""
+    assert classify_conversation_type(
+        chat_identifier="22000",
+        service_name="SMS",
+        participant_count=3,
+    ) == "business"

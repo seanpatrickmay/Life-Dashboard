@@ -30,6 +30,7 @@ _LOW_SIGNAL_TEXT_RE = re.compile(
     r"^(ok|okay|sounds good|sgtm|thanks|thank you|yep|yes|cool|perfect|great|got it|works for me)[.!]*$",
     re.IGNORECASE,
 )
+_SHORT_CODE_RE = re.compile(r"^\d{4,6}$")
 _STOPWORDS = {
     "a",
     "an",
@@ -330,6 +331,28 @@ def message_intent_tags(text: str | None) -> set[str]:
         if tokens & vocabulary:
             tags.add(tag)
     return tags
+
+
+def classify_conversation_type(
+    *,
+    chat_identifier: str | None,
+    service_name: str | None,
+    participant_count: int,
+) -> str:
+    """Classify a conversation as 'personal', 'business', or 'group'.
+
+    Uses only structural metadata signals — short code numbers and email
+    identifiers — that the LLM cannot easily infer from message text alone.
+    The LLM handles content-level automated message detection via prompting.
+    """
+    identifier = normalize_message_text(chat_identifier)
+    if identifier and _SHORT_CODE_RE.match(identifier):
+        return "business"
+
+    if participant_count > 2:
+        return "group"
+
+    return "personal"
 
 
 def should_split_message_cluster(

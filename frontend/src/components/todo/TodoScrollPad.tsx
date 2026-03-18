@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { useTodos } from '../../hooks/useTodos';
-import type { TodoItem } from '../../services/api';
+import type { TodoItem, TimeHorizon } from '../../services/api';
 
 const ScrollShell = styled.div`
   position: relative;
@@ -50,6 +50,17 @@ const ScrollHeading = styled.div`
 const Count = styled.span`
   font-size: 0.72rem;
   opacity: 0.7;
+`;
+
+const SectionLabel = styled.div`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  opacity: 0.55;
+  margin-top: 10px;
+  margin-bottom: 2px;
+  padding-left: 2px;
 `;
 
 const List = styled.ul`
@@ -206,6 +217,13 @@ type Props = {
   estimateExtraHeight?: (count: number) => number;
 };
 
+const HORIZON_ORDER: TimeHorizon[] = ['this_week', 'this_month', 'this_year'];
+const HORIZON_LABELS: Record<TimeHorizon, string> = {
+  this_week: 'This Week',
+  this_month: 'This Month',
+  this_year: 'This Year',
+};
+
 function toLocalDateTimeInputValue(value: string | null | undefined): string {
   if (!value) return '';
   const date = new Date(value);
@@ -232,7 +250,6 @@ export function TodoScrollPad(_props: Props) {
       setHistoryTodoId(null);
       setHistoryValue('');
     }
-    // Use non-async version for immediate optimistic update
     updateTodo({ id: item.id, completed: !item.completed });
   };
 
@@ -251,7 +268,6 @@ export function TodoScrollPad(_props: Props) {
       setEditingId(null);
       return;
     }
-    // Use non-async version for immediate optimistic update
     updateTodo({ id: item.id, text: trimmed });
     setEditingId(null);
   };
@@ -276,7 +292,6 @@ export function TodoScrollPad(_props: Props) {
     if (!historyValue) return;
     const completedAt = new Date(historyValue);
     if (Number.isNaN(completedAt.getTime())) return;
-    // Use non-async version for immediate optimistic update
     updateTodo({
       id: item.id,
       completed: true,
@@ -286,6 +301,89 @@ export function TodoScrollPad(_props: Props) {
   };
 
   const activeCount = useMemo(() => items.filter((item) => !item.completed).length, [items]);
+
+  const grouped = useMemo(() => {
+    const groups: Record<TimeHorizon, TodoItem[]> = {
+      this_week: [],
+      this_month: [],
+      this_year: [],
+    };
+    for (const item of items) {
+      const horizon = item.time_horizon ?? 'this_week';
+      (groups[horizon] ?? groups.this_week).push(item);
+    }
+    return groups;
+  }, [items]);
+
+  const renderItem = (item: TodoItem) => {
+    const overdue = !item.completed && item.is_overdue;
+    const deadlineLabel = formatDeadline(item);
+    const isEditing = editingId === item.id;
+    return (
+      <Row key={item.id} $completed={item.completed} $overdue={overdue}>
+        <Checkbox
+          type="button"
+          aria-label={item.completed ? 'Mark as not done' : 'Mark as done'}
+          $checked={item.completed}
+          onClick={() => handleToggle(item)}
+        >
+          {item.completed ? '✓' : ''}
+        </Checkbox>
+        <div>
+          <NameBox>
+          <TextField
+            $overdue={overdue}
+            $completed={item.completed}
+            value={isEditing ? editingText : item.text}
+            rows={2}
+            onFocus={() => startEdit(item)}
+            onChange={(event) => {
+              if (!isEditing) startEdit(item);
+              setEditingText(event.target.value);
+            }}
+            onBlur={() => commitEdit(item)}
+          />
+          </NameBox>
+          {deadlineLabel && <Deadline $overdue={overdue}>{deadlineLabel}</Deadline>}
+          {historyTodoId === item.id && !item.completed ? (
+            <CompletionEditor>
+              <CompletionInput
+                type="datetime-local"
+                value={historyValue}
+                onChange={(event) => setHistoryValue(event.target.value)}
+              />
+              <CompletionApply type="button" onClick={() => applyHistoricalCompletion(item)}>
+                Save date
+              </CompletionApply>
+              <CompletionCancel type="button" onClick={closeHistoricalCompletion}>
+                Cancel
+              </CompletionCancel>
+            </CompletionEditor>
+          ) : null}
+        </div>
+        <ActionColumn>
+          {!item.completed ? (
+            <HistoryButton
+              type="button"
+              aria-label="Mark to-do completed on a chosen date"
+              onClick={() =>
+                historyTodoId === item.id ? closeHistoricalCompletion() : openHistoricalCompletion(item)
+              }
+            >
+              Done on…
+            </HistoryButton>
+          ) : null}
+          <DeleteButton
+            type="button"
+            aria-label="Delete to-do"
+            onClick={() => handleDelete(item.id)}
+          >
+            ✕
+          </DeleteButton>
+        </ActionColumn>
+      </Row>
+    );
+  };
 
   return (
     <ScrollShell>
@@ -299,77 +397,18 @@ export function TodoScrollPad(_props: Props) {
       {items.length === 0 && !todosQuery.isLoading && (
         <Empty data-halo="body">Nothing here yet — add something on the left.</Empty>
       )}
-      <List>
-        {items.map((item) => {
-          const overdue = !item.completed && item.is_overdue;
-          const deadlineLabel = formatDeadline(item);
-          const isEditing = editingId === item.id;
-          return (
-            <Row key={item.id} $completed={item.completed} $overdue={overdue}>
-              <Checkbox
-                type="button"
-                aria-label={item.completed ? 'Mark as not done' : 'Mark as done'}
-                $checked={item.completed}
-                onClick={() => handleToggle(item)}
-              >
-                {item.completed ? '✓' : ''}
-              </Checkbox>
-              <div>
-                <NameBox>
-                <TextField
-                  $overdue={overdue}
-                  $completed={item.completed}
-                  value={isEditing ? editingText : item.text}
-                  rows={2}
-                  onFocus={() => startEdit(item)}
-                  onChange={(event) => {
-                    if (!isEditing) startEdit(item);
-                    setEditingText(event.target.value);
-                  }}
-                  onBlur={() => commitEdit(item)}
-                />
-                </NameBox>
-                {deadlineLabel && <Deadline $overdue={overdue}>{deadlineLabel}</Deadline>}
-                {historyTodoId === item.id && !item.completed ? (
-                  <CompletionEditor>
-                    <CompletionInput
-                      type="datetime-local"
-                      value={historyValue}
-                      onChange={(event) => setHistoryValue(event.target.value)}
-                    />
-                    <CompletionApply type="button" onClick={() => applyHistoricalCompletion(item)}>
-                      Save date
-                    </CompletionApply>
-                    <CompletionCancel type="button" onClick={closeHistoricalCompletion}>
-                      Cancel
-                    </CompletionCancel>
-                  </CompletionEditor>
-                ) : null}
-              </div>
-              <ActionColumn>
-                {!item.completed ? (
-                  <HistoryButton
-                    type="button"
-                    aria-label="Mark to-do completed on a chosen date"
-                    onClick={() =>
-                      historyTodoId === item.id ? closeHistoricalCompletion() : openHistoricalCompletion(item)
-                    }
-                  >
-                    Done on…
-                  </HistoryButton>
-                ) : null}
-                <DeleteButton
-                  type="button"
-                  aria-label="Delete to-do"
-                  onClick={() => handleDelete(item.id)}
-                >
-                  ✕
-                </DeleteButton>
-              </ActionColumn>
-            </Row>
-          );
-        })}
-      </List>
+      {HORIZON_ORDER.map((horizon) => {
+        const sectionItems = grouped[horizon];
+        if (sectionItems.length === 0) return null;
+        return (
+          <div key={horizon}>
+            <SectionLabel>{HORIZON_LABELS[horizon]}</SectionLabel>
+            <List>
+              {sectionItems.map(renderItem)}
+            </List>
+          </div>
+        );
+      })}
     </ScrollShell>
   );
 }
