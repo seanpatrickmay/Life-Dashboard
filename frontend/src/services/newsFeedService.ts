@@ -1,10 +1,30 @@
 const STORAGE_KEY = 'ld_news_feed';
 const SOURCES_KEY = 'ld_news_sources';
 
+export type Category =
+  | 'tech'
+  | 'science'
+  | 'world'
+  | 'culture'
+  | 'history'
+  | 'business'
+  | 'wikipedia';
+
+export const CATEGORY_LABELS: Record<Category, string> = {
+  tech: 'Tech',
+  science: 'Science',
+  world: 'World',
+  culture: 'Culture & Arts',
+  history: 'History',
+  business: 'Business',
+  wikipedia: 'Wikipedia',
+};
+
 export type NewsArticle = {
-  id: string; // url hash
+  id: string;
   sourceType: 'rss' | 'wikipedia';
   sourceName: string;
+  category: Category;
   url: string;
   title: string;
   summary: string | null;
@@ -19,6 +39,7 @@ export type NewsArticle = {
 export type FeedSource = {
   url: string;
   name: string;
+  category: Category;
   enabled: boolean;
 };
 
@@ -28,11 +49,21 @@ type StoredState = {
 };
 
 const DEFAULT_SOURCES: FeedSource[] = [
-  { url: 'https://hnrss.org/best', name: 'Hacker News Best', enabled: true },
-  { url: 'https://feeds.arstechnica.com/arstechnica/index', name: 'Ars Technica', enabled: true },
-  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml', name: 'NYT Tech', enabled: true },
-  { url: 'https://www.nature.com/nature.rss', name: 'Nature', enabled: true },
-  { url: 'https://export.arxiv.org/rss/cs.AI', name: 'arXiv CS.AI', enabled: true },
+  // Tech
+  { url: 'https://hnrss.org/best', name: 'Hacker News', category: 'tech', enabled: true },
+  { url: 'https://feeds.arstechnica.com/arstechnica/index', name: 'Ars Technica', category: 'tech', enabled: true },
+  // Science
+  { url: 'https://www.nature.com/nature.rss', name: 'Nature', category: 'science', enabled: true },
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Science.xml', name: 'NYT Science', category: 'science', enabled: true },
+  // World
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', name: 'NYT World', category: 'world', enabled: true },
+  { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', name: 'BBC World', category: 'world', enabled: true },
+  // Culture & Arts
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Books.xml', name: 'NYT Books', category: 'culture', enabled: true },
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Arts.xml', name: 'NYT Arts', category: 'culture', enabled: true },
+  // Business
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml', name: 'NYT Business', category: 'business', enabled: true },
+  // History — sourced via Wikipedia below
 ];
 
 function hashUrl(url: string): string {
@@ -64,14 +95,13 @@ function loadState(): StoredState {
 }
 
 function saveState(state: StoredState): void {
-  // Keep at most 200 articles, drop oldest unread
-  if (state.articles.length > 200) {
+  if (state.articles.length > 500) {
     const read = state.articles.filter(a => a.readAt);
     const unread = state.articles
       .filter(a => !a.readAt)
       .sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))
-      .slice(0, 200 - read.length);
-    state.articles = [...read, ...unread].slice(0, 200);
+      .slice(0, 500 - read.length);
+    state.articles = [...read, ...unread].slice(0, 500);
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
@@ -79,7 +109,10 @@ function saveState(state: StoredState): void {
 export function getSources(): FeedSource[] {
   try {
     const raw = localStorage.getItem(SOURCES_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].category) return parsed;
+    }
   } catch { /* ignore */ }
   return DEFAULT_SOURCES;
 }
@@ -88,24 +121,40 @@ export function saveSources(sources: FeedSource[]): void {
   localStorage.setItem(SOURCES_KEY, JSON.stringify(sources));
 }
 
+// Try rss2json first (more reliable CORS), fall back to allorigins
 async function fetchRssViaProxy(feedUrl: string): Promise<Array<{ title: string; url: string; summary: string | null; publishedAt: string | null }>> {
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`;
+  // Strategy 1: rss2json API
   try {
+    const r2jUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}`;
+    const resp = await fetch(r2jUrl, { signal: AbortSignal.timeout(10000) });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.status === 'ok' && data.items?.length) {
+        return data.items.slice(0, 12).map((item: any) => ({
+          title: stripHtml(item.title || ''),
+          url: item.link || item.guid || '',
+          summary: truncate(stripHtml(item.description || '')),
+          publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : null,
+        })).filter((item: any) => item.title && item.url);
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Strategy 2: allorigins proxy with XML parsing
+  try {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`;
     const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
     if (!resp.ok) return [];
     const xml = await resp.text();
     const doc = new DOMParser().parseFromString(xml, 'text/xml');
 
     const items: Array<{ title: string; url: string; summary: string | null; publishedAt: string | null }> = [];
-
-    // Handle both RSS and Atom
     const rssItems = doc.querySelectorAll('item');
     const atomEntries = doc.querySelectorAll('entry');
-
     const entries = rssItems.length > 0 ? rssItems : atomEntries;
 
     entries.forEach((item, i) => {
-      if (i >= 15) return;
+      if (i >= 12) return;
       const title = item.querySelector('title')?.textContent?.trim();
       const link = item.querySelector('link')?.textContent?.trim()
         || item.querySelector('link')?.getAttribute('href')
@@ -135,7 +184,7 @@ async function fetchRssViaProxy(feedUrl: string): Promise<Array<{ title: string;
   }
 }
 
-async function fetchWikipediaArticles(): Promise<Array<{ title: string; url: string; summary: string | null; sourceName: string }>> {
+async function fetchWikipediaArticles(): Promise<Array<{ title: string; url: string; summary: string | null; sourceName: string; category: Category }>> {
   const now = new Date();
   const url = `https://api.wikimedia.org/feed/v1/wikipedia/en/featured/${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
 
@@ -143,7 +192,7 @@ async function fetchWikipediaArticles(): Promise<Array<{ title: string; url: str
     const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (!resp.ok) return [];
     const data = await resp.json();
-    const articles: Array<{ title: string; url: string; summary: string | null; sourceName: string }> = [];
+    const articles: Array<{ title: string; url: string; summary: string | null; sourceName: string; category: Category }> = [];
 
     // Featured article
     const tfa = data.tfa;
@@ -155,13 +204,31 @@ async function fetchWikipediaArticles(): Promise<Array<{ title: string; url: str
           url: pageUrl,
           summary: truncate(tfa.extract),
           sourceName: 'Wikipedia Featured',
+          category: 'wikipedia',
         });
       }
     }
 
-    // Most read (top 4)
+    // On this day — history!
+    const onThisDay = data.onthisday || [];
+    for (const event of onThisDay.slice(0, 4)) {
+      const page = event.pages?.[0];
+      if (!page) continue;
+      const pageUrl = page.content_urls?.desktop?.page;
+      if (!pageUrl) continue;
+      const yearText = event.year ? `(${event.year}) ` : '';
+      articles.push({
+        title: page.titles?.normalized || page.title || '',
+        url: pageUrl,
+        summary: truncate(`${yearText}${event.text || page.extract || ''}`),
+        sourceName: 'On This Day',
+        category: 'history',
+      });
+    }
+
+    // Most read (top 6)
     const mostread = data.mostread?.articles || [];
-    for (const article of mostread.slice(0, 4)) {
+    for (const article of mostread.slice(0, 6)) {
       const pageUrl = article.content_urls?.desktop?.page;
       if (!pageUrl) continue;
       articles.push({
@@ -169,6 +236,7 @@ async function fetchWikipediaArticles(): Promise<Array<{ title: string; url: str
         url: pageUrl,
         summary: truncate(article.extract),
         sourceName: 'Wikipedia Trending',
+        category: 'wikipedia',
       });
     }
 
@@ -207,13 +275,11 @@ export function extractKeywordsFromContext(todos: string[], projects: string[]):
   const allText = [...todos, ...projects].join(' ').toLowerCase();
   const words = allText.split(/\W+/).filter(w => w.length > 2 && !stopWords.has(w));
 
-  // Count frequency
   const freq = new Map<string, number>();
   for (const w of words) {
     freq.set(w, (freq.get(w) || 0) + 1);
   }
 
-  // Return top keywords by frequency
   return Array.from(freq.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 40)
@@ -228,10 +294,9 @@ export async function refreshFeed(keywords: string[]): Promise<{ articles: NewsA
 
   const sources = getSources().filter(s => s.enabled);
 
-  // Fetch RSS and Wikipedia in parallel
   const rssPromises = sources.map(async (source) => {
     const items = await fetchRssViaProxy(source.url);
-    return items.map(item => ({ ...item, sourceName: source.name }));
+    return items.map(item => ({ ...item, sourceName: source.name, category: source.category }));
   });
 
   const [rssResults, wikiResults] = await Promise.all([
@@ -239,7 +304,6 @@ export async function refreshFeed(keywords: string[]): Promise<{ articles: NewsA
     fetchWikipediaArticles(),
   ]);
 
-  // Process RSS articles
   for (const feedItems of rssResults) {
     for (const item of feedItems) {
       const id = hashUrl(item.url);
@@ -250,6 +314,7 @@ export async function refreshFeed(keywords: string[]): Promise<{ articles: NewsA
         id,
         sourceType: 'rss',
         sourceName: item.sourceName,
+        category: item.category,
         url: item.url,
         title: item.title,
         summary: item.summary,
@@ -264,7 +329,6 @@ export async function refreshFeed(keywords: string[]): Promise<{ articles: NewsA
     }
   }
 
-  // Process Wikipedia articles
   for (const item of wikiResults) {
     const id = hashUrl(item.url);
     if (existingUrls.has(id)) continue;
@@ -274,6 +338,7 @@ export async function refreshFeed(keywords: string[]): Promise<{ articles: NewsA
       id,
       sourceType: 'wikipedia',
       sourceName: item.sourceName,
+      category: item.category,
       url: item.url,
       title: item.title,
       summary: item.summary,
@@ -287,7 +352,6 @@ export async function refreshFeed(keywords: string[]): Promise<{ articles: NewsA
     newCount++;
   }
 
-  // Cleanup: drop articles older than 30 days that weren't read
   const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   state.articles = state.articles.filter(
     a => a.readAt || a.fetchedAt > cutoff
@@ -306,7 +370,6 @@ export function getUnsurfacedArticles(limit = 8): NewsArticle[] {
     .sort((a, b) => b.relevanceScore - a.relevanceScore || b.fetchedAt.localeCompare(a.fetchedAt))
     .slice(0, limit);
 
-  // Mark as surfaced
   if (unsurfaced.length > 0) {
     const now = new Date().toISOString();
     const surfacedIds = new Set(unsurfaced.map(a => a.id));
@@ -317,6 +380,40 @@ export function getUnsurfacedArticles(limit = 8): NewsArticle[] {
   }
 
   return unsurfaced;
+}
+
+/** Get the top unread article per category for dashboard display. */
+export function getTopPerCategory(): NewsArticle[] {
+  const state = loadState();
+  const unread = state.articles
+    .filter(a => !a.readAt)
+    .sort((a, b) => b.relevanceScore - a.relevanceScore || b.fetchedAt.localeCompare(a.fetchedAt));
+
+  const seen = new Set<Category>();
+  const picks: NewsArticle[] = [];
+  for (const a of unread) {
+    if (seen.has(a.category)) continue;
+    seen.add(a.category);
+    picks.push(a);
+  }
+  return picks;
+}
+
+/** Get all unread articles grouped by category for the news page. */
+export function getAllByCategory(): Record<Category, NewsArticle[]> {
+  const state = loadState();
+  const result: Record<Category, NewsArticle[]> = {
+    tech: [], science: [], world: [], culture: [], history: [], business: [], wikipedia: [],
+  };
+
+  const unread = state.articles
+    .filter(a => !a.readAt)
+    .sort((a, b) => b.relevanceScore - a.relevanceScore || b.fetchedAt.localeCompare(a.fetchedAt));
+
+  for (const a of unread) {
+    result[a.category]?.push(a);
+  }
+  return result;
 }
 
 export function markArticleRead(articleId: string): void {
@@ -330,7 +427,7 @@ export function markArticleRead(articleId: string): void {
 
 export function hasArticles(): boolean {
   const state = loadState();
-  return state.articles.some(a => !a.surfacedAt && !a.readAt);
+  return state.articles.some(a => !a.readAt);
 }
 
 export function getLastRefresh(): string | null {

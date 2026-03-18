@@ -1,13 +1,24 @@
 import styled from 'styled-components';
+import { Link } from 'react-router-dom';
 
 import { Card } from '../common/Card';
 import { useNewsFeed } from '../../hooks/useNewsFeed';
+import { CATEGORY_LABELS, type Category } from '../../services/newsFeedService';
+
+const CATEGORY_COLORS: Record<Category, string> = {
+  tech: 'rgba(120, 180, 255, 0.7)',
+  science: 'rgba(130, 220, 180, 0.7)',
+  world: 'rgba(255, 180, 120, 0.7)',
+  culture: 'rgba(220, 160, 255, 0.7)',
+  history: 'rgba(255, 210, 130, 0.7)',
+  business: 'rgba(180, 200, 240, 0.7)',
+  wikipedia: 'rgba(200, 200, 200, 0.7)',
+};
 
 const Panel = styled(Card)`
   display: flex;
   flex-direction: column;
-  gap: clamp(12px, 2vw, 18px);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 32px rgba(200, 160, 255, 0.3);
+  gap: clamp(10px, 1.5vw, 14px);
   overflow: hidden;
 `;
 
@@ -26,117 +37,107 @@ const Heading = styled.h3`
   text-transform: uppercase;
 `;
 
-const RefreshButton = styled.button`
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  color: inherit;
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
+const ViewAllLink = styled(Link)`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding: 4px 10px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-
-  &:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.18);
-    border-color: rgba(255, 255, 255, 0.35);
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
+  text-decoration: none;
+  color: inherit;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+  &:hover { opacity: 1; }
 `;
 
 const ArticlesList = styled.div`
   display: flex;
   flex-direction: column;
-  gap: clamp(8px, 1.5vw, 12px);
+  gap: clamp(6px, 1vw, 8px);
   overflow-y: auto;
-  max-height: 420px;
+  max-height: 380px;
 
-  &::-webkit-scrollbar {
-    width: 4px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
+  &::-webkit-scrollbar { width: 3px; }
+  &::-webkit-scrollbar-track { background: transparent; }
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.12);
     border-radius: 2px;
-
-    &:hover {
-      background: rgba(255, 255, 255, 0.25);
-    }
   }
 `;
 
-const ArticleCard = styled.a<{ $isWikipedia?: boolean }>`
+const ArticleRow = styled.a`
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: clamp(10px, 2vw, 14px);
-  border-radius: 18px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid ${({ $isWikipedia }) =>
-    $isWikipedia ? 'rgba(200, 180, 255, 0.25)' : 'rgba(255, 255, 255, 0.2)'};
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   transition: all 0.2s ease;
   text-decoration: none;
   color: inherit;
   cursor: pointer;
 
   &:hover {
-    background: rgba(0, 0, 0, 0.25);
-    border-color: ${({ $isWikipedia }) =>
-      $isWikipedia ? 'rgba(200, 180, 255, 0.4)' : 'rgba(255, 255, 255, 0.3)'};
+    background: rgba(0, 0, 0, 0.22);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 `;
 
-const ArticleSource = styled.div`
-  font-size: 0.75rem;
-  letter-spacing: 0.1em;
+const CategoryPill = styled.span<{ $color: string }>`
+  flex-shrink: 0;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  opacity: 0.6;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: ${({ $color }) => $color.replace('0.7', '0.18')};
+  color: ${({ $color }) => $color};
+  margin-top: 2px;
+  white-space: nowrap;
+`;
+
+const ArticleContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 `;
 
 const ArticleTitle = styled.div`
   font-family: ${({ theme }) => theme.fonts.body};
-  font-size: 0.95rem;
-  line-height: 1.35;
+  font-size: 0.88rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 `;
 
-const ArticleSummary = styled.div`
-  font-size: 0.82rem;
-  line-height: 1.4;
-  opacity: 0.7;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+const ArticleSource = styled.div`
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.45;
 `;
 
 const EmptyState = styled.p`
   margin: 0;
-  font-size: 0.9rem;
-  opacity: 0.8;
+  font-size: 0.85rem;
+  opacity: 0.6;
   text-align: center;
-  padding: 20px;
+  padding: 16px 0;
 `;
 
 const LoadingState = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px;
-  font-size: 1.2rem;
-  opacity: 0.6;
+  padding: 28px;
+  font-size: 1rem;
+  opacity: 0.5;
 `;
 
 export function DashboardNewsFeed() {
-  const { feedQuery, refreshFeed, markRead, isRefreshing } = useNewsFeed();
+  const { feedQuery, markRead } = useNewsFeed();
 
   const handleArticleClick = (articleId: string) => {
     markRead(articleId);
@@ -145,39 +146,36 @@ export function DashboardNewsFeed() {
   return (
     <Panel>
       <HeadingRow>
-        <Heading data-halo="heading">News Feed</Heading>
-        <RefreshButton onClick={refreshFeed} disabled={isRefreshing}>
-          {isRefreshing ? '...' : 'Refresh'}
-        </RefreshButton>
+        <Heading data-halo="heading">Reading List</Heading>
+        <ViewAllLink to="/news">View All</ViewAllLink>
       </HeadingRow>
 
       {feedQuery.isLoading ? (
         <LoadingState>Loading...</LoadingState>
       ) : !feedQuery.data?.length ? (
-        <EmptyState>No articles yet — click Refresh to fetch news</EmptyState>
+        <EmptyState>No articles yet</EmptyState>
       ) : (
         <ArticlesList>
           {feedQuery.data.map(article => (
-            <ArticleCard
+            <ArticleRow
               key={article.id}
               href={article.url}
               target="_blank"
               rel="noopener noreferrer"
-              $isWikipedia={article.sourceType === 'wikipedia'}
               onClick={() => handleArticleClick(article.id)}
             >
-              <ArticleSource data-halo="body">
-                {article.sourceName}
-              </ArticleSource>
-              <ArticleTitle data-halo="body">
-                {article.title}
-              </ArticleTitle>
-              {article.summary && (
-                <ArticleSummary data-halo="body">
-                  {article.summary}
-                </ArticleSummary>
-              )}
-            </ArticleCard>
+              <CategoryPill $color={CATEGORY_COLORS[article.category]}>
+                {CATEGORY_LABELS[article.category]}
+              </CategoryPill>
+              <ArticleContent>
+                <ArticleTitle data-halo="body">
+                  {article.title}
+                </ArticleTitle>
+                <ArticleSource data-halo="body">
+                  {article.sourceName}
+                </ArticleSource>
+              </ArticleContent>
+            </ArticleRow>
           ))}
         </ArticlesList>
       )}

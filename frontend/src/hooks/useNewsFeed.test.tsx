@@ -15,14 +15,16 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => useQueryClientMock(),
 }));
 
-const getUnsurfacedArticlesMock = vi.fn();
+const getTopPerCategoryMock = vi.fn();
+const getAllByCategoryMock = vi.fn();
 const refreshFeedMock = vi.fn();
 const markArticleReadMock = vi.fn();
 const extractKeywordsMock = vi.fn();
 const hasArticlesMock = vi.fn();
 
 vi.mock('../services/newsFeedService', () => ({
-  getUnsurfacedArticles: (...args: unknown[]) => getUnsurfacedArticlesMock(...args),
+  getTopPerCategory: (...args: unknown[]) => getTopPerCategoryMock(...args),
+  getAllByCategory: (...args: unknown[]) => getAllByCategoryMock(...args),
   refreshFeed: (...args: unknown[]) => refreshFeedMock(...args),
   markArticleRead: (...args: unknown[]) => markArticleReadMock(...args),
   extractKeywordsFromContext: (...args: unknown[]) => extractKeywordsMock(...args),
@@ -60,7 +62,8 @@ beforeEach(() => {
   });
 
   hasArticlesMock.mockReturnValue(true);
-  getUnsurfacedArticlesMock.mockReturnValue([]);
+  getTopPerCategoryMock.mockReturnValue([]);
+  getAllByCategoryMock.mockReturnValue({ tech: [], science: [], world: [], culture: [], history: [], business: [], wikipedia: [] });
   refreshFeedMock.mockResolvedValue({ articles: [], newCount: 0 });
   extractKeywordsMock.mockReturnValue([]);
 });
@@ -68,7 +71,14 @@ beforeEach(() => {
 // ── Tests ────────────────────────────────────────────────────────────────
 
 describe('useNewsFeed', () => {
-  it('creates a query with the correct key and stale time', () => {
+  it('creates two queries: feedQuery and allQuery', () => {
+    render(<HookProbe />);
+
+    // Should call useQuery twice (once for feed, once for all)
+    expect(useQueryMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('feedQuery uses correct key and stale time', () => {
     render(<HookProbe />);
 
     expect(useQueryMock).toHaveBeenCalledWith(
@@ -80,43 +90,74 @@ describe('useNewsFeed', () => {
     );
   });
 
-  it('provides a queryFn that calls getUnsurfacedArticles', async () => {
+  it('allQuery uses correct key and stale time', () => {
     render(<HookProbe />);
 
-    const queryOptions = useQueryMock.mock.calls[0][0];
-    const queryFn = queryOptions.queryFn;
+    expect(useQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: ['news', 'all'],
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+      })
+    );
+  });
+
+  it('feedQuery calls getTopPerCategory', async () => {
+    render(<HookProbe />);
+
+    const feedQueryOptions = useQueryMock.mock.calls.find(
+      (call: any) => call[0].queryKey[1] === 'feed'
+    )[0];
 
     hasArticlesMock.mockReturnValue(true);
-    getUnsurfacedArticlesMock.mockReturnValue([{ id: 'test' }]);
+    getTopPerCategoryMock.mockReturnValue([{ id: 'top1', category: 'tech' }]);
 
-    const result = await queryFn();
-    expect(getUnsurfacedArticlesMock).toHaveBeenCalledWith(8);
-    expect(result).toEqual([{ id: 'test' }]);
+    const result = await feedQueryOptions.queryFn();
+    expect(getTopPerCategoryMock).toHaveBeenCalled();
+    expect(result).toEqual([{ id: 'top1', category: 'tech' }]);
+  });
+
+  it('allQuery calls getAllByCategory', async () => {
+    render(<HookProbe />);
+
+    const allQueryOptions = useQueryMock.mock.calls.find(
+      (call: any) => call[0].queryKey[1] === 'all'
+    )[0];
+
+    hasArticlesMock.mockReturnValue(true);
+    const mockResult = { tech: [{ id: 't1' }], science: [], world: [], culture: [], history: [], business: [], wikipedia: [] };
+    getAllByCategoryMock.mockReturnValue(mockResult);
+
+    const result = await allQueryOptions.queryFn();
+    expect(getAllByCategoryMock).toHaveBeenCalled();
+    expect(result).toEqual(mockResult);
   });
 
   it('triggers auto-refresh when no articles exist', async () => {
     render(<HookProbe />);
 
-    const queryFn = useQueryMock.mock.calls[0][0].queryFn;
+    const feedQueryOptions = useQueryMock.mock.calls.find(
+      (call: any) => call[0].queryKey[1] === 'feed'
+    )[0];
 
     hasArticlesMock.mockReturnValue(false);
-    getUnsurfacedArticlesMock.mockReturnValue([]);
+    getTopPerCategoryMock.mockReturnValue([]);
 
-    await queryFn();
-
+    await feedQueryOptions.queryFn();
     expect(refreshFeedMock).toHaveBeenCalled();
   });
 
   it('does not auto-refresh when articles exist', async () => {
     render(<HookProbe />);
 
-    const queryFn = useQueryMock.mock.calls[0][0].queryFn;
+    const feedQueryOptions = useQueryMock.mock.calls.find(
+      (call: any) => call[0].queryKey[1] === 'feed'
+    )[0];
 
     hasArticlesMock.mockReturnValue(true);
-    getUnsurfacedArticlesMock.mockReturnValue([{ id: 'existing' }]);
+    getTopPerCategoryMock.mockReturnValue([{ id: 'existing' }]);
 
-    await queryFn();
-
+    await feedQueryOptions.queryFn();
     expect(refreshFeedMock).not.toHaveBeenCalled();
   });
 
@@ -125,7 +166,7 @@ describe('useNewsFeed', () => {
       todosQuery: {
         data: [
           { id: 1, text: 'Learn Python', completed: false },
-          { id: 2, text: 'Buy groceries', completed: true }, // should be filtered
+          { id: 2, text: 'Buy groceries', completed: true },
           { id: 3, text: 'Study machine learning', completed: false },
         ],
       },
@@ -133,9 +174,11 @@ describe('useNewsFeed', () => {
 
     render(<HookProbe />);
 
-    const queryFn = useQueryMock.mock.calls[0][0].queryFn;
+    const feedQueryOptions = useQueryMock.mock.calls.find(
+      (call: any) => call[0].queryKey[1] === 'feed'
+    )[0];
     hasArticlesMock.mockReturnValue(false);
-    await queryFn();
+    await feedQueryOptions.queryFn();
 
     expect(extractKeywordsMock).toHaveBeenCalledWith(
       ['Learn Python', 'Study machine learning'],
@@ -146,7 +189,6 @@ describe('useNewsFeed', () => {
   it('creates a mutation for markRead', () => {
     render(<HookProbe />);
 
-    // Second useMutation call is for markRead
     expect(useMutationMock).toHaveBeenCalled();
     const markReadOptions = useMutationMock.mock.calls[0][0];
     expect(markReadOptions.mutationFn).toBeDefined();
@@ -166,11 +208,12 @@ describe('useNewsFeed', () => {
     expect(hookResult.isRefreshing).toBe(false);
   });
 
-  it('exposes feedQuery from useQuery', () => {
-    const mockQueryResult = { data: [{ id: 'x' }], isLoading: false };
-    useQueryMock.mockReturnValue(mockQueryResult);
+  it('exposes feedQuery and allQuery from useQuery', () => {
+    const mockResult = { data: [{ id: 'x' }], isLoading: false };
+    useQueryMock.mockReturnValue(mockResult);
 
     render(<HookProbe />);
-    expect(hookResult.feedQuery).toBe(mockQueryResult);
+    expect(hookResult.feedQuery).toBe(mockResult);
+    expect(hookResult.allQuery).toBe(mockResult);
   });
 });

@@ -7,12 +7,15 @@ import {
   getSources,
   saveSources,
   getUnsurfacedArticles,
+  getTopPerCategory,
+  getAllByCategory,
   markArticleRead,
   hasArticles,
   getLastRefresh,
   refreshFeed,
   type NewsArticle,
   type FeedSource,
+  type Category,
 } from './newsFeedService';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -25,6 +28,7 @@ function makeArticle(overrides: Partial<NewsArticle> = {}): NewsArticle {
     id: overrides.id ?? 'abc123',
     sourceType: 'rss',
     sourceName: 'Test Feed',
+    category: 'tech',
     url: 'https://example.com/article',
     title: 'Test Article',
     summary: 'A test summary',
@@ -76,7 +80,6 @@ describe('scoreArticle', () => {
       ['machine', 'learning', 'framework']
     );
     expect(score).toBeGreaterThan(0.1);
-    // 3 out of 3 keywords match → 0.1 + 0.9 * 1.0 = 1.0
     expect(score).toBe(1.0);
   });
 
@@ -85,7 +88,6 @@ describe('scoreArticle', () => {
       { title: 'Python tutorial', summary: 'Learn python basics' },
       ['python', 'javascript', 'rust', 'golang']
     );
-    // 1 out of 4 keywords match → 0.1 + 0.9 * 0.25 = 0.325
     expect(score).toBeCloseTo(0.325, 2);
   });
 
@@ -94,7 +96,6 @@ describe('scoreArticle', () => {
       { title: 'The rise of machine learning in healthcare', summary: null },
       ['machine learning']
     );
-    // multi-word keyword found → 1/1 = 1.0 → 0.1 + 0.9 = 1.0
     expect(score).toBe(1.0);
   });
 
@@ -120,7 +121,6 @@ describe('scoreArticle', () => {
   });
 
   it('caps score at 1.0 even with many matches', () => {
-    // All 2 keywords match → should cap at 1.0
     const score = scoreArticle(
       { title: 'python rust', summary: 'python and rust are great' },
       ['python', 'rust']
@@ -203,14 +203,26 @@ describe('extractKeywordsFromContext', () => {
 describe('getSources / saveSources', () => {
   it('returns default sources when nothing stored', () => {
     const sources = getSources();
-    expect(sources.length).toBe(5);
-    expect(sources[0].name).toBe('Hacker News Best');
+    expect(sources.length).toBeGreaterThanOrEqual(9);
+    expect(sources[0].name).toBe('Hacker News');
     expect(sources.every(s => s.enabled)).toBe(true);
+    expect(sources.every(s => 'category' in s)).toBe(true);
+  });
+
+  it('default sources span multiple categories', () => {
+    const sources = getSources();
+    const categories = new Set(sources.map(s => s.category));
+    expect(categories.size).toBeGreaterThanOrEqual(5);
+    expect(categories.has('tech')).toBe(true);
+    expect(categories.has('science')).toBe(true);
+    expect(categories.has('world')).toBe(true);
+    expect(categories.has('culture')).toBe(true);
+    expect(categories.has('business')).toBe(true);
   });
 
   it('returns stored sources after saving', () => {
     const custom: FeedSource[] = [
-      { url: 'https://example.com/feed', name: 'My Feed', enabled: true },
+      { url: 'https://example.com/feed', name: 'My Feed', category: 'tech', enabled: true },
     ];
     saveSources(custom);
     const loaded = getSources();
@@ -220,7 +232,108 @@ describe('getSources / saveSources', () => {
   it('returns defaults if localStorage is corrupted', () => {
     localStorage.setItem(SOURCES_KEY, 'not valid json!!!');
     const sources = getSources();
-    expect(sources.length).toBe(5);
+    expect(sources.length).toBeGreaterThanOrEqual(9);
+  });
+
+  it('returns defaults if stored sources lack category field', () => {
+    // Old-format sources without category
+    localStorage.setItem(SOURCES_KEY, JSON.stringify([
+      { url: 'https://old.com/feed', name: 'Old Feed', enabled: true },
+    ]));
+    const sources = getSources();
+    // Should return defaults since stored sources don't have category
+    expect(sources.length).toBeGreaterThanOrEqual(9);
+    expect(sources.every(s => 'category' in s)).toBe(true);
+  });
+});
+
+// ── getTopPerCategory ────────────────────────────────────────────────────
+
+describe('getTopPerCategory', () => {
+  it('returns empty array when no articles exist', () => {
+    expect(getTopPerCategory()).toEqual([]);
+  });
+
+  it('returns one article per category', () => {
+    seedStorage([
+      makeArticle({ id: 'tech1', category: 'tech', relevanceScore: 0.8 }),
+      makeArticle({ id: 'tech2', category: 'tech', relevanceScore: 0.5 }),
+      makeArticle({ id: 'sci1', category: 'science', relevanceScore: 0.7 }),
+      makeArticle({ id: 'world1', category: 'world', relevanceScore: 0.6 }),
+    ]);
+
+    const picks = getTopPerCategory();
+    expect(picks.length).toBe(3);
+    const categories = picks.map(a => a.category);
+    expect(new Set(categories).size).toBe(3);
+  });
+
+  it('picks the highest-scored article per category', () => {
+    seedStorage([
+      makeArticle({ id: 'tech-high', category: 'tech', relevanceScore: 0.9 }),
+      makeArticle({ id: 'tech-low', category: 'tech', relevanceScore: 0.2 }),
+    ]);
+
+    const picks = getTopPerCategory();
+    expect(picks.length).toBe(1);
+    expect(picks[0].id).toBe('tech-high');
+  });
+
+  it('skips read articles', () => {
+    seedStorage([
+      makeArticle({ id: 'read', category: 'tech', readAt: '2026-03-18T00:00:00Z' }),
+      makeArticle({ id: 'unread', category: 'tech' }),
+    ]);
+
+    const picks = getTopPerCategory();
+    expect(picks.length).toBe(1);
+    expect(picks[0].id).toBe('unread');
+  });
+});
+
+// ── getAllByCategory ─────────────────────────────────────────────────────
+
+describe('getAllByCategory', () => {
+  it('returns empty categories when no articles', () => {
+    const result = getAllByCategory();
+    expect(result.tech).toEqual([]);
+    expect(result.science).toEqual([]);
+    expect(result.world).toEqual([]);
+  });
+
+  it('groups articles by category', () => {
+    seedStorage([
+      makeArticle({ id: 'tech1', category: 'tech' }),
+      makeArticle({ id: 'tech2', category: 'tech' }),
+      makeArticle({ id: 'sci1', category: 'science' }),
+    ]);
+
+    const result = getAllByCategory();
+    expect(result.tech.length).toBe(2);
+    expect(result.science.length).toBe(1);
+    expect(result.world.length).toBe(0);
+  });
+
+  it('skips read articles', () => {
+    seedStorage([
+      makeArticle({ id: 'read', category: 'tech', readAt: '2026-03-18T00:00:00Z' }),
+      makeArticle({ id: 'unread', category: 'tech' }),
+    ]);
+
+    const result = getAllByCategory();
+    expect(result.tech.length).toBe(1);
+    expect(result.tech[0].id).toBe('unread');
+  });
+
+  it('sorts by relevance within category', () => {
+    seedStorage([
+      makeArticle({ id: 'low', category: 'tech', relevanceScore: 0.2 }),
+      makeArticle({ id: 'high', category: 'tech', relevanceScore: 0.9 }),
+    ]);
+
+    const result = getAllByCategory();
+    expect(result.tech[0].id).toBe('high');
+    expect(result.tech[1].id).toBe('low');
   });
 });
 
@@ -292,8 +405,8 @@ describe('getUnsurfacedArticles', () => {
       makeArticle({ id: 'a2' }),
     ]);
 
-    getUnsurfacedArticles(); // surfaces a1, a2
-    const second = getUnsurfacedArticles(); // nothing left
+    getUnsurfacedArticles();
+    const second = getUnsurfacedArticles();
     expect(second.length).toBe(0);
   });
 
@@ -320,7 +433,6 @@ describe('markArticleRead', () => {
     const state = readStorage();
     const article = state.articles.find(a => a.id === 'target');
     expect(article?.readAt).toBeTruthy();
-    // readAt should be a valid ISO date
     expect(new Date(article!.readAt!).getTime()).toBeGreaterThan(0);
   });
 
@@ -364,14 +476,14 @@ describe('hasArticles', () => {
     expect(hasArticles()).toBe(false);
   });
 
-  it('returns true when unsurfaced, unread articles exist', () => {
+  it('returns true when unread articles exist', () => {
     seedStorage([makeArticle()]);
     expect(hasArticles()).toBe(true);
   });
 
-  it('returns false when all articles are surfaced', () => {
+  it('returns true when surfaced but unread articles exist', () => {
     seedStorage([makeArticle({ surfacedAt: '2026-03-18T00:00:00Z' })]);
-    expect(hasArticles()).toBe(false);
+    expect(hasArticles()).toBe(true);
   });
 
   it('returns false when all articles are read', () => {
@@ -379,10 +491,10 @@ describe('hasArticles', () => {
     expect(hasArticles()).toBe(false);
   });
 
-  it('returns true if at least one article is unsurfaced and unread', () => {
+  it('returns true if at least one article is unread', () => {
     seedStorage([
-      makeArticle({ id: 'surfaced', surfacedAt: '2026-03-18T00:00:00Z' }),
-      makeArticle({ id: 'fresh' }),
+      makeArticle({ id: 'read', readAt: '2026-03-18T00:00:00Z' }),
+      makeArticle({ id: 'unread' }),
     ]);
     expect(hasArticles()).toBe(true);
   });
@@ -416,18 +528,29 @@ describe('localStorage resilience', () => {
   });
 
   it('markArticleRead handles empty storage', () => {
-    // Should not throw
     markArticleRead('nonexistent');
     const state = readStorage();
     expect(state.articles).toEqual([]);
   });
+
+  it('getTopPerCategory handles corrupted storage', () => {
+    localStorage.setItem(STORAGE_KEY, 'not json');
+    expect(getTopPerCategory()).toEqual([]);
+  });
+
+  it('getAllByCategory handles corrupted storage', () => {
+    localStorage.setItem(STORAGE_KEY, '{bad');
+    const result = getAllByCategory();
+    expect(result.tech).toEqual([]);
+    expect(result.science).toEqual([]);
+  });
 });
 
-// ── saveState truncation (via getUnsurfacedArticles roundtrip) ───────────
+// ── saveState truncation ─────────────────────────────────────────────────
 
 describe('storage size limit', () => {
-  it('truncates to 200 articles when exceeding limit', () => {
-    const articles = Array.from({ length: 250 }, (_, i) =>
+  it('truncates to 500 articles when exceeding limit', () => {
+    const articles = Array.from({ length: 550 }, (_, i) =>
       makeArticle({
         id: `art-${i}`,
         fetchedAt: new Date(2026, 2, 18, 0, 0, i).toISOString(),
@@ -439,7 +562,7 @@ describe('storage size limit', () => {
     getUnsurfacedArticles(1);
 
     const state = readStorage();
-    expect(state.articles.length).toBeLessThanOrEqual(200);
+    expect(state.articles.length).toBeLessThanOrEqual(500);
   });
 
   it('preserves read articles during truncation', () => {
@@ -450,7 +573,7 @@ describe('storage size limit', () => {
         fetchedAt: new Date(2026, 0, 1).toISOString(),
       })
     );
-    const unreadArticles = Array.from({ length: 200 }, (_, i) =>
+    const unreadArticles = Array.from({ length: 500 }, (_, i) =>
       makeArticle({
         id: `unread-${i}`,
         fetchedAt: new Date(2026, 2, 18, 0, 0, i).toISOString(),
@@ -462,42 +585,30 @@ describe('storage size limit', () => {
 
     const state = readStorage();
     const readCount = state.articles.filter(a => a.readAt).length;
-    expect(readCount).toBe(10); // all read articles preserved
-    expect(state.articles.length).toBeLessThanOrEqual(200);
+    expect(readCount).toBe(10);
+    expect(state.articles.length).toBeLessThanOrEqual(500);
   });
 });
 
 // ── refreshFeed ──────────────────────────────────────────────────────────
 
 describe('refreshFeed', () => {
-  const SAMPLE_RSS = `<?xml version="1.0"?>
-<rss version="2.0">
-  <channel>
-    <title>Test Feed</title>
-    <item>
-      <title>RSS Article One</title>
-      <link>https://example.com/rss-1</link>
-      <description>First RSS article about python programming</description>
-      <pubDate>Mon, 18 Mar 2026 12:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>RSS Article Two</title>
-      <link>https://example.com/rss-2</link>
-      <description>Second article about rust language</description>
-    </item>
-  </channel>
-</rss>`;
-
-  const SAMPLE_ATOM = `<?xml version="1.0"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-  <title>Atom Feed</title>
-  <entry>
-    <title>Atom Entry</title>
-    <link href="https://example.com/atom-1"/>
-    <summary>An atom entry about golang</summary>
-    <updated>2026-03-18T10:00:00Z</updated>
-  </entry>
-</feed>`;
+  const SAMPLE_RSS_JSON = {
+    status: 'ok',
+    items: [
+      {
+        title: 'RSS Article One',
+        link: 'https://example.com/rss-1',
+        description: 'First RSS article about python programming',
+        pubDate: 'Mon, 18 Mar 2026 12:00:00 GMT',
+      },
+      {
+        title: 'RSS Article Two',
+        link: 'https://example.com/rss-2',
+        description: 'Second article about rust language',
+      },
+    ],
+  };
 
   const SAMPLE_WIKIPEDIA = {
     tfa: {
@@ -505,6 +616,17 @@ describe('refreshFeed', () => {
       extract: 'This is the featured article about quantum computing',
       content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Featured' } },
     },
+    onthisday: [
+      {
+        year: 1969,
+        text: 'Apollo 11 lands on the moon',
+        pages: [{
+          titles: { normalized: 'Apollo 11' },
+          content_urls: { desktop: { page: 'https://en.wikipedia.org/wiki/Apollo_11' } },
+          extract: 'Apollo 11 was the spaceflight...',
+        }],
+      },
+    ],
     mostread: {
       articles: [
         {
@@ -521,11 +643,14 @@ describe('refreshFeed', () => {
     },
   };
 
-  function mockFetch(rssXml: string, wikiJson: object) {
+  function mockFetch(rssJson: object, wikiJson: object) {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('allorigins.win')) {
-        return new Response(rssXml, { status: 200 });
+      if (url.includes('rss2json.com')) {
+        return new Response(JSON.stringify(rssJson), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
       if (url.includes('wikimedia.org')) {
         return new Response(JSON.stringify(wikiJson), {
@@ -538,42 +663,57 @@ describe('refreshFeed', () => {
   }
 
   beforeEach(() => {
-    // Use a single source for simpler testing
-    saveSources([{ url: 'https://test.com/feed', name: 'Test Feed', enabled: true }]);
+    saveSources([{ url: 'https://test.com/feed', name: 'Test Feed', category: 'tech', enabled: true }]);
   });
 
   it('fetches RSS and Wikipedia articles', async () => {
-    mockFetch(SAMPLE_RSS, SAMPLE_WIKIPEDIA);
+    mockFetch(SAMPLE_RSS_JSON, SAMPLE_WIKIPEDIA);
 
     const result = await refreshFeed([]);
 
-    // 2 RSS + 1 featured + 2 trending = 5
-    expect(result.newCount).toBe(5);
-    expect(result.articles.length).toBe(5);
+    // 2 RSS + 1 featured + 1 onthisday + 2 trending = 6
+    expect(result.newCount).toBe(6);
+    expect(result.articles.length).toBe(6);
   });
 
   it('stores articles in localStorage after refresh', async () => {
-    mockFetch(SAMPLE_RSS, SAMPLE_WIKIPEDIA);
+    mockFetch(SAMPLE_RSS_JSON, SAMPLE_WIKIPEDIA);
 
     await refreshFeed([]);
 
     const state = readStorage();
-    expect(state.articles.length).toBe(5);
+    expect(state.articles.length).toBe(6);
     expect(state.lastRefresh).toBeTruthy();
   });
 
+  it('assigns correct categories to articles', async () => {
+    mockFetch(SAMPLE_RSS_JSON, SAMPLE_WIKIPEDIA);
+
+    const result = await refreshFeed([]);
+
+    const rssArticles = result.articles.filter(a => a.sourceType === 'rss');
+    expect(rssArticles.every(a => a.category === 'tech')).toBe(true);
+
+    const historyArticles = result.articles.filter(a => a.category === 'history');
+    expect(historyArticles.length).toBe(1);
+    expect(historyArticles[0].sourceName).toBe('On This Day');
+
+    const wikiArticles = result.articles.filter(a => a.category === 'wikipedia');
+    expect(wikiArticles.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('deduplicates articles by URL on repeated refresh', async () => {
-    mockFetch(SAMPLE_RSS, SAMPLE_WIKIPEDIA);
+    mockFetch(SAMPLE_RSS_JSON, SAMPLE_WIKIPEDIA);
 
     await refreshFeed([]);
     const result2 = await refreshFeed([]);
 
-    expect(result2.newCount).toBe(0); // all duplicates
-    expect(result2.articles.length).toBe(5); // same total
+    expect(result2.newCount).toBe(0);
+    expect(result2.articles.length).toBe(6);
   });
 
   it('assigns relevance scores based on keywords', async () => {
-    mockFetch(SAMPLE_RSS, SAMPLE_WIKIPEDIA);
+    mockFetch(SAMPLE_RSS_JSON, SAMPLE_WIKIPEDIA);
 
     const result = await refreshFeed(['python']);
 
@@ -582,13 +722,15 @@ describe('refreshFeed', () => {
 
     expect(pythonArticle).toBeTruthy();
     expect(rustArticle).toBeTruthy();
-    // Python article matches keyword, should score higher
     expect(pythonArticle!.relevanceScore).toBeGreaterThan(rustArticle!.relevanceScore);
   });
 
-  it('handles RSS fetch failure gracefully', async () => {
+  it('handles RSS fetch failure gracefully (falls back to allorigins)', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('rss2json.com')) {
+        return new Response('', { status: 500 });
+      }
       if (url.includes('allorigins.win')) {
         return new Response('', { status: 500 });
       }
@@ -602,15 +744,18 @@ describe('refreshFeed', () => {
     });
 
     const result = await refreshFeed([]);
-    // Only Wikipedia articles (3)
-    expect(result.newCount).toBe(3);
+    // Only Wikipedia articles (1 featured + 1 onthisday + 2 trending = 4)
+    expect(result.newCount).toBe(4);
   });
 
   it('handles Wikipedia fetch failure gracefully', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('allorigins.win')) {
-        return new Response(SAMPLE_RSS, { status: 200 });
+      if (url.includes('rss2json.com')) {
+        return new Response(JSON.stringify(SAMPLE_RSS_JSON), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
       }
       if (url.includes('wikimedia.org')) {
         return new Response('', { status: 500 });
@@ -619,7 +764,6 @@ describe('refreshFeed', () => {
     });
 
     const result = await refreshFeed([]);
-    // Only RSS articles (2)
     expect(result.newCount).toBe(2);
   });
 
@@ -631,39 +775,10 @@ describe('refreshFeed', () => {
     expect(result.articles.length).toBe(0);
   });
 
-  it('parses Atom feeds correctly', async () => {
-    mockFetch(SAMPLE_ATOM, { mostread: { articles: [] } });
-
-    const result = await refreshFeed([]);
-
-    const atomArticle = result.articles.find(a => a.title === 'Atom Entry');
-    expect(atomArticle).toBeTruthy();
-    expect(atomArticle!.url).toBe('https://example.com/atom-1');
-    expect(atomArticle!.summary).toContain('golang');
-  });
-
-  it('strips HTML tags from titles and summaries', async () => {
-    const rssWithHtml = `<?xml version="1.0"?>
-<rss version="2.0"><channel><title>T</title>
-  <item>
-    <title>&lt;b&gt;Bold Title&lt;/b&gt;</title>
-    <link>https://example.com/html</link>
-    <description>&lt;p&gt;A &lt;strong&gt;bold&lt;/strong&gt; description&lt;/p&gt;</description>
-  </item>
-</channel></rss>`;
-    mockFetch(rssWithHtml, { mostread: { articles: [] } });
-
-    const result = await refreshFeed([]);
-    const article = result.articles.find(a => a.url === 'https://example.com/html');
-    expect(article).toBeTruthy();
-    expect(article!.title).not.toContain('<');
-    expect(article!.summary).not.toContain('<');
-  });
-
   it('only processes enabled sources', async () => {
     saveSources([
-      { url: 'https://test.com/feed', name: 'Enabled', enabled: true },
-      { url: 'https://disabled.com/feed', name: 'Disabled', enabled: false },
+      { url: 'https://test.com/feed', name: 'Enabled', category: 'tech', enabled: true },
+      { url: 'https://disabled.com/feed', name: 'Disabled', category: 'science', enabled: false },
     ]);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
@@ -673,14 +788,19 @@ describe('refreshFeed', () => {
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      return new Response(SAMPLE_RSS, { status: 200 });
+      if (url.includes('rss2json.com')) {
+        return new Response(JSON.stringify(SAMPLE_RSS_JSON), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('', { status: 404 });
     });
 
     await refreshFeed([]);
 
-    // Should only have fetched for the enabled source (+ wikipedia)
     const rssCalls = fetchSpy.mock.calls.filter(
-      ([url]) => typeof url === 'string' && url.includes('allorigins.win')
+      ([url]) => typeof url === 'string' && url.includes('rss2json.com')
     );
     expect(rssCalls.length).toBe(1);
     expect(rssCalls[0][0]).toContain(encodeURIComponent('https://test.com/feed'));
@@ -702,32 +822,36 @@ describe('refreshFeed', () => {
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      return new Response('<rss><channel></channel></rss>', { status: 200 });
+      if (url.includes('rss2json.com')) {
+        return new Response(JSON.stringify({ status: 'ok', items: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('', { status: 404 });
     });
 
     await refreshFeed([]);
 
     const state = readStorage();
     const ids = state.articles.map(a => a.id);
-    expect(ids).not.toContain('old-unread'); // old + unread → cleaned
-    expect(ids).toContain('old-read');       // old + read → preserved
-    expect(ids).toContain('recent');         // recent → preserved
+    expect(ids).not.toContain('old-unread');
+    expect(ids).toContain('old-read');
+    expect(ids).toContain('recent');
   });
 
-  it('limits RSS items to 15 per feed', async () => {
-    const items = Array.from({ length: 20 }, (_, i) => `
-      <item>
-        <title>Item ${i}</title>
-        <link>https://example.com/item-${i}</link>
-        <description>Description ${i}</description>
-      </item>
-    `).join('');
-    const bigRss = `<?xml version="1.0"?><rss version="2.0"><channel><title>Big</title>${items}</channel></rss>`;
+  it('limits RSS items to 12 per feed', async () => {
+    const items = Array.from({ length: 20 }, (_, i) => ({
+      title: `Item ${i}`,
+      link: `https://example.com/item-${i}`,
+      description: `Description ${i}`,
+    }));
+    const bigFeed = { status: 'ok', items };
 
-    mockFetch(bigRss, { mostread: { articles: [] } });
+    mockFetch(bigFeed, { mostread: { articles: [] } });
 
     const result = await refreshFeed([]);
     const rssArticles = result.articles.filter(a => a.sourceType === 'rss');
-    expect(rssArticles.length).toBe(15);
+    expect(rssArticles.length).toBe(12);
   });
 });

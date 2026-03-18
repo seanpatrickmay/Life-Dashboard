@@ -8,30 +8,23 @@ import { TodoScrollPad } from '../components/todo/TodoScrollPad';
 const Grid = styled.div`
   display: grid;
   gap: clamp(20px, 3vw, 32px);
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: auto auto;
   align-items: start;
   margin-top: clamp(24px, 6vh, 84px);
 
-  @media (max-width: 768px) {
+  @media (max-width: 860px) {
     grid-template-columns: 1fr;
   }
-`;
-
-const RightColumn = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: clamp(20px, 3vw, 32px);
 `;
 
 export function DashboardPage() {
   return (
     <Grid>
       <MonetChatPanel />
-      <RightColumn>
-        <TodoScrollPad />
-        <DashboardUpcomingEvents />
-        <DashboardNewsFeed />
-      </RightColumn>
+      <TodoScrollPad />
+      <DashboardNewsFeed />
+      <DashboardUpcomingEvents />
     </Grid>
   );
 }
