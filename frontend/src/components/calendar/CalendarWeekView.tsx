@@ -43,7 +43,7 @@ const WeekGrid = styled.div`
   height: 100%;
 `;
 
-const DayColumn = styled.div<{ $muted: boolean }>`
+const DayColumn = styled.div<{ $muted: boolean; $isToday: boolean }>`
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -51,8 +51,13 @@ const DayColumn = styled.div<{ $muted: boolean }>`
   padding: 2px;
   border-radius: 20px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => hexToRgba(theme.colors.textPrimary, theme.mode === 'dark' ? 0.08 : 0.04)};
+  background: ${({ theme }) => theme.colors.overlay};
   opacity: ${({ $muted }) => ($muted ? 0.6 : 1)};
+
+  ${({ $isToday, theme }) => $isToday && css`
+    border-color: ${theme.palette?.pond?.['200'] ?? theme.colors.accent};
+    background: ${theme.colors.overlayHover};
+  `}
 `;
 
 const DayHeader = styled.div`
@@ -65,8 +70,9 @@ const DayHeader = styled.div`
   font-size: 0.7rem;
 `;
 
-const DayName = styled.span`
-  color: ${({ theme }) => theme.colors.textPrimary};
+const DayName = styled.span<{ $isToday?: boolean }>`
+  color: ${({ theme, $isToday }) => $isToday ? (theme.palette?.pond?.['200'] ?? theme.colors.accent) : theme.colors.textPrimary};
+  font-weight: ${({ $isToday }) => $isToday ? 'bold' : 'normal'};
 `;
 
 const DayDate = styled.span`
@@ -139,21 +145,21 @@ const CardButton = styled.div<{
   border-radius: 8px;
   border: 1px ${({ $kind }) => ($kind === 'todo' ? 'dashed' : 'solid')}
     ${({ theme, $kind }) => ($kind === 'todo' ? theme.palette.lilac['200'] : theme.colors.borderSubtle)};
-  background: ${({ theme }) => hexToRgba(theme.colors.textPrimary, theme.mode === 'dark' ? 0.12 : 0.05)};
+  background: ${({ theme }) => theme.colors.overlay};
   cursor: ${({ $dragging }) => ($dragging ? 'grabbing' : 'grab')};
   opacity: ${({ $dragging }) => ($dragging ? 0.55 : 1)};
   transition: border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
   user-select: none;
 
-  ${({ $stacked, theme }) =>
+  ${({ $stacked }) =>
     $stacked
       ? css`
           box-shadow:
-            3px 3px 0 ${hexToRgba(theme.palette.neutral['900'], 0.06)},
-            6px 6px 0 ${hexToRgba(theme.palette.neutral['900'], 0.04)};
+            3px 3px 0 rgba(0, 0, 0, 0.06),
+            6px 6px 0 rgba(0, 0, 0, 0.04);
         `
       : css`
-          box-shadow: 0 6px 14px ${hexToRgba(theme.palette.neutral['900'], 0.08)};
+          box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
         `};
 
   &:hover {
@@ -197,7 +203,7 @@ const ResizeHandle = styled.div`
   height: 10px;
   border-radius: 6px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => hexToRgba(theme.colors.textPrimary, 0.08)};
+  background: ${({ theme }) => theme.colors.overlay};
   cursor: ns-resize;
 `;
 
@@ -206,12 +212,13 @@ const DropZone = styled.div<{ $active: boolean }>`
   padding: 2px;
   transition: background 0.2s ease;
   background: ${({ $active, theme }) =>
-    $active ? hexToRgba(theme.colors.textPrimary, theme.mode === 'dark' ? 0.16 : 0.08) : 'transparent'};
+    $active ? theme.colors.overlayActive : 'transparent'};
 `;
 
 type DayColumnProps = {
   day: Date;
   muted: boolean;
+  isToday: boolean;
   timedItems: CalendarItem[];
   allDayItems: CalendarItem[];
   draggingKey: string | null;
@@ -295,6 +302,7 @@ const useOverflowIndicator = ({ itemCount, itemHeight, gap, trackScroll }: Overf
 const CalendarDayColumn = ({
   day,
   muted,
+  isToday,
   timedItems,
   allDayItems,
   draggingKey,
@@ -395,9 +403,9 @@ const CalendarDayColumn = ({
   };
 
   return (
-    <DayColumn $muted={muted} data-day={dayKey}>
+    <DayColumn $muted={muted} $isToday={isToday} data-day={dayKey} aria-label={`${formatDayName(day)} ${formatDayDate(day)}`}>
       <DayHeader>
-        <DayName>{formatDayName(day)}</DayName>
+        <DayName $isToday={isToday}>{formatDayName(day)}</DayName>
         <DayDate>{formatDayDate(day)}</DayDate>
       </DayHeader>
 
@@ -507,6 +515,7 @@ export function CalendarWeekView({
 }: Props) {
   const [draggingItem, setDraggingItem] = useState<CalendarItem | null>(null);
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const todayKey = toDayKey(new Date());
 
   const timedByDay = useMemo(() => groupItemsByDay(days, timedItems), [days, timedItems]);
   const allDayByDay = useMemo(() => groupItemsByDay(days, allDayItems), [days, allDayItems]);
@@ -541,6 +550,7 @@ export function CalendarWeekView({
             key={key}
             day={day}
             muted={mutedDayIndex === index}
+            isToday={key === todayKey}
             timedItems={timedByDay.get(key) ?? []}
             allDayItems={allDayByDay.get(key) ?? []}
             draggingKey={draggingKey}
@@ -635,15 +645,3 @@ const isFullDayRange = (start: Date, end: Date) =>
   start.getMinutes() === 0 &&
   end.getHours() === 23 &&
   end.getMinutes() === 59;
-
-const hexToRgba = (hex: string, alpha: number) => {
-  const sanitized = hex.replace('#', '');
-  const parsed = sanitized.length === 3
-    ? sanitized.split('').map((char) => char + char).join('')
-    : sanitized;
-  const int = parseInt(parsed, 16);
-  const r = (int >> 16) & 255;
-  const g = (int >> 8) & 255;
-  const b = int & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};

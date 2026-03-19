@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import styled, { css } from 'styled-components';
+import styled from 'styled-components';
 import { CalendarWeekView, type CalendarItem } from '../components/calendar/CalendarWeekView';
 import { CalendarDetailDrawer } from '../components/calendar/CalendarDetailDrawer';
 import { PageAssistantPanel } from '../components/assistant/PageAssistantPanel';
 import { useCalendarEvents, useCalendarStatus, useCalendars } from '../hooks/useCalendar';
 import { useTodos } from '../hooks/useTodos';
-import { composeLayers, getCardLayers } from '../theme/monetTheme';
+import { Card } from '../components/common/Card';
+import { fadeUp, reducedMotion } from '../styles/animations';
 import type { AssistantPageContext, CalendarEvent, TodoItem } from '../services/api';
 
 const Layout = styled.div`
@@ -24,6 +25,8 @@ const CalendarShell = styled.div`
   flex-direction: column;
   gap: 20px;
   width: 100%;
+  animation: ${fadeUp} 0.5s ease both;
+  ${reducedMotion}
 `;
 
 const AssistantRail = styled.aside`
@@ -54,41 +57,6 @@ const ControlGrid = styled.div`
   @media (max-width: 980px) {
     grid-template-columns: 1fr;
   }
-`;
-
-const Card = styled.section`
-  position: relative;
-  border-radius: 26px;
-  padding: 16px 18px;
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  overflow: hidden;
-
-  &::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0.5;
-    ${({ theme }) => {
-      const layers = composeLayers(getCardLayers(theme.mode ?? 'light', theme.intensity ?? 'rich'));
-      return css`
-        background-image: ${layers.image};
-        background-size: ${layers.size};
-        background-repeat: ${layers.repeat};
-        background-position: ${layers.position};
-        mix-blend-mode: ${layers.blend ?? 'normal'};
-      `;
-    }}
-  }
-`;
-
-const CardContent = styled.div`
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 `;
 
 const CardTitle = styled.h2`
@@ -215,8 +183,10 @@ const CalendarSurface = styled.div`
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: min(720px, calc(100vh - 340px));
+  flex: 1;
+  min-height: 400px;
   overflow: hidden;
+  ${reducedMotion}
 `;
 
 const ErrorText = styled.p`
@@ -229,6 +199,52 @@ const EmptyState = styled.p`
   margin: 0;
   font-size: 0.78rem;
   color: ${({ theme }) => theme.colors.textSecondary};
+`;
+
+const ControlsToggle = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: ${({ theme }) => theme.colors.overlay};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  border-radius: 8px;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.overlayActive};
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
+`;
+
+const ControlsWrapper = styled.div<{ $open: boolean }>`
+  display: grid;
+  grid-template-rows: ${({ $open }) => ($open ? '1fr' : '0fr')};
+  transition: grid-template-rows 0.3s ease;
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.01ms;
+  }
+`;
+
+const ControlsInner = styled.div`
+  overflow: hidden;
+`;
+
+const CardContentLayout = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 `;
 
 type RecurrenceScope = 'occurrence' | 'future' | 'series';
@@ -249,6 +265,7 @@ export function CalendarPage() {
 
   const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
   const [recurrenceScope, setRecurrenceScope] = useState<RecurrenceScope>('occurrence');
+  const [controlsOpen, setControlsOpen] = useState(false);
 
   useEffect(() => {
     if (selectedItem?.kind === 'event') {
@@ -379,8 +396,11 @@ export function CalendarPage() {
     <Layout>
       <CalendarShell>
         <HeaderRow>
-          <Title>Calendar</Title>
+          <Title data-halo="heading">Calendar</Title>
           <ButtonRow>
+            <ControlsToggle onClick={() => setControlsOpen(prev => !prev)}>
+              {controlsOpen ? 'Hide settings' : 'Settings'}
+            </ControlsToggle>
             {status?.connected ? (
               <ActionButton type="button" onClick={() => eventsQuery.syncCalendar()} $primary aria-label="Sync calendar">
                 Sync now
@@ -394,51 +414,55 @@ export function CalendarPage() {
           </ButtonRow>
         </HeaderRow>
 
-        <ControlGrid>
-          <Card>
-            <CardContent>
-              <CardTitle>Google Calendar</CardTitle>
-              {status?.connected ? (
-                <>
-                  <StatusText>Connected as {status.account_email ?? 'your account'}.</StatusText>
-                  <SubtleText>
-                    Last sync {status.last_sync_at ? formatDateTime(new Date(status.last_sync_at)) : 'not yet'}
-                  </SubtleText>
-                </>
-              ) : (
-                <StatusText>Connect to sync events and write todo blocks.</StatusText>
-              )}
-              {eventsQuery.isSyncing ? <SubtleText>Syncing…</SubtleText> : null}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent>
-              <CardTitle>Calendars</CardTitle>
-              {status?.connected ? (
-                <CalendarList>
-                  {calendars.map((calendar) => (
-                    <CalendarRow
-                      key={calendar.google_id}
-                      $disabled={calendar.is_life_dashboard}
-                    >
-                      <CalendarToggle
-                        type="checkbox"
-                        checked={calendar.selected}
-                        disabled={calendar.is_life_dashboard}
-                        onChange={() => handleToggleCalendar(calendar)}
-                      />
-                      <CalendarName>{calendar.summary}</CalendarName>
-                      {calendar.is_life_dashboard ? <CalendarBadge>Life Dashboard</CalendarBadge> : null}
-                    </CalendarRow>
-                  ))}
-                  {!calendars.length ? <EmptyState>No calendars found yet.</EmptyState> : null}
-                </CalendarList>
-              ) : (
-                <EmptyState>Connect Google Calendar to pick calendars.</EmptyState>
-              )}
-            </CardContent>
-          </Card>
-        </ControlGrid>
+        <ControlsWrapper $open={controlsOpen}>
+          <ControlsInner>
+            <ControlGrid>
+              <Card>
+                <CardContentLayout>
+                  <CardTitle data-halo="heading">Google Calendar</CardTitle>
+                  {status?.connected ? (
+                    <>
+                      <StatusText>Connected as {status.account_email ?? 'your account'}.</StatusText>
+                      <SubtleText>
+                        Last sync {status.last_sync_at ? formatDateTime(new Date(status.last_sync_at)) : 'not yet'}
+                      </SubtleText>
+                    </>
+                  ) : (
+                    <StatusText>Connect to sync events and write todo blocks.</StatusText>
+                  )}
+                  {eventsQuery.isSyncing ? <SubtleText>Syncing…</SubtleText> : null}
+                </CardContentLayout>
+              </Card>
+              <Card>
+                <CardContentLayout>
+                  <CardTitle data-halo="heading">Calendars</CardTitle>
+                  {status?.connected ? (
+                    <CalendarList>
+                      {calendars.map((calendar) => (
+                        <CalendarRow
+                          key={calendar.google_id}
+                          $disabled={calendar.is_life_dashboard}
+                        >
+                          <CalendarToggle
+                            type="checkbox"
+                            checked={calendar.selected}
+                            disabled={calendar.is_life_dashboard}
+                            onChange={() => handleToggleCalendar(calendar)}
+                          />
+                          <CalendarName>{calendar.summary}</CalendarName>
+                          {calendar.is_life_dashboard ? <CalendarBadge>Life Dashboard</CalendarBadge> : null}
+                        </CalendarRow>
+                      ))}
+                      {!calendars.length ? <EmptyState>No calendars found yet.</EmptyState> : null}
+                    </CalendarList>
+                  ) : (
+                    <EmptyState>Connect Google Calendar to pick calendars.</EmptyState>
+                  )}
+                </CardContentLayout>
+              </Card>
+            </ControlGrid>
+          </ControlsInner>
+        </ControlsWrapper>
 
         <CalendarSurface>
           {eventsQuery.eventsQuery.error ? (

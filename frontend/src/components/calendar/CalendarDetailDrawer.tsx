@@ -18,7 +18,7 @@ type Props = {
 const Backdrop = styled.div<{ $open: boolean }>`
   position: fixed;
   inset: 0;
-  background: ${({ theme }) => hexToRgba(theme.colors.textPrimary, 0.2)};
+  background: ${({ theme }) => theme.colors.overlay};
   opacity: ${({ $open }) => ($open ? 1 : 0)};
   pointer-events: ${({ $open }) => ($open ? 'auto' : 'none')};
   transition: opacity 0.2s ease;
@@ -37,11 +37,15 @@ const Drawer = styled.aside<{ $open: boolean }>`
   padding: 28px 24px;
   background: ${({ theme }) => theme.colors.backgroundCard};
   border-left: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  box-shadow: 0 18px 42px ${({ theme }) => hexToRgba(theme.colors.textPrimary, 0.18)};
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.18);
   transform: translateX(${({ $open }) => ($open ? '0' : '100%')});
   transition: transform 0.28s ease;
   z-index: ${Z_LAYERS.overlays + 1};
   overflow: hidden;
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.01ms;
+  }
 
   &::before {
     content: '';
@@ -98,6 +102,11 @@ const CloseButton = styled.button`
   text-transform: uppercase;
   font-size: 0.7rem;
   cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const Section = styled.section`
@@ -129,7 +138,7 @@ const Badge = styled.span`
   padding: 4px 10px;
   font-size: 0.7rem;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => hexToRgba(theme.colors.textPrimary, 0.06)};
+  background: ${({ theme }) => theme.colors.overlay};
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
@@ -139,7 +148,7 @@ const ScrollSection = styled.div`
   max-height: 240px;
   border-radius: 12px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => hexToRgba(theme.colors.textPrimary, 0.04)};
+  background: ${({ theme }) => theme.colors.surfaceInset};
 `;
 
 const DescriptionText = styled.p`
@@ -191,8 +200,29 @@ const ScopeButton = styled.button<{ $active: boolean }>`
   cursor: pointer;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   background: ${({ theme, $active }) =>
-    $active ? hexToRgba(theme.colors.textPrimary, 0.14) : 'transparent'};
+    $active ? theme.colors.overlayActive : 'transparent'};
   color: ${({ theme }) => theme.colors.textPrimary};
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
+`;
+
+const MeetingLink = styled.a`
+  font-size: 0.85rem;
+  color: ${({ theme }) => theme.palette?.pond?.['200'] ?? theme.colors.accent};
+  text-decoration: none;
+  word-break: break-all;
+
+  &:hover {
+    text-decoration: underline;
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 export function CalendarDetailDrawer({
@@ -244,12 +274,12 @@ export function CalendarDetailDrawer({
 
   return (
     <>
-      <Backdrop $open={open} onClick={onClose} />
+      <Backdrop $open={open} onClick={onClose} aria-label="Close" />
       <Drawer $open={open} role="dialog" aria-hidden={!open}>
         <DrawerContent>
           <HeaderRow>
             <Title>{item?.title ?? 'Details'}</Title>
-            <CloseButton type="button" onClick={onClose}>
+            <CloseButton type="button" onClick={onClose} aria-label="Close detail drawer">
               Close
             </CloseButton>
           </HeaderRow>
@@ -300,7 +330,13 @@ export function CalendarDetailDrawer({
               {event.conference_link || event.hangout_link ? (
                 <Section>
                   <Label>Meeting link</Label>
-                  <Value>{event.conference_link ?? event.hangout_link}</Value>
+                  <MeetingLink
+                    href={event.conference_link ?? event.hangout_link ?? '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Join meeting
+                  </MeetingLink>
                 </Section>
               ) : null}
               {attendeeList.length ? (
@@ -345,15 +381,3 @@ const isSameDay = (left: Date, right: Date) =>
   left.getFullYear() === right.getFullYear() &&
   left.getMonth() === right.getMonth() &&
   left.getDate() === right.getDate();
-
-const hexToRgba = (hex: string, alpha: number) => {
-  const sanitized = hex.replace('#', '');
-  const parsed = sanitized.length === 3
-    ? sanitized.split('').map((char) => char + char).join('')
-    : sanitized;
-  const int = parseInt(parsed, 16);
-  const r = (int >> 16) & 255;
-  const g = (int >> 8) & 255;
-  const b = int & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
