@@ -1,19 +1,9 @@
-import styled, { keyframes } from 'styled-components';
+import styled from 'styled-components';
 
 import { DashboardUpcomingEvents } from '../components/dashboard/DashboardUpcomingEvents';
 import { DashboardNewsFeed } from '../components/dashboard/DashboardNewsFeed';
 import { TodoScrollPad } from '../components/todo/TodoScrollPad';
-
-const fadeUp = keyframes`
-  from {
-    opacity: 0;
-    transform: translateY(18px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-`;
+import { fadeUp, reducedMotion } from '../styles/animations';
 
 const Grid = styled.div`
   display: grid;
@@ -37,6 +27,7 @@ const Column = styled.div<{ $delay?: number }>`
   gap: clamp(20px, 3vw, 32px);
   min-width: 0;
   animation: ${fadeUp} 0.5s ease-out ${({ $delay }) => ($delay ?? 0) * 0.08}s both;
+  ${reducedMotion}
 `;
 
 export function DashboardPage() {

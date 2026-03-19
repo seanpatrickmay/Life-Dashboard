@@ -4,6 +4,7 @@ import styled from 'styled-components';
 import { Card } from '../common/Card';
 import { usePageAssistant } from '../../hooks/usePageAssistant';
 import type { AssistantPageContext } from '../../services/api';
+import { focusRing } from '../../styles/animations';
 
 const Panel = styled(Card)`
   display: flex;
@@ -29,8 +30,8 @@ const Title = styled.h2`
 `;
 
 const CollapseButton = styled.button`
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ theme }) => theme.colors.overlay};
   color: ${({ theme }) => theme.colors.textPrimary};
   border-radius: 999px;
   padding: 4px 10px;
@@ -38,6 +39,7 @@ const CollapseButton = styled.button`
   letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
+  ${focusRing}
 `;
 
 const Body = styled.div<{ $collapsed: boolean }>`
@@ -60,16 +62,16 @@ const Message = styled.div<{ $role: 'user' | 'assistant' }>`
   align-self: ${({ $role }) => ($role === 'user' ? 'flex-end' : 'flex-start')};
   max-width: 92%;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: ${({ $role }) => ($role === 'user' ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.22)')};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ $role, theme }) => ($role === 'user' ? theme.colors.overlay : theme.colors.surfaceRaised)};
   padding: 10px 12px;
   font-size: 0.88rem;
   white-space: pre-wrap;
 `;
 
 const PlanBox = styled.div`
-  border: 1px solid rgba(137, 189, 255, 0.55);
-  background: rgba(137, 189, 255, 0.12);
+  border: 1px solid ${({ theme }) => theme.colors.accent};
+  background: ${({ theme }) => theme.colors.accentSubtle};
   border-radius: 12px;
   padding: 10px;
   display: grid;
@@ -98,8 +100,8 @@ const ActionRow = styled.div`
 `;
 
 const Button = styled.button`
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ theme }) => theme.colors.overlay};
   color: ${({ theme }) => theme.colors.textPrimary};
   border-radius: 999px;
   padding: 7px 12px;
@@ -108,6 +110,7 @@ const Button = styled.button`
   letter-spacing: 0.1em;
   text-transform: uppercase;
   font-size: 0.65rem;
+  ${focusRing}
 
   &:disabled {
     opacity: 0.55;
@@ -116,8 +119,8 @@ const Button = styled.button`
 `;
 
 const DangerButton = styled(Button)`
-  border-color: rgba(246, 126, 126, 0.55);
-  background: rgba(246, 126, 126, 0.2);
+  border-color: ${({ theme }) => theme.colors.danger};
+  background: ${({ theme }) => theme.colors.dangerSubtle};
 `;
 
 const Form = styled.form`
@@ -126,13 +129,14 @@ const Form = styled.form`
 `;
 
 const Input = styled.textarea`
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 10px;
   color: ${({ theme }) => theme.colors.textPrimary};
   padding: 8px 10px;
   min-height: 72px;
   resize: vertical;
+  ${focusRing}
 `;
 
 const formatAction = (actionType: string, params: Record<string, unknown>) => {

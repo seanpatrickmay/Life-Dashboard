@@ -38,11 +38,11 @@ const EventsList = styled.div`
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
+    background: ${({ theme }) => theme.colors.scrollThumb};
     border-radius: 2px;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.25);
+      background: ${({ theme }) => theme.colors.scrollThumb};
     }
   }
 `;
@@ -53,13 +53,18 @@ const EventCard = styled.div`
   gap: 6px;
   padding: clamp(10px, 2vw, 14px);
   border-radius: 18px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   transition: all 0.2s ease;
 
   &:hover {
-    background: rgba(0, 0, 0, 0.25);
-    border-color: rgba(255, 255, 255, 0.3);
+    background: ${({ theme }) => theme.colors.overlayHover};
+    border-color: ${({ theme }) => theme.colors.borderSubtle};
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 
@@ -109,7 +114,7 @@ const DateDivider = styled.div`
   opacity: 0.6;
   margin-top: 8px;
   padding-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid ${({ theme }) => theme.colors.borderSubtle};
 `;
 
 export function DashboardUpcomingEvents() {

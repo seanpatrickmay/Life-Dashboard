@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import styled from 'styled-components';
+import { focusRing } from '../../styles/animations';
 import { Card } from '../common/Card';
 import { useNutritionGoals } from '../../hooks/useNutritionGoals';
 import {
@@ -21,7 +22,7 @@ const Grid = styled.div`
 
 const GoalCard = styled.div`
   padding: 12px 14px;
-  background: rgba(0,0,0,0.15);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 16px;
 `;
 
@@ -30,8 +31,9 @@ const Input = styled.input`
   padding: 8px;
   margin-top: 6px;
   border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.2);
-  background: rgba(0,0,0,0.1);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ theme }) => theme.colors.surfaceInset};
+  ${focusRing}
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
@@ -73,7 +75,7 @@ export function GoalsPanel() {
       <h3 data-halo="heading">Nutrient Goals</h3>
       {groupedGoals.map(({ key, label, items }) => (
         <GroupSection key={key} style={{ marginBottom: 12 }}>
-          <GroupHeader type="button" onClick={() => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }))}>
+          <GroupHeader type="button" aria-expanded={expanded[key]} onClick={() => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }))}>
             {label}
             <Chevron $expanded={expanded[key]}>›</Chevron>
           </GroupHeader>

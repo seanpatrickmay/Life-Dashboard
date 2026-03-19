@@ -1,14 +1,10 @@
-import styled, { keyframes } from 'styled-components';
+import styled from 'styled-components';
 
 import { NutritionDashboard } from '../components/nutrition/NutritionDashboard';
 import { MenuPanel } from '../components/nutrition/MenuPanel';
 import { GoalsPanel } from '../components/nutrition/GoalsPanel';
 import { FoodManager } from '../components/nutrition/FoodManager';
-
-const fadeUp = keyframes`
-  from { opacity: 0; transform: translateY(18px); }
-  to   { opacity: 1; transform: translateY(0); }
-`;
+import { fadeUp, reducedMotion } from '../styles/animations';
 
 const Page = styled.div`
   display: flex;
@@ -16,6 +12,7 @@ const Page = styled.div`
   gap: clamp(24px, 4vw, 40px);
   margin-top: clamp(16px, 4vh, 48px);
   animation: ${fadeUp} 0.5s ease-out both;
+  ${reducedMotion}
 `;
 
 const TopGrid = styled.div`

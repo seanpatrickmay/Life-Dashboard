@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { Location } from 'react-router-dom';
 import styled from 'styled-components';
-import { palette } from '../theme/monetTheme';
+
 import { enterGuestMode, exitGuestMode, isGuestDemoEnabled } from '../demo/guest/guestMode';
 import { getApiBaseUrl } from '../services/api';
 
@@ -18,10 +18,9 @@ const Card = styled.div`
   width: min(520px, 92vw);
   border-radius: 28px;
   padding: clamp(24px, 3vw, 36px);
-  background: rgba(12, 20, 40, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 24px 60px rgba(4, 10, 24, 0.4);
-  backdrop-filter: blur(10px);
+  background: ${({ theme }) => theme.colors.backgroundCard};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  box-shadow: ${({ theme }) => theme.shadows.soft};
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
@@ -42,7 +41,7 @@ const Subtitle = styled.p`
 
 const ErrorText = styled.p`
   margin: -10px 0 18px;
-  color: rgba(255, 175, 175, 0.95);
+  color: ${({ theme }) => theme.colors.danger};
   font-size: 0.85rem;
 `;
 
@@ -55,39 +54,47 @@ const Actions = styled.div`
 const GoogleButton = styled.button`
   width: 100%;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   padding: 14px 18px;
   font-family: ${({ theme }) => theme.fonts.heading};
   letter-spacing: 0.18em;
   text-transform: uppercase;
   font-size: 0.78rem;
   color: ${({ theme }) => theme.colors.textPrimary};
-  background: linear-gradient(120deg, rgba(77, 160, 255, 0.25), rgba(240, 210, 140, 0.2));
-  box-shadow: 0 10px 30px rgba(17, 33, 70, 0.4);
+  background: ${({ theme }) => theme.colors.accentSubtle};
+  box-shadow: ${({ theme }) => theme.shadows.soft};
   cursor: pointer;
   transition: transform 0.2s ease, opacity 0.2s ease;
   &:hover {
     transform: translateY(-1px);
     opacity: 0.95;
   }
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const GuestButton = styled.button`
   width: 100%;
   border-radius: 999px;
-  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border: 1px dashed ${({ theme }) => theme.colors.borderSubtle};
   padding: 14px 18px;
   font-family: ${({ theme }) => theme.fonts.heading};
   letter-spacing: 0.18em;
   text-transform: uppercase;
   font-size: 0.75rem;
   color: ${({ theme }) => theme.colors.textPrimary};
-  background: rgba(16, 22, 36, 0.5);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   cursor: pointer;
   transition: opacity 0.2s ease, transform 0.2s ease;
   &:hover {
     opacity: 0.95;
     transform: translateY(-1px);
+  }
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 
@@ -102,8 +109,8 @@ const RememberRow = styled.label`
     width: 18px;
     height: 18px;
     border-radius: 6px;
-    border: 2px solid ${palette.bloom['300']};
-    background: rgba(8, 14, 28, 0.6);
+    border: 2px solid ${({ theme }) => theme.colors.borderSubtle};
+    background: ${({ theme }) => theme.colors.surfaceInset};
     display: grid;
     place-items: center;
     cursor: pointer;
@@ -115,14 +122,14 @@ const RememberRow = styled.label`
     width: 10px;
     height: 10px;
     border-radius: 3px;
-    background: ${palette.bloom['300']};
+    background: ${({ theme }) => theme.colors.accent};
     opacity: 0;
     transform: scale(0.4);
     transition: opacity 0.2s ease, transform 0.2s ease;
   }
 
   input[type='checkbox']:checked {
-    background: rgba(77, 160, 255, 0.25);
+    background: ${({ theme }) => theme.colors.accentSubtle};
   }
 
   input[type='checkbox']:checked::after {
@@ -131,7 +138,7 @@ const RememberRow = styled.label`
   }
 
   input[type='checkbox']:focus-visible {
-    outline: 2px solid rgba(240, 210, 140, 0.7);
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
     outline-offset: 2px;
   }
 `;
@@ -139,7 +146,7 @@ const RememberRow = styled.label`
 const Divider = styled.div`
   height: 1px;
   margin: 10px 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+  background: linear-gradient(90deg, transparent, ${({ theme }) => theme.colors.borderSubtle}, transparent);
 `;
 
 export function LoginPage() {

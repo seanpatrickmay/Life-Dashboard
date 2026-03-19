@@ -2,6 +2,7 @@ import { useState } from 'react';
 import styled from 'styled-components';
 import { Card } from '../common/Card';
 import { useNutritionChat } from '../../hooks/useNutritionChat';
+import { focusRing } from '../../styles/animations';
 
 const Panel = styled(Card)`
   min-height: 260px;
@@ -20,7 +21,7 @@ const Entry = styled.div<{ $role: 'user' | 'assistant' }>`
   max-width: 90%;
   padding: 12px 14px;
   border-radius: 16px;
-  background: ${({ $role }) => ($role === 'user' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.15)')};
+  background: ${({ $role, theme }) => ($role === 'user' ? theme.colors.overlay : theme.colors.surfaceRaised)};
   font-size: 0.92rem;
 `;
 
@@ -33,12 +34,13 @@ const Form = styled.form`
 const Input = styled.textarea`
   flex: 1;
   min-height: 60px;
-  background: rgba(0,0,0,0.08);
-  border: 1px solid rgba(255,255,255,0.15);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   border-radius: 12px;
   padding: 10px 12px;
   font-family: ${({ theme }) => theme.fonts.body};
   color: ${({ theme }) => theme.colors.textPrimary};
+  ${focusRing}
 `;
 
 const Button = styled.button`
@@ -50,6 +52,7 @@ const Button = styled.button`
   border-radius: 12px;
   padding: 12px 16px;
   cursor: pointer;
+  ${focusRing}
 `;
 
 export function NutritionChatPanel() {

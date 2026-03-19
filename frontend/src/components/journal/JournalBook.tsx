@@ -27,8 +27,8 @@ const BookShell = styled.div`
   grid-template-columns: minmax(240px, 0.95fr) var(--book-gap) minmax(320px, 1.2fr);
   padding: clamp(16px, 3vw, 28px);
   border-radius: 36px;
-  background: linear-gradient(160deg, rgba(22, 18, 26, 0.92), rgba(10, 10, 16, 0.96));
-  box-shadow: 0 30px 60px rgba(7, 10, 18, 0.45), 0 10px 22px rgba(7, 10, 18, 0.35);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
+  box-shadow: 0 30px 60px ${({ theme }) => theme.colors.overlay}, 0 10px 22px ${({ theme }) => theme.colors.overlay};
   isolation: isolate;
   animation: ${bookFloat} 0.5s ease-out;
 
@@ -37,8 +37,8 @@ const BookShell = styled.div`
     position: absolute;
     inset: 10px;
     border-radius: 28px;
-    background: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.08), transparent 55%),
-      radial-gradient(circle at 80% 80%, rgba(120, 160, 220, 0.08), transparent 55%);
+    background: radial-gradient(circle at 20% 20%, ${({ theme }) => theme.colors.overlayHover}, transparent 55%),
+      radial-gradient(circle at 80% 80%, ${({ theme }) => theme.colors.overlayHover}, transparent 55%);
     pointer-events: none;
     z-index: 0;
   }
@@ -81,16 +81,19 @@ const Page = styled.section`
   border-radius: 26px;
   padding: clamp(16px, 2.6vw, 26px);
   min-height: clamp(420px, 62vh, 640px);
-  background: linear-gradient(180deg, #f8eed7 0%, #f1e1c6 55%, #e7d2b2 100%);
-  box-shadow: 0 24px 48px rgba(10, 12, 20, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  background: ${({ theme }) =>
+    theme.mode === 'dark'
+      ? `linear-gradient(180deg, rgba(30, 35, 48, 0.95) 0%, rgba(26, 30, 42, 0.97) 55%, rgba(22, 26, 36, 0.98) 100%)`
+      : `linear-gradient(180deg, #f8eed7 0%, #f1e1c6 55%, #e7d2b2 100%)`};
+  box-shadow: 0 24px 48px ${({ theme }) => theme.colors.overlay}, inset 0 1px 0 ${({ theme }) => theme.colors.overlayHover};
   animation: ${pageReveal} 0.55s ease-out;
   overflow: hidden;
   isolation: isolate;
-  color: #2f2118;
-  --page-ink: #2f2118;
-  --page-ink-muted: rgba(47, 33, 24, 0.68);
-  --page-border: rgba(102, 78, 60, 0.22);
-  --page-surface: rgba(255, 255, 255, 0.55);
+  color: ${({ theme }) => theme.mode === 'dark' ? theme.colors.textPrimary : '#2f2118'};
+  --page-ink: ${({ theme }) => theme.mode === 'dark' ? theme.colors.textPrimary : '#2f2118'};
+  --page-ink-muted: ${({ theme }) => theme.mode === 'dark' ? theme.colors.textSecondary : 'rgba(47, 33, 24, 0.68)'};
+  --page-border: ${({ theme }) => theme.mode === 'dark' ? theme.colors.borderSubtle : 'rgba(102, 78, 60, 0.22)'};
+  --page-surface: ${({ theme }) => theme.mode === 'dark' ? theme.colors.overlay : 'rgba(255, 255, 255, 0.55)'};
 
   &::before {
     content: '';
@@ -158,7 +161,7 @@ const ToggleRow = styled.div`
 
 const ToggleButton = styled.button<{ $active: boolean }>`
   border: 1px solid var(--page-border);
-  background: ${({ $active }) => ($active ? 'rgba(255, 255, 255, 0.65)' : 'transparent')};
+  background: ${({ $active, theme }) => ($active ? theme.colors.overlayActive : 'transparent')};
   color: var(--page-ink);
   padding: 6px 10px;
   border-radius: 999px;
@@ -168,6 +171,11 @@ const ToggleButton = styled.button<{ $active: boolean }>`
   text-transform: uppercase;
   cursor: pointer;
   opacity: ${({ $active }) => ($active ? 1 : 0.7)};
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const Section = styled.div`
@@ -198,7 +206,7 @@ const CountPill = styled.span`
   font-size: 0.72rem;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--page-surface);
   border: 1px solid var(--page-border);
   color: var(--page-ink);
 `;
@@ -213,14 +221,14 @@ const TaskList = styled.ul`
   max-height: clamp(140px, 22vh, 230px);
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(88, 66, 50, 0.35) transparent;
+  scrollbar-color: ${({ theme }) => theme.colors.scrollThumb} transparent;
 
   &::-webkit-scrollbar {
     width: 6px;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(88, 66, 50, 0.35);
+    background: ${({ theme }) => theme.colors.scrollThumb};
     border-radius: 999px;
   }
 `;
@@ -229,7 +237,7 @@ const TaskItem = styled.li`
   padding: 8px 10px;
   border-radius: 14px;
   border: 1px dashed var(--page-border);
-  background: rgba(255, 255, 255, 0.65);
+  background: var(--page-surface);
   font-size: 0.86rem;
   line-height: 1.4;
 `;
@@ -260,14 +268,14 @@ const CalendarList = styled.div`
   overflow-y: auto;
   padding-right: 6px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(88, 66, 50, 0.35) transparent;
+  scrollbar-color: ${({ theme }) => theme.colors.scrollThumb} transparent;
 
   &::-webkit-scrollbar {
     width: 6px;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(88, 66, 50, 0.35);
+    background: ${({ theme }) => theme.colors.scrollThumb};
     border-radius: 999px;
   }
 `;
@@ -278,7 +286,7 @@ const DayButton = styled.button<{ $active: boolean; $disabled: boolean }>`
   align-items: center;
   gap: 10px;
   border: 1px solid var(--page-border);
-  background: ${({ $active }) => ($active ? 'rgba(255, 255, 255, 0.65)' : 'transparent')};
+  background: ${({ $active, theme }) => ($active ? theme.colors.overlayActive : 'transparent')};
   color: var(--page-ink);
   padding: 10px 12px;
   border-radius: 14px;
@@ -286,13 +294,18 @@ const DayButton = styled.button<{ $active: boolean; $disabled: boolean }>`
   font-size: 0.88rem;
   cursor: ${({ $disabled }) => ($disabled ? 'not-allowed' : 'pointer')};
   opacity: ${({ $disabled }) => ($disabled ? 0.4 : 1)};
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const DayMarker = styled.span<{ $active: boolean }>`
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: ${({ $active }) => ($active ? 'rgba(54, 38, 26, 0.9)' : 'transparent')};
+  background: ${({ $active }) => ($active ? 'var(--page-ink)' : 'transparent')};
   border: 1px solid var(--page-border);
 `;
 
@@ -316,7 +329,7 @@ const WeekNav = styled.div`
 
 const WeekButton = styled.button`
   border: 1px solid var(--page-border);
-  background: rgba(255, 255, 255, 0.65);
+  background: var(--page-surface);
   color: var(--page-ink);
   padding: 6px 10px;
   border-radius: 10px;
@@ -330,6 +343,11 @@ const WeekButton = styled.button`
     opacity: 0.4;
     cursor: not-allowed;
   }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const EntryList = styled.div`
@@ -340,14 +358,14 @@ const EntryList = styled.div`
   overflow-y: auto;
   padding-right: 6px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(88, 66, 50, 0.35) transparent;
+  scrollbar-color: ${({ theme }) => theme.colors.scrollThumb} transparent;
 
   &::-webkit-scrollbar {
     width: 6px;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(88, 66, 50, 0.35);
+    background: ${({ theme }) => theme.colors.scrollThumb};
     border-radius: 999px;
   }
 `;
@@ -355,7 +373,7 @@ const EntryList = styled.div`
 const EntryCard = styled.div`
   border-radius: 16px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--page-surface);
   border: 1px solid var(--page-border);
   font-size: 0.88rem;
   line-height: 1.45;
@@ -382,11 +400,11 @@ const JournalTextarea = styled.textarea`
   padding: 12px 14px;
   border-radius: 16px;
   border: 1px solid var(--page-border);
-  background-color: rgba(255, 255, 255, 0.75);
+  background-color: var(--page-surface);
   background-image: repeating-linear-gradient(
     180deg,
-    rgba(124, 96, 74, 0.18) 0px,
-    rgba(124, 96, 74, 0.18) 1px,
+    var(--page-border) 0px,
+    var(--page-border) 1px,
     transparent 1px,
     transparent 26px
   );
@@ -394,11 +412,11 @@ const JournalTextarea = styled.textarea`
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: 0.95rem;
   line-height: 1.5;
-  box-shadow: inset 0 1px 3px rgba(44, 30, 22, 0.08);
+  box-shadow: inset 0 1px 3px ${({ theme }) => theme.colors.overlay};
 
   &:focus {
-    outline: 2px solid rgba(164, 120, 86, 0.35);
-    border-color: rgba(164, 120, 86, 0.45);
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    border-color: var(--page-border);
   }
 `;
 
@@ -412,8 +430,8 @@ const SubmitButton = styled.button`
   letter-spacing: 0.16em;
   text-transform: uppercase;
   cursor: pointer;
-  background: rgba(199, 148, 106, 0.92);
-  color: #2a1d15;
+  background: ${({ theme }) => theme.colors.accent};
+  color: ${({ theme }) => theme.mode === 'dark' ? theme.colors.textPrimary : '#2a1d15'};
 `;
 
 const GroupList = styled.div`
@@ -424,14 +442,14 @@ const GroupList = styled.div`
   overflow-y: auto;
   padding-right: 6px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(88, 66, 50, 0.35) transparent;
+  scrollbar-color: ${({ theme }) => theme.colors.scrollThumb} transparent;
 
   &::-webkit-scrollbar {
     width: 6px;
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(88, 66, 50, 0.35);
+    background: ${({ theme }) => theme.colors.scrollThumb};
     border-radius: 999px;
   }
 `;
@@ -439,7 +457,7 @@ const GroupList = styled.div`
 const GroupCard = styled.div`
   border-radius: 18px;
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.68);
+  background: var(--page-surface);
   border: 1px solid var(--page-border);
 `;
 
@@ -474,7 +492,7 @@ const GroupItemTime = styled.span`
   padding: 3px 7px;
   border-radius: 999px;
   border: 1px solid var(--page-border);
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--page-surface);
   color: var(--page-ink-muted);
   font-size: 0.68rem;
   letter-spacing: 0.08em;
@@ -505,8 +523,8 @@ const PageNavButton = styled.button`
   height: 36px;
   border-radius: 999px;
   border: 1px solid var(--page-border);
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65), 0 6px 12px rgba(44, 30, 22, 0.18);
+  background: var(--page-surface);
+  box-shadow: inset 0 1px 0 ${({ theme }) => theme.colors.overlayHover}, 0 6px 12px ${({ theme }) => theme.colors.overlay};
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -516,13 +534,18 @@ const PageNavButton = styled.button`
 
   &:hover:not(:disabled) {
     transform: translateY(-1px);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 8px 16px rgba(44, 30, 22, 0.22);
+    box-shadow: inset 0 1px 0 ${({ theme }) => theme.colors.overlayActive}, 0 8px 16px ${({ theme }) => theme.colors.overlay};
   }
 
   &:disabled {
     opacity: 0.4;
     cursor: not-allowed;
     transform: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 

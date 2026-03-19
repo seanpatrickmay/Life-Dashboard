@@ -29,25 +29,25 @@ import type {
 import { createWorkspaceAssetUpload, uploadWorkspaceAssetContent } from '../services/workspaceApi';
 
 const Root = styled.div`
-  --workspace-bg: #f7f6f3;
-  --workspace-panel: #fbfbfa;
-  --workspace-line: rgba(55, 53, 47, 0.14);
-  --workspace-line-strong: rgba(55, 53, 47, 0.24);
-  --workspace-text: #37352f;
-  --workspace-muted: rgba(55, 53, 47, 0.64);
-  --workspace-hover: rgba(55, 53, 47, 0.06);
-  --workspace-selected: rgba(46, 170, 220, 0.14);
-  --workspace-pill: rgba(55, 53, 47, 0.08);
-  --workspace-shadow: 0 18px 42px rgba(24, 25, 23, 0.08);
+  --workspace-bg: ${({ theme }) => theme.colors.backgroundPage};
+  --workspace-panel: ${({ theme }) => theme.colors.backgroundCard};
+  --workspace-line: ${({ theme }) => theme.colors.borderSubtle};
+  --workspace-line-strong: ${({ theme }) => theme.colors.overlayActive};
+  --workspace-text: ${({ theme }) => theme.colors.textPrimary};
+  --workspace-muted: ${({ theme }) => theme.colors.textSecondary};
+  --workspace-hover: ${({ theme }) => theme.colors.overlay};
+  --workspace-selected: ${({ theme }) => theme.colors.accentSubtle};
+  --workspace-pill: ${({ theme }) => theme.colors.overlay};
+  --workspace-shadow: ${({ theme }) => theme.shadows.soft};
 
   min-height: calc(100vh - 180px);
   border-radius: 28px;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, rgba(249, 245, 235, 0.86), transparent 28%),
-    linear-gradient(180deg, #fbfaf8 0%, #f6f4ee 100%);
+    radial-gradient(circle at top left, ${({ theme }) => theme.colors.overlay}, transparent 28%),
+    linear-gradient(180deg, ${({ theme }) => theme.colors.backgroundCard} 0%, ${({ theme }) => theme.colors.backgroundPage} 100%);
   color: var(--workspace-text);
-  border: 1px solid rgba(55, 53, 47, 0.08);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   box-shadow: var(--workspace-shadow);
   font-family: "Avenir Next", "Segoe UI", sans-serif;
 `;
@@ -67,7 +67,7 @@ const Shell = styled.div<{ $peekOpen: boolean }>`
 `;
 
 const Sidebar = styled.aside`
-  background: rgba(251, 251, 250, 0.95);
+  background: ${({ theme }) => theme.colors.backgroundCard};
   border-right: 1px solid var(--workspace-line);
   padding: 18px 14px 18px 16px;
   display: grid;
@@ -120,6 +120,11 @@ const SectionHeader = styled.button`
   gap: 8px;
   cursor: pointer;
   font: inherit;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const TreeRow = styled.div<{ $depth: number }>`
@@ -140,6 +145,11 @@ const TreeDisclosure = styled.button`
   display: grid;
   place-items: center;
   padding: 0;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const SidebarButton = styled.button<{ $active?: boolean; $indented?: boolean }>`
@@ -158,6 +168,11 @@ const SidebarButton = styled.button<{ $active?: boolean; $indented?: boolean }>`
 
   &:hover {
     background: ${({ $active }) => ($active ? 'var(--workspace-selected)' : 'var(--workspace-hover)')};
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 
@@ -180,7 +195,7 @@ const Topbar = styled.div`
   gap: 12px;
   padding: 14px 18px;
   border-bottom: 1px solid var(--workspace-line);
-  background: rgba(251, 251, 250, 0.88);
+  background: ${({ theme }) => theme.colors.backgroundCard};
   position: sticky;
   top: 0;
   z-index: 2;
@@ -200,7 +215,7 @@ const TopbarLeft = styled.div`
 const SearchInput = styled.input`
   width: min(420px, 100%);
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.88);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   color: var(--workspace-text);
   border-radius: 12px;
   padding: 10px 12px;
@@ -209,7 +224,7 @@ const SearchInput = styled.input`
 
 const PillButton = styled.button`
   border: 1px solid var(--workspace-line-strong);
-  background: rgba(255, 255, 255, 0.84);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   color: var(--workspace-text);
   border-radius: 999px;
   padding: 8px 12px;
@@ -219,6 +234,11 @@ const PillButton = styled.button`
   &:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 
@@ -262,13 +282,18 @@ const TitleRow = styled.div`
 
 const IconButton = styled.button`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.84);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   color: var(--workspace-text);
   border-radius: 16px;
   width: 52px;
   height: 52px;
   font-size: 1.6rem;
   cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const PageTitleInput = styled.input`
@@ -296,6 +321,11 @@ const CrumbButton = styled.button`
   color: inherit;
   cursor: pointer;
   padding: 0;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const MetaRow = styled.div`
@@ -319,7 +349,7 @@ const PropertiesGrid = styled.div`
   padding: 12px 14px;
   border: 1px solid var(--workspace-line);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.58);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
 `;
 
 const PropertyRow = styled.label`
@@ -341,7 +371,7 @@ const PropertyLabel = styled.span`
 
 const PropertyInput = styled.input`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.9);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 10px;
   padding: 9px 11px;
   color: var(--workspace-text);
@@ -350,7 +380,7 @@ const PropertyInput = styled.input`
 
 const PropertySelect = styled.select`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.9);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 10px;
   padding: 9px 11px;
   color: var(--workspace-text);
@@ -369,9 +399,9 @@ const ChipRow = styled.div`
 `;
 
 const TokenChip = styled.span`
-  border: 1px solid rgba(46, 170, 220, 0.22);
-  background: rgba(46, 170, 220, 0.1);
-  color: #205f7a;
+  border: 1px solid ${({ theme }) => theme.colors.accentSubtle};
+  background: ${({ theme }) => theme.colors.accentSubtle};
+  color: ${({ theme }) => theme.colors.accent};
   border-radius: 999px;
   padding: 6px 10px;
   display: inline-flex;
@@ -386,6 +416,11 @@ const TokenRemove = styled.button`
   cursor: pointer;
   padding: 0;
   font-size: 0.9rem;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const Toggle = styled.input``;
@@ -403,7 +438,7 @@ const ChildGrid = styled.div`
 
 const ChildCard = styled.button`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.88);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 16px;
   padding: 14px;
   text-align: left;
@@ -411,6 +446,11 @@ const ChildCard = styled.button`
   cursor: pointer;
   display: grid;
   gap: 6px;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const ChildDescription = styled.div`
@@ -451,7 +491,7 @@ const GutterButton = styled.button<{ $dragging?: boolean }>`
   width: 24px;
   height: 24px;
   border: 1px solid var(--workspace-line);
-  background: ${({ $dragging }) => ($dragging ? 'rgba(46, 170, 220, 0.12)' : 'rgba(255, 255, 255, 0.92)')};
+  background: ${({ $dragging, theme }) => ($dragging ? theme.colors.accentSubtle : theme.colors.surfaceRaised)};
   color: var(--workspace-muted);
   border-radius: 8px;
   cursor: ${({ $dragging }) => ($dragging ? 'grabbing' : 'pointer')};
@@ -459,6 +499,11 @@ const GutterButton = styled.button<{ $dragging?: boolean }>`
   place-items: center;
   padding: 0;
   font-size: 0.9rem;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const BlockCard = styled.div`
@@ -475,9 +520,9 @@ const BlockMenu = styled.div`
   width: min(280px, 100%);
   max-height: min(420px, 70vh);
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.98);
+  background: ${({ theme }) => theme.colors.backgroundCard};
   border-radius: 16px;
-  box-shadow: 0 18px 34px rgba(20, 20, 18, 0.12);
+  box-shadow: ${({ theme }) => theme.shadows.soft};
   padding: 8px;
   display: grid;
   gap: 4px;
@@ -505,6 +550,11 @@ const BlockMenuButton = styled.button`
   &:hover {
     background: var(--workspace-hover);
   }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const BlockDropIndicator = styled.div<{ $position: 'before' | 'after' }>`
@@ -513,7 +563,7 @@ const BlockDropIndicator = styled.div<{ $position: 'before' | 'after' }>`
   right: 0;
   height: 2px;
   border-radius: 999px;
-  background: rgba(46, 170, 220, 0.7);
+  background: ${({ theme }) => theme.colors.accent};
   top: ${({ $position }) => ($position === 'before' ? '-3px' : 'calc(100% + 1px)')};
 `;
 
@@ -541,12 +591,12 @@ const TodoBlock = styled.div`
 
 const SlashMenu = styled.div`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.97);
+  background: ${({ theme }) => theme.colors.backgroundCard};
   border-radius: 14px;
   padding: 8px;
   display: grid;
   gap: 4px;
-  box-shadow: 0 18px 34px rgba(20, 20, 18, 0.12);
+  box-shadow: ${({ theme }) => theme.shadows.soft};
 `;
 
 const SlashMenuButton = styled.button`
@@ -561,6 +611,11 @@ const SlashMenuButton = styled.button`
   &:hover {
     background: var(--workspace-hover);
   }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const SlashMenuOption = styled(SlashMenuButton)<{ $active?: boolean }>`
@@ -569,7 +624,7 @@ const SlashMenuOption = styled(SlashMenuButton)<{ $active?: boolean }>`
 
 const InlineComposer = styled.div`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.97);
+  background: ${({ theme }) => theme.colors.backgroundCard};
   border-radius: 16px;
   padding: 10px;
   display: grid;
@@ -578,7 +633,7 @@ const InlineComposer = styled.div`
 
 const InlineComposerInput = styled.input`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.92);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 10px;
   padding: 9px 11px;
   color: var(--workspace-text);
@@ -591,17 +646,22 @@ const LinkRow = styled.div`
 `;
 
 const LinkChip = styled.button`
-  border: 1px solid rgba(46, 170, 220, 0.24);
-  background: rgba(46, 170, 220, 0.1);
-  color: #205f7a;
+  border: 1px solid ${({ theme }) => theme.colors.accentSubtle};
+  background: ${({ theme }) => theme.colors.accentSubtle};
+  color: ${({ theme }) => theme.colors.accent};
   border-radius: 999px;
   padding: 5px 10px;
   cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const DatabaseCard = styled.div`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.78);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 18px;
   overflow: hidden;
 `;
@@ -635,12 +695,17 @@ const ViewTabs = styled.div`
 `;
 
 const ViewTab = styled.button<{ $active?: boolean }>`
-  border: 1px solid ${({ $active }) => ($active ? 'rgba(46, 170, 220, 0.3)' : 'var(--workspace-line)')};
-  background: ${({ $active }) => ($active ? 'rgba(46, 170, 220, 0.12)' : 'rgba(255, 255, 255, 0.9)')};
+  border: 1px solid ${({ $active, theme }) => ($active ? theme.colors.accentSubtle : 'var(--workspace-line)')};
+  background: ${({ $active, theme }) => ($active ? theme.colors.accentSubtle : theme.colors.surfaceRaised)};
   color: var(--workspace-text);
   border-radius: 999px;
   padding: 7px 11px;
   cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const DatabaseBody = styled.div`
@@ -664,23 +729,23 @@ const TaskCountPill = styled.span<{ $tone: 'danger' | 'info' | 'default' | 'succ
   padding: 6px 10px;
   font-size: 0.82rem;
   border: 1px solid
-    ${({ $tone }) =>
+    ${({ $tone, theme }) =>
       $tone === 'danger'
-        ? 'rgba(204, 82, 67, 0.24)'
+        ? theme.colors.dangerSubtle
         : $tone === 'info'
-          ? 'rgba(46, 170, 220, 0.24)'
+          ? theme.colors.accentSubtle
           : $tone === 'success'
-            ? 'rgba(76, 153, 112, 0.24)'
+            ? theme.colors.successSubtle
             : 'var(--workspace-line)'};
   background:
-    ${({ $tone }) =>
+    ${({ $tone, theme }) =>
       $tone === 'danger'
-        ? 'rgba(204, 82, 67, 0.1)'
+        ? theme.colors.dangerSubtle
         : $tone === 'info'
-          ? 'rgba(46, 170, 220, 0.1)'
+          ? theme.colors.accentSubtle
           : $tone === 'success'
-            ? 'rgba(76, 153, 112, 0.1)'
-            : 'rgba(55, 53, 47, 0.06)'};
+            ? theme.colors.successSubtle
+            : theme.colors.overlay};
   color: var(--workspace-text);
 `;
 
@@ -703,7 +768,7 @@ const TaskBucketsGrid = styled.div`
 
 const TaskBucket = styled.div`
   border: 1px solid var(--workspace-line);
-  background: rgba(247, 246, 243, 0.88);
+  background: ${({ theme }) => theme.colors.surfaceInset};
   border-radius: 16px;
   padding: 12px;
   display: grid;
@@ -720,7 +785,7 @@ const TaskBucketHeader = styled.div`
 
 const TaskCard = styled.div`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.96);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 14px;
   padding: 12px;
   display: grid;
@@ -743,6 +808,11 @@ const TaskTitleButton = styled.button`
   cursor: pointer;
   display: grid;
   gap: 4px;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const TaskInlineControls = styled.div`
@@ -762,7 +832,7 @@ const TaskControlRow = styled.div`
 
 const TaskEmptyState = styled.div`
   border: 1px dashed var(--workspace-line-strong);
-  background: rgba(255, 255, 255, 0.74);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 16px;
   padding: 16px;
   color: var(--workspace-muted);
@@ -778,6 +848,11 @@ const CollapseToggle = styled.button`
   display: inline-flex;
   gap: 8px;
   align-items: center;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const Table = styled.table`
@@ -805,6 +880,11 @@ const RowButton = styled.button`
   padding: 0;
   cursor: pointer;
   text-align: left;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const Board = styled.div`
@@ -815,7 +895,7 @@ const Board = styled.div`
 
 const BoardColumn = styled.div`
   border: 1px solid var(--workspace-line);
-  background: rgba(247, 246, 243, 0.9);
+  background: ${({ theme }) => theme.colors.surfaceInset};
   border-radius: 16px;
   padding: 10px;
   display: grid;
@@ -824,7 +904,7 @@ const BoardColumn = styled.div`
 
 const BoardCard = styled.button`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.96);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 14px;
   padding: 12px;
   text-align: left;
@@ -832,6 +912,11 @@ const BoardCard = styled.button`
   cursor: pointer;
   display: grid;
   gap: 6px;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const ListView = styled.div`
@@ -841,7 +926,7 @@ const ListView = styled.div`
 
 const ListRow = styled.button`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.96);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 14px;
   padding: 12px 14px;
   color: var(--workspace-text);
@@ -849,6 +934,11 @@ const ListRow = styled.button`
   cursor: pointer;
   display: grid;
   gap: 4px;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const GalleryGrid = styled.div`
@@ -859,7 +949,7 @@ const GalleryGrid = styled.div`
 
 const GalleryCard = styled.button`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.96);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 18px;
   overflow: hidden;
   padding: 0;
@@ -867,6 +957,11 @@ const GalleryCard = styled.button`
   color: var(--workspace-text);
   cursor: pointer;
   display: grid;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const GalleryPreview = styled.div<{ $url?: string | null }>`
@@ -896,7 +991,7 @@ const CalendarBucket = styled.div`
   padding: 12px;
   display: grid;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.9);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
 `;
 
 const CalendarGrid = styled.div`
@@ -917,7 +1012,7 @@ const CalendarDay = styled.div<{ $muted?: boolean }>`
   border: 1px solid var(--workspace-line);
   border-radius: 16px;
   padding: 10px;
-  background: ${({ $muted }) => ($muted ? 'rgba(247, 246, 243, 0.88)' : 'rgba(255, 255, 255, 0.94)')};
+  background: ${({ $muted, theme }) => ($muted ? theme.colors.surfaceInset : theme.colors.surfaceRaised)};
   display: grid;
   align-content: start;
   gap: 8px;
@@ -930,7 +1025,7 @@ const CalendarDayLabel = styled.div`
 
 const MiniCard = styled.button`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.96);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 12px;
   padding: 8px;
   text-align: left;
@@ -938,6 +1033,11 @@ const MiniCard = styled.button`
   cursor: pointer;
   display: grid;
   gap: 4px;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const Timeline = styled.div`
@@ -960,7 +1060,7 @@ const TimelineTrack = styled.div`
   position: relative;
   min-height: 40px;
   border-radius: 999px;
-  background: rgba(55, 53, 47, 0.08);
+  background: ${({ theme }) => theme.colors.overlay};
   overflow: hidden;
 `;
 
@@ -970,18 +1070,23 @@ const TimelineBar = styled.button<{ $offset: number }>`
   left: ${({ $offset }) => `${$offset}%`};
   min-width: 120px;
   max-width: calc(100% - ${({ $offset }) => `${$offset}%`});
-  border: 1px solid rgba(46, 170, 220, 0.22);
-  background: rgba(46, 170, 220, 0.14);
-  color: #205f7a;
+  border: 1px solid ${({ theme }) => theme.colors.accentSubtle};
+  background: ${({ theme }) => theme.colors.accentSubtle};
+  color: ${({ theme }) => theme.colors.accent};
   border-radius: 999px;
   padding: 8px 10px;
   text-align: left;
   cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const PeekPanel = styled.aside<{ $open: boolean }>`
   border-left: 1px solid var(--workspace-line);
-  background: rgba(251, 251, 250, 0.98);
+  background: ${({ theme }) => theme.colors.backgroundCard};
   overflow: auto;
   display: ${({ $open }) => ($open ? 'block' : 'none')};
 
@@ -996,7 +1101,7 @@ const PeekHeader = styled.div`
   z-index: 2;
   padding: 12px 14px;
   border-bottom: 1px solid var(--workspace-line);
-  background: rgba(251, 251, 250, 0.98);
+  background: ${({ theme }) => theme.colors.backgroundCard};
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1006,15 +1111,15 @@ const StatusBar = styled.div<{ $kind: 'error' | 'info' }>`
   margin: 0 18px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: ${({ $kind }) => ($kind === 'error' ? 'rgba(228, 87, 67, 0.1)' : 'rgba(46, 170, 220, 0.12)')};
-  color: ${({ $kind }) => ($kind === 'error' ? '#9f2f1f' : '#205f7a')};
-  border: 1px solid ${({ $kind }) => ($kind === 'error' ? 'rgba(228, 87, 67, 0.18)' : 'rgba(46, 170, 220, 0.18)')};
+  background: ${({ $kind, theme }) => ($kind === 'error' ? theme.colors.dangerSubtle : theme.colors.accentSubtle)};
+  color: ${({ $kind, theme }) => ($kind === 'error' ? theme.colors.danger : theme.colors.accent)};
+  border: 1px solid ${({ $kind, theme }) => ($kind === 'error' ? theme.colors.dangerSubtle : theme.colors.accentSubtle)};
 `;
 
 const Overlay = styled.div`
   position: fixed;
   inset: 0;
-  background: rgba(17, 17, 15, 0.24);
+  background: ${({ theme }) => theme.colors.overlayActive};
   display: grid;
   place-items: start center;
   padding-top: 12vh;
@@ -1025,8 +1130,8 @@ const DialogCard = styled.div`
   width: min(620px, calc(100vw - 32px));
   border-radius: 22px;
   border: 1px solid var(--workspace-line);
-  background: rgba(251, 251, 250, 0.98);
-  box-shadow: 0 24px 54px rgba(20, 20, 18, 0.18);
+  background: ${({ theme }) => theme.colors.backgroundCard};
+  box-shadow: ${({ theme }) => theme.shadows.soft};
   overflow: hidden;
 `;
 
@@ -1060,7 +1165,7 @@ const FieldHint = styled.div`
 
 const TextArea = styled.textarea`
   border: 1px solid var(--workspace-line);
-  background: rgba(255, 255, 255, 0.9);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 12px;
   padding: 11px 12px;
   color: var(--workspace-text);
@@ -1080,8 +1185,8 @@ const CenterPeekCard = styled.div`
   max-height: 84vh;
   border-radius: 24px;
   border: 1px solid var(--workspace-line);
-  background: rgba(251, 251, 250, 0.98);
-  box-shadow: 0 28px 64px rgba(20, 20, 18, 0.2);
+  background: ${({ theme }) => theme.colors.backgroundCard};
+  box-shadow: ${({ theme }) => theme.shadows.soft};
   overflow: hidden;
 `;
 
@@ -1089,8 +1194,8 @@ const Palette = styled.div`
   width: min(720px, calc(100vw - 32px));
   border-radius: 22px;
   border: 1px solid var(--workspace-line);
-  background: rgba(251, 251, 250, 0.98);
-  box-shadow: 0 24px 54px rgba(20, 20, 18, 0.18);
+  background: ${({ theme }) => theme.colors.backgroundCard};
+  box-shadow: ${({ theme }) => theme.shadows.soft};
   overflow: hidden;
 `;
 
@@ -1113,6 +1218,11 @@ const PaletteButton = styled.button`
 
   &:hover {
     background: var(--workspace-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 

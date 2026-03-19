@@ -16,14 +16,8 @@ export function RHRChart({ variant = 'card' }: ChartProps) {
   const { data } = useMetricsOverview(14);
   const appTheme = useTheme() as MonetTheme;
   const chart = getChartTheme(appTheme.mode ?? 'light');
-  const axisLabelColor =
-    variant === 'bare'
-      ? 'rgba(245, 248, 255, 0.92)'
-      : appTheme.mode === 'dark'
-        ? 'rgba(246, 240, 232, 0.92)'
-        : 'rgba(30, 31, 46, 0.92)';
-  const tooltipLabelColor =
-    variant === 'bare' ? 'rgba(245, 248, 255, 0.95)' : appTheme.colors.textPrimary;
+  const axisLabelColor = appTheme.colors.textPrimary;
+  const tooltipLabelColor = appTheme.colors.textPrimary;
   const points = useMemo(() => data?.rhr_trend_bpm ?? [], [data]);
   const labelTicks = useMemo(() => {
     if (!points?.length) return [];

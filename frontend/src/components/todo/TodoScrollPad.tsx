@@ -7,11 +7,9 @@ const ScrollShell = styled.div`
   position: relative;
   padding: 12px 16px 16px;
   border-radius: 20px;
-  background: radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.2), transparent 55%),
-    radial-gradient(circle at 100% 0, rgba(248, 225, 176, 0.3), transparent 60%),
-    linear-gradient(180deg, rgba(248, 237, 212, 0.96), rgba(235, 215, 184, 0.96));
+  background: ${({ theme }) => theme.colors.backgroundCard};
   box-shadow: 0 10px 26px rgba(11, 18, 32, 0.55);
-  color: #2b1b13;
+  color: ${({ theme }) => theme.colors.textPrimary};
   overflow: visible;
 
   &::before,
@@ -79,31 +77,37 @@ const Row = styled.li<{ $completed: boolean; $overdue: boolean }>`
   align-items: center;
   padding: 4px 6px;
   border-radius: 8px;
-  background: ${({ $overdue, $completed }) =>
+  background: ${({ $overdue, $completed, theme }) =>
     $completed
-      ? 'rgba(0,0,0,0.04)'
+      ? theme.colors.surfaceInset
       : $overdue
-        ? 'rgba(141, 34, 36, 0.16)'
-        : 'rgba(0,0,0,0.02)'};
+        ? theme.colors.dangerSubtle
+        : theme.colors.surfaceInset};
   border: 1px solid
-    ${({ $overdue, $completed }) =>
-      $completed ? 'rgba(0,0,0,0.08)' : $overdue ? 'rgba(141, 34, 36, 0.4)' : 'rgba(0,0,0,0.12)'};
+    ${({ $overdue, $completed, theme }) =>
+      $completed ? theme.colors.borderSubtle : $overdue ? theme.colors.danger : theme.colors.borderSubtle};
   opacity: ${({ $completed }) => ($completed ? 0.7 : 1)};
 `;
 
 const Checkbox = styled.button<{ $checked: boolean }>`
-  width: 16px;
-  height: 16px;
+  width: 24px;
+  height: 24px;
   border-radius: 4px;
-  border: 1px solid rgba(0, 0, 0, 0.5);
-  background: ${({ $checked }) =>
-    $checked ? 'linear-gradient(135deg, #274457, #5e8a7a)' : 'rgba(255, 255, 255, 0.7)'};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ $checked, theme }) =>
+    $checked ? theme.colors.accent : theme.colors.overlay};
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0.7rem;
-  color: #f6f0e8;
+  color: ${({ theme }) => theme.colors.textPrimary};
+  margin-right: 8px;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const DeleteButton = styled.button`
@@ -111,8 +115,13 @@ const DeleteButton = styled.button`
   background: transparent;
   cursor: pointer;
   font-size: 0.8rem;
-  color: rgba(86, 31, 24, 0.85);
+  color: ${({ theme }) => theme.colors.textSecondary};
   padding: 2px 4px;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const ActionColumn = styled.div`
@@ -123,14 +132,19 @@ const ActionColumn = styled.div`
 `;
 
 const HistoryButton = styled.button`
-  border: 1px solid rgba(86, 31, 24, 0.22);
-  background: rgba(255, 255, 255, 0.54);
-  color: rgba(86, 31, 24, 0.88);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ theme }) => theme.colors.overlay};
+  color: ${({ theme }) => theme.colors.textSecondary};
   border-radius: 999px;
   cursor: pointer;
   font-size: 0.68rem;
   line-height: 1;
   padding: 4px 8px;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const NameBox = styled.div`
@@ -146,9 +160,14 @@ const TextField = styled.textarea<{ $overdue: boolean; $completed: boolean }>`
   font-size: 0.82rem;
   font-family: ${({ theme }) => theme.fonts.body};
   text-align: left;
-  color: ${({ $completed }) => ($completed ? 'rgba(43,27,19,0.6)' : 'rgba(43,27,19,0.96)')};
+  color: ${({ $completed, theme }) => ($completed ? theme.colors.textSecondary : theme.colors.textPrimary)};
   text-decoration: ${({ $completed }) => ($completed ? 'line-through' : 'none')};
   outline: none;
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
   resize: vertical;
   line-height: 1.25;
   padding: 0;
@@ -159,7 +178,7 @@ const Deadline = styled.span<{ $overdue: boolean }>`
   display: block;
   font-size: 0.72rem;
   margin-left: 24px;
-  color: ${({ $overdue }) => ($overdue ? 'rgba(141, 34, 36, 0.98)' : 'rgba(43,27,19,0.7)')};
+  color: ${({ $overdue, theme }) => ($overdue ? theme.colors.danger : theme.colors.textSecondary)};
 `;
 
 const CompletionEditor = styled.div`
@@ -172,10 +191,10 @@ const CompletionEditor = styled.div`
 `;
 
 const CompletionInput = styled.input`
-  border: 1px solid rgba(86, 31, 24, 0.22);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
-  color: #2b1b13;
+  background: ${({ theme }) => theme.colors.overlay};
+  color: ${({ theme }) => theme.colors.textPrimary};
   font-size: 0.74rem;
   padding: 4px 6px;
 `;
@@ -183,18 +202,18 @@ const CompletionInput = styled.input`
 const CompletionApply = styled.button`
   border: none;
   border-radius: 999px;
-  background: #274457;
-  color: #f6f0e8;
+  background: ${({ theme }) => theme.colors.accent};
+  color: ${({ theme }) => theme.colors.textPrimary};
   cursor: pointer;
   font-size: 0.7rem;
   padding: 5px 9px;
 `;
 
 const CompletionCancel = styled.button`
-  border: 1px solid rgba(86, 31, 24, 0.22);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.6);
-  color: rgba(86, 31, 24, 0.88);
+  background: ${({ theme }) => theme.colors.overlay};
+  color: ${({ theme }) => theme.colors.textSecondary};
   cursor: pointer;
   font-size: 0.7rem;
   padding: 5px 9px;
@@ -209,7 +228,7 @@ const Empty = styled.p`
 const ErrorText = styled.p`
   margin: 4px 0 0;
   font-size: 0.75rem;
-  color: #8d2224;
+  color: ${({ theme }) => theme.colors.danger};
 `;
 
 type Props = {

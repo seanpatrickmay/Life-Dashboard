@@ -7,7 +7,7 @@ const Panel = styled(Card)`
   display: flex;
   flex-direction: column;
   gap: clamp(12px, 2vw, 18px);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 0 32px rgba(120, 170, 255, 0.35);
+  box-shadow: 0 0 0 1px ${({ theme }) => theme.colors.borderSubtle}, 0 0 32px rgba(120, 170, 255, 0.35);
 `;
 
 const Heading = styled.h3`
@@ -30,8 +30,8 @@ const MacroCard = styled.div`
   gap: 8px;
   padding: clamp(10px, 2vw, 14px);
   border-radius: 18px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
 `;
 
 const Label = styled.span`
@@ -57,7 +57,7 @@ const Bar = styled.div<{ $percent: number }>`
   height: 8px;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.15);
+  background: ${({ theme }) => theme.colors.overlay};
 
   &::after {
     content: '';

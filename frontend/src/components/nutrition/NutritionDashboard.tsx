@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import styled from 'styled-components';
+import { focusRing } from '../../styles/animations';
 import { Card } from '../common/Card';
 import { useNutritionDailySummary, useNutritionHistory } from '../../hooks/useNutritionIntake';
 import {
@@ -20,7 +21,7 @@ const Grid = styled.div`
 `;
 
 const ProgressBlock = styled.div`
-  background: rgba(0,0,0,0.15);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   border-radius: 16px;
   padding: 10px 14px;
 `;
@@ -28,7 +29,7 @@ const ProgressBlock = styled.div`
 const Bar = styled.div<{ $percent?: number | null }>`
   height: 6px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.1);
+  background: ${({ theme }) => theme.colors.overlay};
   overflow: hidden;
   margin-top: 8px;
   &::after {
@@ -83,7 +84,7 @@ export function NutritionDashboard() {
       <h3 data-halo="heading">Daily Intake</h3>
       {summaryGroups.map(({ key, label, items }) => (
         <GroupSection key={key} style={{ marginBottom: 12 }}>
-          <GroupHeader type="button" onClick={() => setSummaryExpanded((prev) => ({ ...prev, [key]: !prev[key] }))}>
+          <GroupHeader type="button" aria-expanded={summaryExpanded[key]} onClick={() => setSummaryExpanded((prev) => ({ ...prev, [key]: !prev[key] }))}>
             {label}
             <Chevron $expanded={summaryExpanded[key]}>›</Chevron>
           </GroupHeader>
@@ -111,7 +112,7 @@ export function NutritionDashboard() {
       </h4>
       {historyGroups.map(({ key, label, items }) => (
         <GroupSection key={key} style={{ marginBottom: 12 }}>
-          <GroupHeader type="button" onClick={() => setHistoryExpanded((prev) => ({ ...prev, [key]: !prev[key] }))}>
+          <GroupHeader type="button" aria-expanded={historyExpanded[key]} onClick={() => setHistoryExpanded((prev) => ({ ...prev, [key]: !prev[key] }))}>
             {label}
             <Chevron $expanded={historyExpanded[key]}>›</Chevron>
           </GroupHeader>

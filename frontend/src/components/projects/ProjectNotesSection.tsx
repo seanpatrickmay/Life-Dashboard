@@ -24,7 +24,7 @@ const NotesTitle = styled.div`
 `;
 
 const NoteCard = styled.div`
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   border-radius: 12px;
   padding: 9px 10px;
   display: grid;
@@ -48,8 +48,8 @@ const NoteTitle = styled.div`
 `;
 
 const Badge = styled.span`
-  border: 1px solid rgba(137, 189, 255, 0.75);
-  background: rgba(137, 189, 255, 0.14);
+  border: 1px solid ${({ theme }) => theme.colors.accentSubtle};
+  background: ${({ theme }) => theme.colors.accentSubtle};
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 0.7rem;
@@ -68,7 +68,7 @@ const TagRow = styled.div`
 `;
 
 const Tag = styled.span`
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 0.72rem;

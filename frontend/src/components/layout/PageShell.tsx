@@ -1,7 +1,7 @@
 import { PropsWithChildren } from 'react';
-import styled, { css } from 'styled-components';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { composeLayers, getCardLayers, palette } from '../../theme/monetTheme';
+import styled from 'styled-components';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { palette } from '../../theme/monetTheme';
 import { CloudNavShelf } from './CloudNavShelf';
 import { MonetChatBubble } from '../dashboard/MonetChatPanel';
 import { exitGuestMode, isGuestMode } from '../../demo/guest/guestMode';
@@ -69,8 +69,8 @@ const GuestBanner = styled.div`
   gap: 12px;
   padding: 10px 16px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: ${({ theme }) => theme.colors.overlay};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   font-size: 0.8rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -83,7 +83,7 @@ const GuestBannerText = styled.span`
 const GuestExitButton = styled.button`
   border-radius: 999px;
   padding: 6px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   background: transparent;
   color: ${({ theme }) => theme.colors.textPrimary};
   font-family: ${({ theme }) => theme.fonts.heading};
@@ -91,6 +91,10 @@ const GuestExitButton = styled.button`
   text-transform: uppercase;
   font-size: 0.7rem;
   cursor: pointer;
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 export function PageShell({ children }: PropsWithChildren) {
@@ -117,30 +121,30 @@ export function PageShell({ children }: PropsWithChildren) {
       ) : null}
       <CloudNavShelf>
         <Nav>
-          <Link className={pathname === '/' ? 'active' : ''} to="/">
+          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/" end>
             Dashboard
-          </Link>
-          <Link className={pathname.startsWith('/insights') ? 'active' : ''} to="/insights">
+          </NavLink>
+          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/insights">
             Insights
-          </Link>
-          <Link className={pathname.startsWith('/journal') ? 'active' : ''} to="/journal">
+          </NavLink>
+          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/journal">
             Journal
-          </Link>
-          <Link className={pathname.startsWith('/calendar') ? 'active' : ''} to="/calendar">
+          </NavLink>
+          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/calendar">
             Calendar
-          </Link>
-          <Link className={pathname.startsWith('/projects') ? 'active' : ''} to="/projects">
+          </NavLink>
+          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/projects">
             Projects
-          </Link>
-          <Link className={pathname.startsWith('/news') ? 'active' : ''} to="/news">
+          </NavLink>
+          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/news">
             News
-          </Link>
-          <Link className={pathname.startsWith('/nutrition') ? 'active' : ''} to="/nutrition">
+          </NavLink>
+          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/nutrition">
             Nutrition
-          </Link>
-          <Link className={pathname.startsWith('/user') ? 'active' : ''} to="/user">
+          </NavLink>
+          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/user">
             User
-          </Link>
+          </NavLink>
         </Nav>
       </CloudNavShelf>
       <Surface>{children}</Surface>

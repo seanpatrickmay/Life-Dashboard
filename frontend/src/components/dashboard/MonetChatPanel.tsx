@@ -32,12 +32,9 @@ const BubbleButton = styled.button`
   width: 58px;
   height: 58px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  background: ${({ theme }) =>
-    theme.mode === 'dark' ? 'rgba(20, 28, 46, 0.88)' : 'rgba(248, 237, 212, 0.94)'};
-  box-shadow:
-    0 4px 20px rgba(8, 14, 28, 0.35),
-    0 0 0 1px rgba(255, 255, 255, 0.08);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ theme }) => theme.colors.backgroundCard};
+  box-shadow: ${({ theme }) => theme.shadows.soft};
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -47,13 +44,16 @@ const BubbleButton = styled.button`
 
   &:hover {
     transform: scale(1.08);
-    box-shadow:
-      0 6px 28px rgba(8, 14, 28, 0.45),
-      0 0 0 1px rgba(255, 255, 255, 0.14);
+    box-shadow: ${({ theme }) => theme.shadows.soft};
   }
 
   &:active {
     transform: scale(0.96);
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 
@@ -86,14 +86,9 @@ const Drawer = styled.div<{ $open: boolean }>`
   display: flex;
   flex-direction: column;
   border-radius: 22px;
-  background: ${({ theme }) =>
-    theme.mode === 'dark' ? 'rgba(20, 28, 46, 0.92)' : 'rgba(255, 255, 255, 0.92)'};
-  border: 1px solid
-    ${({ theme }) =>
-      theme.mode === 'dark' ? 'rgba(246, 240, 232, 0.16)' : 'rgba(30, 31, 46, 0.12)'};
-  box-shadow:
-    0 16px 48px rgba(8, 14, 28, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.06);
+  background: ${({ theme }) => theme.colors.backgroundCard};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  box-shadow: ${({ theme }) => theme.shadows.soft};
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   color: ${({ theme }) => theme.colors.textPrimary};
@@ -113,9 +108,7 @@ const DrawerHeader = styled.div`
   justify-content: space-between;
   padding: 14px 18px 10px;
   flex-shrink: 0;
-  border-bottom: 1px solid
-    ${({ theme }) =>
-      theme.mode === 'dark' ? 'rgba(246, 240, 232, 0.08)' : 'rgba(30, 31, 46, 0.06)'};
+  border-bottom: 1px solid ${({ theme }) => theme.colors.borderSubtle};
 `;
 
 const DrawerTitle = styled.span`
@@ -154,7 +147,7 @@ const History = styled.div`
   &::-webkit-scrollbar { width: 3px; }
   &::-webkit-scrollbar-track { background: transparent; }
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.12);
+    background: ${({ theme }) => theme.colors.scrollThumb};
     border-radius: 2px;
   }
 `;
@@ -164,8 +157,8 @@ const Message = styled.div<{ $role: 'user' | 'assistant' }>`
   max-width: 88%;
   padding: 10px 13px;
   border-radius: 14px;
-  background: ${({ $role }) => ($role === 'user' ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.18)')};
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: ${({ $role, theme }) => ($role === 'user' ? theme.colors.overlay : theme.colors.surfaceRaised)};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   font-size: 0.85rem;
   line-height: 1.45;
   display: flex;
@@ -178,7 +171,7 @@ const RoleLabel = styled.span<{ $role: 'user' | 'assistant' }>`
   letter-spacing: 0.18em;
   text-transform: uppercase;
   opacity: 0.65;
-  color: ${({ $role }) => ($role === 'assistant' ? 'rgba(248, 236, 200, 0.92)' : 'rgba(255, 255, 255, 0.75)')};
+  color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
 const ThinkingDots = styled.div`
@@ -190,7 +183,7 @@ const ThinkingDots = styled.div`
     width: 5px;
     height: 5px;
     border-radius: 999px;
-    background: rgba(248, 236, 200, 0.9);
+    background: ${({ theme }) => theme.colors.textSecondary};
     animation: ${dotPulse} 1.1s ease-in-out infinite;
   }
 
@@ -219,9 +212,7 @@ const Form = styled.form`
   gap: 10px;
   align-items: flex-end;
   padding: 10px 14px 14px;
-  border-top: 1px solid
-    ${({ theme }) =>
-      theme.mode === 'dark' ? 'rgba(246, 240, 232, 0.08)' : 'rgba(30, 31, 46, 0.06)'};
+  border-top: 1px solid ${({ theme }) => theme.colors.borderSubtle};
 `;
 
 const Input = styled.textarea`
@@ -230,8 +221,8 @@ const Input = styled.textarea`
   max-height: 100px;
   resize: none;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(0, 0, 0, 0.12);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ theme }) => theme.colors.surfaceInset};
   padding: 9px 11px;
   color: ${({ theme }) => theme.colors.textPrimary};
   font-family: ${({ theme }) => theme.fonts.body};
@@ -240,6 +231,11 @@ const Input = styled.textarea`
 
   &::placeholder {
     opacity: 0.4;
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 
@@ -252,7 +248,7 @@ const SendButton = styled.button`
   letter-spacing: 0.14em;
   text-transform: uppercase;
   cursor: pointer;
-  background: ${({ theme }) => theme.palette?.ember?.['200'] ?? '#f5d37c'};
+  background: ${({ theme }) => theme.palette?.ember?.['200'] ?? theme.colors.accent};
   color: ${({ theme }) => theme.colors.backgroundPage};
   flex-shrink: 0;
   transition: opacity 0.15s ease;

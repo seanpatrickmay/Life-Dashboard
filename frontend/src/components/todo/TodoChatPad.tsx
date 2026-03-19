@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import styled from 'styled-components';
 import { useTodoChat } from '../../hooks/useTodoChat';
+import { focusRing } from '../../styles/animations';
 
 const Wrapper = styled.div`
   display: flex;
@@ -33,8 +34,8 @@ const Message = styled.div<{ $role: 'user' | 'assistant' }>`
   border-radius: 14px;
   font-size: 0.86rem;
   background: ${({ $role, theme }) =>
-    $role === 'user' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.22)'};
-  border: 1px solid rgba(255, 255, 255, 0.16);
+    $role === 'user' ? theme.colors.overlay : theme.colors.surfaceRaised};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
 `;
 
 const MetaList = styled.ul`
@@ -57,11 +58,12 @@ const Input = styled.textarea`
   resize: none;
   padding: 8px 10px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   color: ${({ theme }) => theme.colors.textPrimary};
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: 0.85rem;
+  ${focusRing}
 `;
 
 const Button = styled.button`
@@ -75,6 +77,7 @@ const Button = styled.button`
   cursor: pointer;
   background: ${({ theme }) => theme.colors.accent ?? '#f5d37c'};
   color: ${({ theme }) => theme.colors.backgroundPage};
+  ${focusRing}
 `;
 
 export function TodoChatPad() {

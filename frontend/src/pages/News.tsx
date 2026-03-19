@@ -32,8 +32,8 @@ const Title = styled.h1`
 `;
 
 const RefreshButton = styled.button`
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: ${({ theme }) => theme.colors.overlay};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   border-radius: 10px;
   color: inherit;
   font-family: ${({ theme }) => theme.fonts.heading};
@@ -42,11 +42,16 @@ const RefreshButton = styled.button`
   text-transform: uppercase;
   padding: 8px 16px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
 
   &:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.14);
-    border-color: rgba(255, 255, 255, 0.3);
+    background: ${({ theme }) => theme.colors.overlayActive};
+    border-color: ${({ theme }) => theme.colors.borderSubtle};
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 
   &:disabled {
@@ -109,17 +114,22 @@ const ArticleCard = styled.a`
   gap: 6px;
   padding: clamp(12px, 2vw, 16px);
   border-radius: 16px;
-  background: rgba(0, 0, 0, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   transition: all 0.2s ease;
   text-decoration: none;
   color: inherit;
   cursor: pointer;
 
   &:hover {
-    background: rgba(0, 0, 0, 0.24);
-    border-color: rgba(255, 255, 255, 0.18);
+    background: ${({ theme }) => theme.colors.surfaceInset};
+    border-color: ${({ theme }) => theme.colors.borderSubtle};
     transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 

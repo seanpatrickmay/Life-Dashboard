@@ -127,14 +127,14 @@ export function ReadinessCard() {
       <HeroCluster data-hero-readiness="true">
         <HeroTile>
           <HeroLabel data-halo="heading">{heroTitle}</HeroLabel>
-          <HeroScore data-halo="heading">{heroScore}</HeroScore>
+          <HeroScore data-halo="heading" aria-label={`Readiness score: ${heroScore} out of 100`}>{heroScore}</HeroScore>
         </HeroTile>
         <HeroTile>
           <HeroLabel data-halo="heading">Status</HeroLabel>
           <HeroScale>
             <ScaleRow>
-              <ScaleValue data-halo="heading">/ 100</ScaleValue>
-              <ScoreLabel>{heroLabel}</ScoreLabel>
+              <ScaleValue data-halo="heading" aria-hidden="true">/ 100</ScaleValue>
+              <ScoreLabel aria-label={`Readiness status: ${heroLabel}`}>{heroLabel}</ScoreLabel>
             </ScaleRow>
             <ScaleStamp>{heroStamp}</ScaleStamp>
           </HeroScale>

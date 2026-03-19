@@ -126,8 +126,13 @@ const ActionButton = styled.button<{ $primary?: boolean }>`
   cursor: pointer;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   background: ${({ theme, $primary }) =>
-    $primary ? hexToRgba(theme.colors.textPrimary, 0.14) : 'transparent'};
+    $primary ? theme.colors.overlayActive : 'transparent'};
   color: ${({ theme }) => theme.colors.textPrimary};
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const CalendarList = styled.div`
@@ -144,7 +149,7 @@ const CalendarRow = styled.label<{ $disabled?: boolean }>`
   padding: 6px 8px;
   border-radius: 12px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => hexToRgba(theme.colors.textPrimary, 0.04)};
+  background: ${({ theme }) => theme.colors.overlay};
   opacity: ${({ $disabled }) => ($disabled ? 0.6 : 1)};
 `;
 
@@ -154,7 +159,7 @@ const CalendarToggle = styled.input`
   height: 18px;
   border-radius: 6px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => hexToRgba(theme.colors.textPrimary, 0.06)};
+  background: ${({ theme }) => theme.colors.overlay};
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -206,7 +211,7 @@ const CalendarSurface = styled.div`
   padding: 18px;
   background: ${({ theme }) => theme.colors.backgroundCard};
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  box-shadow: 0 16px 30px ${({ theme }) => hexToRgba(theme.colors.textPrimary, 0.12)};
+  box-shadow: ${({ theme }) => theme.shadows.soft};
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -377,7 +382,7 @@ export function CalendarPage() {
           <Title>Calendar</Title>
           <ButtonRow>
             {status?.connected ? (
-              <ActionButton type="button" onClick={() => eventsQuery.syncCalendar()} $primary>
+              <ActionButton type="button" onClick={() => eventsQuery.syncCalendar()} $primary aria-label="Sync calendar">
                 Sync now
               </ActionButton>
             ) : null}
@@ -653,15 +658,3 @@ const toDayKey = (date: Date) => {
 
 const formatDateTime = (date: Date) =>
   date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
-
-const hexToRgba = (hex: string, alpha: number) => {
-  const sanitized = hex.replace('#', '');
-  const parsed = sanitized.length === 3
-    ? sanitized.split('').map((char) => char + char).join('')
-    : sanitized;
-  const int = parseInt(parsed, 16);
-  const r = (int >> 16) & 255;
-  const g = (int >> 8) & 255;
-  const b = int & 255;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};

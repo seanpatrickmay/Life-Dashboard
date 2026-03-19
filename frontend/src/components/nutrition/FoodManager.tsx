@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import styled from 'styled-components';
+import { focusRing } from '../../styles/animations';
 import { Card } from '../common/Card';
 import { useNutritionFoods } from '../../hooks/useNutritionFoods';
 import { useNutritionNutrients } from '../../hooks/useNutritionNutrients';
@@ -34,13 +35,14 @@ const Tabs = styled.div`
 `;
 
 const TabButton = styled.button<{ $active?: boolean }>`
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   background: ${({ $active, theme }) => ($active ? theme.palette?.pond?.['200'] ?? '#7ED7C4' : 'transparent')};
-  color: ${({ $active, theme }) => ($active ? '#0b0f19' : theme.colors.textPrimary)};
+  color: ${({ $active, theme }) => ($active ? theme.colors.backgroundPage : theme.colors.textPrimary)};
   padding: 8px 12px;
   border-radius: 999px;
   cursor: pointer;
   font-weight: 600;
+  ${focusRing}
 `;
 
 const TableCard = styled(Card)`
@@ -55,7 +57,7 @@ const Table = styled.table`
   th,
   td {
     padding: 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid ${({ theme }) => theme.colors.borderSubtle};
     text-align: left;
   }
 
@@ -64,7 +66,7 @@ const Table = styled.table`
     transition: background 0.2s ease;
 
     &:hover {
-      background: rgba(255, 255, 255, 0.03);
+      background: ${({ theme }) => theme.colors.overlay};
     }
   }
 `;
@@ -97,9 +99,9 @@ const Controls = styled.div`
 const Select = styled.select`
   padding: 6px 8px;
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.15);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   color: ${({ theme }) => theme.colors.textPrimary};
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
 `;
 
 const FieldGroup = styled.div`
@@ -118,9 +120,10 @@ const FieldGroup = styled.div`
     width: 100%;
     padding: 6px 8px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+    background: ${({ theme }) => theme.colors.surfaceRaised};
     color: ${({ theme }) => theme.colors.textPrimary};
+    ${focusRing}
   }
 `;
 
@@ -140,9 +143,10 @@ const NutrientField = styled.div`
     width: 100%;
     padding: 4px 6px;
     border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(0, 0, 0, 0.15);
+    border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+    background: ${({ theme }) => theme.colors.surfaceRaised};
     color: ${({ theme }) => theme.colors.textPrimary};
+    ${focusRing}
   }
 `;
 
@@ -156,14 +160,16 @@ const Actions = styled.div`
 const Button = styled.button<{ $variant?: 'primary' | 'ghost' }>`
   padding: 8px 12px;
   border-radius: 999px;
-  border: ${({ $variant }) => ($variant === 'ghost' ? '1px solid rgba(255,255,255,0.2)' : 'none')};
+  border: ${({ $variant, theme }) => ($variant === 'ghost' ? `1px solid ${theme.colors.borderSubtle}` : 'none')};
   background: ${({ $variant, theme }) =>
     $variant === 'ghost' ? 'transparent' : theme.palette?.pond?.['200'] ?? '#7ED7C4'};
   color: ${({ $variant, theme }) =>
-    $variant === 'ghost' ? theme.colors.textPrimary : '#0b0f19'};
+    $variant === 'ghost' ? theme.colors.textPrimary : theme.colors.backgroundPage};
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.2s ease;
+
+  ${focusRing}
 
   &:disabled {
     opacity: 0.6;
@@ -469,8 +475,7 @@ export function FoodManager() {
           </label>
           <label>
             Search:
-            <input
-              style={{ padding: '6px 8px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.15)', color: '#fff' }}
+            <SearchInput
               value={ingredientSearch}
               onChange={(e) => setIngredientSearch(e.target.value)}
               placeholder="Find ingredient"
@@ -552,7 +557,7 @@ export function FoodManager() {
               <SectionStack>
                 {groupedDefinitions.map(({ key, label, items }) => (
                   <GroupSection key={key}>
-                    <GroupHeader type="button" onClick={() => toggleGroup(key)}>
+                    <GroupHeader type="button" aria-expanded={expandedGroups[key]} onClick={() => toggleGroup(key)}>
                       {label}
                       <Chevron $expanded={expandedGroups[key]}>›</Chevron>
                     </GroupHeader>
@@ -585,7 +590,7 @@ export function FoodManager() {
                 ))}
               </SectionStack>
             </FieldGroup>
-            {error && <p style={{ color: '#ff8a8a' }}>{error}</p>}
+            {error && <ErrorText>{error}</ErrorText>}
             <Actions>
               <Button disabled={saving} onClick={() => handleSave()}>
                 {saving ? 'Saving…' : 'Save Pallete Entry'}
@@ -652,8 +657,7 @@ export function FoodManager() {
         <Controls>
           <label>
             Search:
-            <input
-              style={{ padding: '6px 8px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.15)', color: '#fff' }}
+            <SearchInput
               value={recipeSearch}
               onChange={(e) => setRecipeSearch(e.target.value)}
               placeholder="Find recipe"
@@ -739,14 +743,12 @@ export function FoodManager() {
             <FieldGroup>
               <label>Components</label>
               <Controls style={{ marginTop: 0 }}>
-                <input
-                  style={{ padding: '6px 8px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.15)', color: '#fff' }}
+                <SearchInput
                   value={ingredientPickerSearch}
                   onChange={(e) => setIngredientPickerSearch(e.target.value)}
                   placeholder="Search ingredients"
                 />
-                <input
-                  style={{ padding: '6px 8px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.15)', color: '#fff' }}
+                <SearchInput
                   value={recipePickerSearch}
                   onChange={(e) => setRecipePickerSearch(e.target.value)}
                   placeholder="Search recipes"
@@ -826,7 +828,7 @@ export function FoodManager() {
                 </p>
               </FieldGroup>
             )}
-            {error && <p style={{ color: '#ff8a8a' }}>{error}</p>}
+            {error && <ErrorText>{error}</ErrorText>}
             <Actions>
               <Button disabled={saving} onClick={() => handleSaveRecipe()}>
                 {saving ? 'Saving…' : 'Save Recipe'}
@@ -861,4 +863,17 @@ const SectionStack = styled.div`
   display: flex;
   flex-direction: column;
   gap: 10px;
+`;
+
+const ErrorText = styled.p`
+  color: ${({ theme }) => theme.colors.danger};
+`;
+
+const SearchInput = styled.input`
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ theme }) => theme.colors.surfaceRaised};
+  color: ${({ theme }) => theme.colors.textPrimary};
+  ${focusRing}
 `;

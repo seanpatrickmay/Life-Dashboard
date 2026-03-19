@@ -18,7 +18,7 @@ const SceneLayout = styled.div`
   display: flex;
   flex-direction: column;
   gap: clamp(20px, 3vw, 32px);
-  color: ${({ theme }) => (theme.mode === 'light' ? '#F6F0E8' : theme.colors.textPrimary)};
+  color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const SceneHeader = styled.div`
@@ -32,7 +32,7 @@ const SceneHeader = styled.div`
 const SignOutButton = styled.button`
   border-radius: 999px;
   padding: 10px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   background: ${({ theme }) => theme.colors.accent};
   color: #0b0f19;
   font-family: ${({ theme }) => theme.fonts.heading};
@@ -41,6 +41,10 @@ const SignOutButton = styled.button`
   font-size: 0.75rem;
   cursor: pointer;
   box-shadow: 0 10px 24px rgba(7, 9, 19, 0.35);
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const RefreshButton = styled.button`
@@ -48,7 +52,7 @@ const RefreshButton = styled.button`
   padding: 10px 18px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   background: transparent;
-  color: ${({ theme }) => (theme.mode === 'light' ? '#F6F0E8' : theme.colors.textPrimary)};
+  color: ${({ theme }) => theme.colors.textPrimary};
   font-family: ${({ theme }) => theme.fonts.heading};
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -58,6 +62,10 @@ const RefreshButton = styled.button`
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 
@@ -76,15 +84,15 @@ const StackColumn = styled.div`
 const LilyPadCard = styled.section`
   border-radius: 32px;
   padding: clamp(18px, 2.2vw, 28px);
-  background: rgba(10, 22, 42, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   backdrop-filter: blur(9px);
   box-shadow: 0 12px 40px rgba(7, 9, 19, 0.35);
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-height: 180px;
-  color: ${({ theme }) => (theme.mode === 'light' ? '#F6F0E8' : theme.colors.textPrimary)};
+  color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const SectionTitle = styled.h2`
@@ -122,8 +130,7 @@ const Field = styled.label`
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: ${({ theme }) =>
-    theme.mode === 'light' ? 'rgba(246, 240, 232, 0.78)' : theme.colors.textSecondary};
+  color: ${({ theme }) => theme.colors.textSecondary};
   input,
   select {
     font-size: 1rem;
@@ -151,9 +158,9 @@ const PadButtonRow = styled.div`
 const PadButton = styled.button<{ $variant?: 'primary' | 'ghost' }>`
   border-radius: 999px;
   padding: 10px 20px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: ${({ $variant }) => ($variant === 'primary' ? 'rgba(255, 255, 255, 0.2)' : 'transparent')};
-  color: ${({ theme }) => (theme.mode === 'light' ? '#F6F0E8' : theme.colors.textPrimary)};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ $variant, theme }) => ($variant === 'primary' ? theme.colors.overlay : 'transparent')};
+  color: ${({ theme }) => theme.colors.textPrimary};
   text-transform: uppercase;
   letter-spacing: 0.18em;
   font-size: 0.78rem;
@@ -162,6 +169,10 @@ const PadButton = styled.button<{ $variant?: 'primary' | 'ghost' }>`
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 
@@ -181,19 +192,19 @@ const SaveStatus = styled.span<{ $tone: 'neutral' | 'success' | 'error' }>`
   letter-spacing: 0.14em;
   text-transform: uppercase;
   border: 1px solid
-    ${({ $tone }) =>
+    ${({ $tone, theme }) =>
       $tone === 'success'
-        ? 'rgba(120,255,200,0.6)'
+        ? theme.colors.success
         : $tone === 'error'
-          ? 'rgba(255,140,140,0.6)'
-          : 'rgba(255,255,255,0.2)'};
-  background: ${({ $tone }) =>
+          ? theme.colors.danger
+          : theme.colors.borderSubtle};
+  background: ${({ $tone, theme }) =>
     $tone === 'success'
-      ? 'rgba(64,180,120,0.2)'
+      ? theme.colors.successSubtle
       : $tone === 'error'
-        ? 'rgba(200,80,80,0.2)'
-        : 'rgba(16,20,28,0.4)'};
-  color: ${({ theme }) => (theme.mode === 'light' ? '#F6F0E8' : theme.colors.textPrimary)};
+        ? theme.colors.dangerSubtle
+        : theme.colors.surfaceRaised};
+  color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const GoalsList = styled.div`
@@ -207,7 +218,7 @@ const GoalChip = styled.div`
   min-width: 120px;
   border-radius: 18px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.08);
+  background: ${({ theme }) => theme.colors.overlay};
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -231,9 +242,9 @@ const StatusPill = styled.span<{ $active?: boolean }>`
   font-size: 0.7rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  border: 1px solid ${({ $active }) => ($active ? 'rgba(120,255,200,0.6)' : 'rgba(255,255,255,0.2)')};
-  background: ${({ $active }) => ($active ? 'rgba(64,180,120,0.25)' : 'rgba(16,20,28,0.4)')};
-  color: ${({ theme }) => (theme.mode === 'light' ? '#F6F0E8' : theme.colors.textPrimary)};
+  border: 1px solid ${({ $active, theme }) => ($active ? theme.colors.success : theme.colors.borderSubtle)};
+  background: ${({ $active, theme }) => ($active ? theme.colors.successSubtle : theme.colors.surfaceRaised)};
+  color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 const HelperText = styled.p`
@@ -387,7 +398,7 @@ export function UserProfileScene() {
     setDailyEnergyDeltaInput(value);
     setFormState((prev) => ({
       ...prev,
-      daily_energy_delta_kcal: value === '' || value === '-' ? null : Number(value)
+      daily_energy_delta_kcal: value === '' || value === '-' ? undefined : Number(value)
     }));
   };
 

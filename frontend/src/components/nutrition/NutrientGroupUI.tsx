@@ -1,4 +1,5 @@
 import styled from 'styled-components';
+import { focusRing } from '../../styles/animations';
 
 export const GROUP_ORDER = ['macro', 'vitamin', 'mineral'] as const;
 export type GroupKey = (typeof GROUP_ORDER)[number];
@@ -10,9 +11,9 @@ export const GROUP_LABELS: Record<GroupKey, string> = {
 };
 
 export const GroupSection = styled.div`
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   border-radius: 18px;
-  background: rgba(0, 0, 0, 0.18);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   overflow: hidden;
 `;
 
@@ -30,11 +31,12 @@ export const GroupHeader = styled.button`
   cursor: pointer;
   text-align: left;
   letter-spacing: 0.05em;
+  ${focusRing}
 `;
 
 export const GroupBody = styled.div<{ $expanded: boolean }>`
   display: ${({ $expanded }) => ($expanded ? 'block' : 'none')};
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   padding: ${({ $expanded }) => ($expanded ? '12px 16px 16px' : '0 16px')};
 `;
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import styled from 'styled-components';
+import { focusRing } from '../../styles/animations';
 import { Card } from '../common/Card';
 import { useNutritionMenu } from '../../hooks/useNutritionMenu';
 import { useNutritionFoods } from '../../hooks/useNutritionFoods';
@@ -20,14 +21,15 @@ const HeaderActions = styled.div`
 `;
 
 const ToggleButton = styled.button`
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   border-radius: 999px;
   background: transparent;
   color: ${({ theme }) => theme.colors.textPrimary};
-  padding: 6px 12px;
+  padding: 10px 12px;
   font-weight: 600;
   cursor: pointer;
   letter-spacing: 0.05em;
+  ${focusRing}
 `;
 
 const Entries = styled.div`
@@ -40,7 +42,7 @@ const EntryCard = styled.div`
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.09);
   padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
@@ -55,8 +57,8 @@ const Field = styled.div`
     width: 100%;
     padding: 6px 8px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(0, 0, 0, 0.12);
+    border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+    background: ${({ theme }) => theme.colors.surfaceInset};
     color: ${({ theme }) => theme.colors.textPrimary};
   }
 `;
@@ -72,15 +74,16 @@ const Actions = styled.div`
     padding: 6px 10px;
     cursor: pointer;
     font-weight: 600;
+    ${focusRing}
   }
 
   button:first-of-type {
     background: ${({ theme }) => theme.palette?.pond?.['200'] ?? '#7ED7C4'};
-    color: #0b0f19;
+    color: ${({ theme }) => theme.colors.backgroundPage};
   }
 
   button:last-of-type {
-    background: rgba(255, 0, 0, 0.18);
+    background: ${({ theme }) => theme.colors.dangerSubtle};
     color: ${({ theme }) => theme.colors.textPrimary};
   }
 `;
@@ -150,7 +153,7 @@ export function MenuPanel() {
           {!menuQuery.isLoading && entries.length > 0 && (
             <span>{entries.length} {entries.length === 1 ? 'item' : 'items'}</span>
           )}
-          <ToggleButton type="button" onClick={() => setExpanded((prev) => !prev)}>
+          <ToggleButton type="button" aria-expanded={expanded} onClick={() => setExpanded((prev) => !prev)}>
             {expanded ? 'Hide' : 'Show'}
           </ToggleButton>
         </HeaderActions>

@@ -59,7 +59,7 @@ const ArticlesList = styled.div`
   &::-webkit-scrollbar { width: 3px; }
   &::-webkit-scrollbar-track { background: transparent; }
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.12);
+    background: ${({ theme }) => theme.colors.scrollThumb};
     border-radius: 2px;
   }
 `;
@@ -70,16 +70,21 @@ const ArticleRow = styled.a`
   gap: 10px;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(0, 0, 0, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: ${({ theme }) => theme.colors.surfaceRaised};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   transition: all 0.2s ease;
   text-decoration: none;
   color: inherit;
   cursor: pointer;
 
   &:hover {
-    background: rgba(0, 0, 0, 0.22);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: ${({ theme }) => theme.colors.overlayHover};
+    border-color: ${({ theme }) => theme.colors.borderSubtle};
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
   }
 `;
 

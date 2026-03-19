@@ -132,7 +132,7 @@ const Warning = styled.div`
   padding: 12px 16px;
   border-radius: 12px;
   border: 1px solid ${({ theme }) => theme.palette.ember['200']};
-  background: rgba(226, 187, 111, 0.12);
+  background: ${({ theme }) => theme.colors.accentSubtle};
   font-size: 0.95rem;
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
@@ -201,7 +201,7 @@ export function InsightHistory() {
             <p>{data?.morning_note ?? 'No readiness summary available.'}</p>
           </HeaderMeta>
           <ScoreStack>
-            <ScoreValue>{isLoading ? '…' : formatValue(data?.readiness_score)}</ScoreValue>
+            <ScoreValue aria-label={`Readiness score: ${isLoading ? 'loading' : formatValue(data?.readiness_score)} out of 100`}>{isLoading ? '…' : formatValue(data?.readiness_score)}</ScoreValue>
             <ScoreMeta>
               <span>/ 100</span>
               <span>{data?.readiness_label ?? 'Pending'}</span>
@@ -215,15 +215,15 @@ export function InsightHistory() {
 
         <MetricsRows>
           {sections.map((section) => (
-            <MetricRow key={section.key}>
+            <MetricRow key={section.key} role="group" aria-label={`${section.title} metrics`}>
               <InfoCard>
                 <MetricTitle>{section.title}</MetricTitle>
-                <MetricValue>
+                <MetricValue aria-label={`${section.title}: ${section.value} ${section.unit}`}>
                   {section.value} {section.unit}
                 </MetricValue>
               </InfoCard>
               <InsightCard>{section.note ?? 'Structured insight missing.'}</InsightCard>
-              <ChartCell>{chartMap[section.key as MetricKey]}</ChartCell>
+              <ChartCell aria-label={`${section.title} trend chart`}>{chartMap[section.key as MetricKey]}</ChartCell>
             </MetricRow>
           ))}
         </MetricsRows>
