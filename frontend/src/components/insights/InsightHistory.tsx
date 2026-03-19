@@ -119,6 +119,28 @@ const MetricValue = styled.div`
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
+const ScoreBadge = styled.div<{ $score: number }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: ${({ theme }) => theme.colors.textSecondary};
+`;
+
+const ScoreDot = styled.span<{ $score: number }>`
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: ${({ $score, theme }) => {
+    if ($score >= 7) return theme.colors.success;
+    if ($score >= 4) return theme.palette?.ember?.['300'] ?? theme.colors.accent;
+    return theme.colors.danger;
+  }};
+`;
+
 const ChartCell = styled.div`
   min-height: 320px;
   display: flex;
@@ -157,28 +179,32 @@ export function InsightHistory() {
       title: 'HRV',
       value: formatValue(data?.hrv_value_ms),
       unit: 'ms',
-      note: data?.hrv_note
+      note: data?.hrv_note,
+      score: data?.hrv_score
     },
     {
       key: 'rhr',
       title: 'Resting HR',
       value: formatValue(data?.rhr_value_bpm),
       unit: 'bpm',
-      note: data?.rhr_note
+      note: data?.rhr_note,
+      score: data?.rhr_score
     },
     {
       key: 'sleep',
       title: 'Sleep',
       value: formatValue(data?.sleep_value_hours, 2),
       unit: 'hrs',
-      note: data?.sleep_note
+      note: data?.sleep_note,
+      score: data?.sleep_score
     },
     {
       key: 'load',
       title: 'Training Load',
       value: formatValue(data?.training_load_value),
       unit: 'pts',
-      note: data?.training_load_note
+      note: data?.training_load_note,
+      score: data?.training_load_score
     }
   ];
 
@@ -221,6 +247,12 @@ export function InsightHistory() {
                 <MetricValue aria-label={`${section.title}: ${section.value} ${section.unit}`}>
                   {section.value} {section.unit}
                 </MetricValue>
+                {section.score != null && (
+                  <ScoreBadge $score={section.score}>
+                    <ScoreDot $score={section.score} />
+                    {section.score}/10
+                  </ScoreBadge>
+                )}
               </InfoCard>
               <InsightCard>{section.note ?? 'Structured insight missing.'}</InsightCard>
               <ChartCell aria-label={`${section.title} trend chart`}>{chartMap[section.key as MetricKey]}</ChartCell>

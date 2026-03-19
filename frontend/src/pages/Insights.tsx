@@ -1,6 +1,7 @@
 import styled from 'styled-components';
 
 import { ReadinessCard } from '../components/insights/ReadinessCard';
+import { LifeContextPanel } from '../components/insights/LifeContextPanel';
 import { InsightHistory } from '../components/insights/InsightHistory';
 import { fadeUp, reducedMotion } from '../styles/animations';
 
@@ -17,6 +18,7 @@ export function InsightsPage() {
   return (
     <Page>
       <ReadinessCard />
+      <LifeContextPanel />
       <InsightHistory />
     </Page>
   );
