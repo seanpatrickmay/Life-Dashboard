@@ -31,6 +31,7 @@ from app.db.repositories.nutrition_ingredients_repository import (
     NutritionRecipesRepository,
 )
 from app.db.repositories.nutrition_intake_repository import NutritionIntakeRepository
+from app.db.repositories.nutrition_suggestions_repository import NutritionSuggestionsRepository
 from app.schemas.llm_outputs import (
     NutritionFoodExtractionOutput,
     NutrientProfileOutput,
@@ -212,6 +213,8 @@ class NutritionAssistantAgent:
             )
 
         await self.session.flush()
+        suggestions_repo = NutritionSuggestionsRepository(self.session)
+        await suggestions_repo.mark_stale(user_id)
         await self.session.commit()
         logger.info(
             f"[nutrition] logged {len(entries)} entries for request id={request_id}"

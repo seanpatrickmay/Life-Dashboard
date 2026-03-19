@@ -162,6 +162,33 @@ class NutritionIntakeUpdateRequest(BaseModel):
     unit: str
 
 
+class QuickLogRequest(BaseModel):
+    ingredient_id: int | None = None
+    recipe_id: int | None = None
+    quantity: float = Field(gt=0)
+    unit: str
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        if bool(self.ingredient_id) == bool(self.recipe_id):
+            raise ValueError("Provide exactly one of ingredient_id or recipe_id")
+        return self
+
+
+class SuggestionItem(BaseModel):
+    ingredient_id: int | None = None
+    recipe_id: int | None = None
+    name: str
+    quantity: float
+    unit: str
+    calories_estimate: int
+    reason: str
+
+
+class SuggestionsResponse(BaseModel):
+    suggestions: list[SuggestionItem]
+
+
 class ScalingRuleItem(BaseModel):
     slug: str
     label: str

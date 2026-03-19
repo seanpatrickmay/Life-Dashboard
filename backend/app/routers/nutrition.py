@@ -30,8 +30,12 @@ from app.schemas.nutrition import (
     NutrientGoalItem,
     NutrientGoalUpdateRequest,
     ScalingRuleListResponse,
+    QuickLogRequest,
+    SuggestionsResponse,
 )
 from app.services.claude_nutrition_agent import NutritionAssistantAgent
+from app.services.nutrition_suggestion_agent import NutritionSuggestionAgent
+from app.db.repositories.nutrition_suggestions_repository import NutritionSuggestionsRepository
 from app.services.nutrition_ingredients_service import NutritionIngredientsService
 from app.services.nutrition_recipes_service import NutritionRecipesService
 from app.services.nutrition_goals_service import NutritionGoalsService
@@ -376,6 +380,38 @@ async def history(
     service = NutritionIntakeService(session)
     data = await service.rolling_average(current_user.id, days)
     return NutritionHistoryResponse(**data)
+
+
+@router.get("/suggestions", response_model=SuggestionsResponse)
+async def get_suggestions(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> SuggestionsResponse:
+    agent = NutritionSuggestionAgent(session)
+    suggestions = await agent.get_suggestions(current_user.id)
+    return SuggestionsResponse(suggestions=suggestions)
+
+
+@router.post("/quick-log", response_model=dict)
+async def quick_log(
+    request: QuickLogRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    service = NutritionIntakeService(session)
+    day = eastern_today()
+    try:
+        record = await service.log_manual_intake(
+            user_id=current_user.id,
+            ingredient_id=request.ingredient_id,
+            recipe_id=request.recipe_id,
+            quantity=request.quantity,
+            unit=request.unit,
+            day=day,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return record
 
 
 async def _assistant_message(
