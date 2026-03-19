@@ -10,7 +10,7 @@ import { ProjectNotesSection, sortProjectNotes } from './ProjectNotesSection';
 const theme = {
   fonts: { heading: 'sans-serif' },
   colors: { textPrimary: '#fff' }
-};
+} as unknown as import('styled-components').DefaultTheme;
 
 const buildNote = (override: Partial<ProjectNote>): ProjectNote => ({
   id: 1,

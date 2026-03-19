@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import styled, { css } from 'styled-components';
 import { composeLayers, getCardLayers } from '../../theme/monetTheme';
 import { Z_LAYERS } from '../../styles/zLayers';
@@ -232,6 +232,15 @@ export function CalendarDetailDrawer({
   recurrenceScope,
   onChangeScope
 }: Props) {
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+
   const payload = item?.data as CalendarEvent | TodoItem | undefined;
   const isEvent = item?.kind === 'event';
   const event = isEvent ? (payload as CalendarEvent) : null;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import styled, { keyframes } from 'styled-components';
 
@@ -240,6 +240,19 @@ const TaskItem = styled.li`
   background: var(--page-surface);
   font-size: 0.86rem;
   line-height: 1.4;
+`;
+
+const ItemTypeTag = styled.span<{ $kind: 'task' | 'event' }>`
+  display: inline-block;
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  background: ${({ $kind }) => $kind === 'task' ? 'var(--page-ink-muted)' : 'var(--page-border)'};
+  color: var(--page-surface);
+  opacity: 0.7;
 `;
 
 const TaskMeta = styled.div`
@@ -504,10 +517,23 @@ const GroupItemText = styled.span`
   color: var(--page-ink);
 `;
 
+const shimmerPulse = keyframes`
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.9; }
+`;
+
 const StatusMessage = styled.div`
   font-size: 0.85rem;
   opacity: 0.7;
   color: var(--page-ink-muted);
+`;
+
+const ProcessingMessage = styled(StatusMessage)`
+  animation: ${shimmerPulse} 2s ease-in-out infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 `;
 
 const PageNav = styled.div`
@@ -639,17 +665,37 @@ export function JournalBook() {
     setEntryText('');
   };
 
-  const handleNavigateDay = (delta: number) => {
-    const nextDate = addDays(selectedDate, delta);
-    const nextKey = formatDateKey(nextDate);
-    if (delta > 0 && nextKey > todayKey) return;
+  const navTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const pendingDateRef = useRef<Date | null>(null);
 
+  const applyNavigation = useCallback((nextDate: Date) => {
+    const nextKey = formatDateKey(nextDate);
     setSelectedDate(nextDate);
 
     const nextWeekStart = getWeekStart(nextDate);
     if (formatDateKey(nextWeekStart) !== weekStartKey) {
       setWeekStart(nextWeekStart);
     }
+
+    if (nextKey === todayKey) {
+      setLeftMode('completed');
+    } else if (leftMode === 'completed') {
+      setLeftMode('calendar');
+    }
+  }, [weekStartKey, todayKey, leftMode]);
+
+  const handleNavigateDay = (delta: number) => {
+    const base = pendingDateRef.current ?? selectedDate;
+    const nextDate = addDays(base, delta);
+    const nextKey = formatDateKey(nextDate);
+    if (delta > 0 && nextKey > todayKey) return;
+
+    pendingDateRef.current = nextDate;
+    clearTimeout(navTimerRef.current);
+    navTimerRef.current = setTimeout(() => {
+      pendingDateRef.current = null;
+      applyNavigation(nextDate);
+    }, 200);
 
     if (nextKey === todayKey) {
       setLeftMode('completed');
@@ -689,6 +735,7 @@ export function JournalBook() {
                   <TaskList>
                     {todayCompletedItems.map((item) => (
                       <TaskItem key={item.id}>
+                        <ItemTypeTag $kind="task">Task</ItemTypeTag>
                         <TaskMeta>{formatOptionalTime(item.completed_at_utc)}</TaskMeta>
                         <TaskText>{item.text}</TaskText>
                       </TaskItem>
@@ -709,6 +756,7 @@ export function JournalBook() {
                   <TaskList>
                     {endedCalendarEvents.map((event) => (
                       <TaskItem key={event.id}>
+                        <ItemTypeTag $kind="event">Event</ItemTypeTag>
                         {event.is_all_day
                           ? 'All day'
                           : `${formatTime(event.start_time as string)} - ${formatTime(event.end_time as string)}`}
@@ -796,6 +844,7 @@ export function JournalBook() {
                   <TaskList>
                     {completedItems.map((item) => (
                       <TaskItem key={item.id}>
+                        <ItemTypeTag $kind="task">Task</ItemTypeTag>
                         <TaskMeta>{formatOptionalTime(item.completed_at_utc)}</TaskMeta>
                         <TaskText>{item.text}</TaskText>
                       </TaskItem>
@@ -835,7 +884,7 @@ export function JournalBook() {
           ) : (
             <>
               {dayData?.status === 'error' ? (
-                <StatusMessage>Summary is still processing. Check back soon.</StatusMessage>
+                <ProcessingMessage>Summary is still processing. Check back soon.</ProcessingMessage>
               ) : summaryGroups.length === 0 ? (
                 <StatusMessage>No accomplishments were logged for this day.</StatusMessage>
               ) : (

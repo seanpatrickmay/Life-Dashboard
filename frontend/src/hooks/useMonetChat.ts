@@ -84,36 +84,36 @@ const buildGuestSeedChat = (dayKey: string): StoredChat => {
   return {
     dayKey,
     sessionId: 'guest-demo-session',
-    history: [
+    history: ([
       {
         id: 'guest-seed-1',
-        role: 'assistant',
+        role: 'assistant' as const,
         text:
-          'Welcome to Guest mode. I can log meals and turn notes into tasks locally (no backend). Try: “Log: …” or “Remind me to …”.',
-        status: 'final'
+          'Welcome to Guest mode. I can log meals and turn notes into tasks locally (no backend). Try: "Log: ..." or "Remind me to ...".',
+        status: 'final' as const
       },
       {
         id: 'guest-seed-2',
-        role: 'user',
+        role: 'user' as const,
         text: 'Lunch was a chicken burrito bowl. Remind me to call insurance tomorrow morning about labs coverage.'
       },
       {
         id: 'guest-seed-3',
-        role: 'assistant',
-        text: 'Done. Logged lunch and added an admin reminder. If you tell me when, I’ll attach a due time.',
+        role: 'assistant' as const,
+        text: "Done. Logged lunch and added an admin reminder. If you tell me when, I'll attach a due time.",
         nutritionEntries,
         todoItems: insuranceTodo ? [insuranceTodo] : [],
-        status: 'final'
+        status: 'final' as const
       },
-      { id: 'guest-seed-4', role: 'user', text: 'Also: schedule my annual physical + labs next week.' },
+      { id: 'guest-seed-4', role: 'user' as const, text: 'Also: schedule my annual physical + labs next week.' },
       {
         id: 'guest-seed-5',
-        role: 'assistant',
-        text: 'Added. Want it with your PCP, or should I treat this as “find in-network provider + book”?',
+        role: 'assistant' as const,
+        text: 'Added. Want it with your PCP, or should I treat this as "find in-network provider + book"?',
         todoItems: physicalTodo ? [physicalTodo] : [],
-        status: 'final'
+        status: 'final' as const
       }
-    ].slice(-MAX_HISTORY)
+    ] satisfies MonetChatEntry[]).slice(-MAX_HISTORY)
   };
 };
 
@@ -129,7 +129,7 @@ const buildFallbackReply = (response: MonetChatResponse) => {
   if (nutritionEntries.length > 0) {
     return 'Logged with care. Your meal is in the ledger.';
   }
-  return 'Noted, and I’m here for the next step.';
+  return "Noted, and I'm here for the next step.";
 };
 
 export function useMonetChat() {
@@ -218,17 +218,17 @@ export function useMonetChat() {
             text: reply,
             nutritionEntries,
             todoItems,
-            status: 'final'
+            status: 'final' as const
           };
         });
         if (!replaced) {
           next.push({
             id: crypto.randomUUID(),
-            role: 'assistant',
+            role: 'assistant' as const,
             text: reply,
             nutritionEntries,
             todoItems,
-            status: 'final'
+            status: 'final' as const
           });
         }
         return next.slice(-MAX_HISTORY);
@@ -269,10 +269,10 @@ export function useMonetChat() {
         (guest
           ? buildGuestSeedChat(currentDayKey)
           : ({ sessionId: undefined, dayKey: currentDayKey, history: [] } satisfies StoredChat));
-      const nextHistory = [
+      const nextHistory: MonetChatEntry[] = [
         ...baseState.history,
-        { id: crypto.randomUUID(), role: 'user', text: trimmed },
-        { id: pendingId, role: 'assistant', text: '', status: 'pending' }
+        { id: crypto.randomUUID(), role: 'user' as const, text: trimmed },
+        { id: pendingId, role: 'assistant' as const, text: '', status: 'pending' as const }
       ].slice(-MAX_HISTORY);
       activeDayKeyRef.current = currentDayKey;
       setDayKey(currentDayKey);
@@ -283,10 +283,10 @@ export function useMonetChat() {
     }
 
     setHistory((prev) => {
-      const next = [
+      const next: MonetChatEntry[] = [
         ...prev,
-        { id: crypto.randomUUID(), role: 'user', text: trimmed },
-        { id: pendingId, role: 'assistant', text: '', status: 'pending' }
+        { id: crypto.randomUUID(), role: 'user' as const, text: trimmed },
+        { id: pendingId, role: 'assistant' as const, text: '', status: 'pending' as const }
       ];
       return next.slice(-MAX_HISTORY);
     });

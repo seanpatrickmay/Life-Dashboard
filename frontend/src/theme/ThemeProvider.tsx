@@ -1,9 +1,7 @@
 import React from 'react';
 import { ThemeProvider as StyledThemeProvider } from 'styled-components';
-import { lightTheme, darkTheme, scenePalettesByMoment, haloTokens, type FeatureSceneSetting, type SceneDensity, type HorizonSetting, type Moment } from './monetTheme';
+import { lightTheme, darkTheme, scenePalettesByMoment, haloTokens, type MonetTheme, type FeatureSceneSetting, type SceneDensity, type HorizonSetting, type Moment } from './monetTheme';
 import { fetchSceneTime } from '../services/api';
-
-type Moment = 'morning' | 'noon' | 'twilight' | 'night';
 type ArtIntensity = 'rich' | 'minimal' | 'flat';
 
 type Mode = 'light' | 'dark' | 'system';
@@ -191,7 +189,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     horizonMode,
     timeTestEnabled,
     sceneHour: controlHour
-  } as const;
+  };
 
   const api = React.useMemo<ThemeModeContextType>(
     () => ({
@@ -313,7 +311,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       ...(theme.tokens ?? {}),
       halo
     }
-  }), [theme, themedScenePalette, momentAccent, halo]);
+  } satisfies Record<string, unknown> as unknown as MonetTheme), [theme, themedScenePalette, momentAccent, halo]);
 
   React.useEffect(() => {
     if (timeOfDayMode !== 'auto') return;

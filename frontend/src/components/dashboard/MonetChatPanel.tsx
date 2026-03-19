@@ -73,7 +73,10 @@ const Overlay = styled.div<{ $open: boolean }>`
   position: fixed;
   inset: 0;
   z-index: ${Z_LAYERS.chatBubble - 1};
+  background: rgba(0, 0, 0, 0.08);
+  opacity: ${({ $open }) => ($open ? 1 : 0)};
   pointer-events: ${({ $open }) => ($open ? 'auto' : 'none')};
+  transition: opacity 0.2s ease;
 `;
 
 const Drawer = styled.div<{ $open: boolean }>`
@@ -280,6 +283,16 @@ export function MonetChatBubble() {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
+  }, [open]);
+
+  // Dismiss on Escape key
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
   }, [open]);
 
   const submit = async () => {

@@ -89,7 +89,17 @@ const Actions = styled.div`
 `;
 
 const Collapse = styled.div<{ $expanded: boolean }>`
-  display: ${({ $expanded }) => ($expanded ? 'block' : 'none')};
+  display: grid;
+  grid-template-rows: ${({ $expanded }) => ($expanded ? '1fr' : '0fr')};
+  transition: grid-template-rows 0.25s ease;
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.01ms;
+  }
+
+  > * {
+    overflow: hidden;
+  }
 `;
 
 type Draft = Record<
@@ -105,6 +115,7 @@ export function MenuPanel() {
   const { foodsQuery } = useNutritionFoods();
   const [drafts, setDrafts] = useState<Draft>({});
   const [expanded, setExpanded] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const entries = menuQuery.data?.entries ?? [];
   const foods = foodsQuery.data ?? [];
@@ -136,13 +147,18 @@ export function MenuPanel() {
     });
   };
 
-  const handleDelete = async (id: number) => {
-    await deleteEntry(id);
-    setDrafts((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+  const handleDeleteClick = (id: number) => {
+    if (confirmDeleteId === id) {
+      deleteEntry(id);
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setConfirmDeleteId(null);
+    } else {
+      setConfirmDeleteId(id);
+    }
   };
 
   return (
@@ -160,44 +176,48 @@ export function MenuPanel() {
       </PanelHeader>
       {menuQuery.isLoading && <p style={{ opacity: 0.7 }}>Loading today&apos;s menu…</p>}
       <Collapse $expanded={expanded}>
-        {entries.length === 0 ? (
-          <p style={{ opacity: 0.7 }}>No meals logged today.</p>
-        ) : (
-          <Entries>
-            {entries.map((entry) => (
-              <EntryCard key={entry.id}>
-                <div>
-                  <strong>{entry.ingredient_name ?? foodMap.get(entry.ingredient_id)}</strong>
-                  <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>
-                    Source: {entry.source}
+        <div>
+          {entries.length === 0 ? (
+            <p style={{ opacity: 0.7 }}>No meals logged today.</p>
+          ) : (
+            <Entries>
+              {entries.map((entry) => (
+                <EntryCard key={entry.id}>
+                  <div>
+                    <strong>{entry.ingredient_name ?? foodMap.get(entry.ingredient_id)}</strong>
+                    <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>
+                      Source: {entry.source}
+                    </div>
                   </div>
-                </div>
-                <Actions>
-                  <button onClick={() => handleSave(entry.id)}>Save</button>
-                  <button onClick={() => handleDelete(entry.id)}>Remove</button>
-                </Actions>
-                <Field>
-                  <label>Quantity</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    aria-label="Quantity"
-                    value={drafts[entry.id]?.quantity ?? Number(entry.quantity ?? 0)}
-                    onChange={(e) => handleChange(entry.id, 'quantity', e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <label>Unit</label>
-                  <input
-                    aria-label="Unit"
-                    value={drafts[entry.id]?.unit ?? entry.unit}
-                    onChange={(e) => handleChange(entry.id, 'unit', e.target.value)}
-                  />
-                </Field>
-              </EntryCard>
-            ))}
-          </Entries>
-        )}
+                  <Actions>
+                    <button onClick={() => handleSave(entry.id)}>Save</button>
+                    <button onClick={() => handleDeleteClick(entry.id)}>
+                    {confirmDeleteId === entry.id ? 'Confirm?' : 'Remove'}
+                  </button>
+                  </Actions>
+                  <Field>
+                    <label>Quantity</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      aria-label="Quantity"
+                      value={drafts[entry.id]?.quantity ?? Number(entry.quantity ?? 0)}
+                      onChange={(e) => handleChange(entry.id, 'quantity', e.target.value)}
+                    />
+                  </Field>
+                  <Field>
+                    <label>Unit</label>
+                    <input
+                      aria-label="Unit"
+                      value={drafts[entry.id]?.unit ?? entry.unit}
+                      onChange={(e) => handleChange(entry.id, 'unit', e.target.value)}
+                    />
+                  </Field>
+                </EntryCard>
+              ))}
+            </Entries>
+          )}
+        </div>
       </Collapse>
       {!expanded && entries.length > 0 && (
         <p style={{ opacity: 0.65, fontSize: '0.85rem' }}>

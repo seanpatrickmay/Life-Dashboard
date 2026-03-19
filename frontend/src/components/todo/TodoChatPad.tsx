@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useTodoChat } from '../../hooks/useTodoChat';
 import { focusRing } from '../../styles/animations';
@@ -83,6 +83,13 @@ const Button = styled.button`
 export function TodoChatPad() {
   const { history, sendMessage, isSending } = useTodoChat();
   const [text, setText] = useState('');
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (historyRef.current) {
+      historyRef.current.scrollTop = historyRef.current.scrollHeight;
+    }
+  }, [history.length]);
 
   const submit = async () => {
     if (!text.trim()) return;
@@ -98,7 +105,7 @@ export function TodoChatPad() {
   return (
     <Wrapper>
       <Heading data-halo="heading">Monet • Tasks</Heading>
-      <History>
+      <History ref={historyRef}>
         {history.length === 0 && (
           <Message $role="assistant">
             Tell me what you&apos;d like to remember, like &quot;Pay rent by Friday 5pm&quot; or &quot;Do the laundry&quot;.

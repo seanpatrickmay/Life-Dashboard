@@ -16,7 +16,7 @@ const TODOS_QUERY_KEY = ['todos', 'list'];
 export function useTodosOptimized() {
   const queryClient = useQueryClient();
   const pendingUpdatesRef = useRef<Map<number, Partial<TodoItem>>>(new Map());
-  const invalidateTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const invalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const timeZone = getUserTimeZone();
 

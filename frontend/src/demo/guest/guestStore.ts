@@ -331,7 +331,8 @@ const buildGuestState = (today: Date): GuestState => {
     }
   ].map((item) => ({
     ...item,
-    deadline_is_date_only: item.deadline_is_date_only ?? false,
+    deadline_is_date_only: (item as Record<string, unknown>).deadline_is_date_only as boolean ?? false,
+    time_horizon: ('time_horizon' in item ? (item as Record<string, unknown>).time_horizon : 'this_week') as import('../../services/api').TimeHorizon,
     is_overdue:
       !item.completed && item.deadline_utc
         ? new Date(item.deadline_utc).getTime() < Date.now()
@@ -892,7 +893,7 @@ export const getGuestAuthMe = () => ({
     id: 999999,
     email: 'guest@life-dashboard.demo',
     display_name: 'Guest',
-    role: 'user',
+    role: 'user' as const,
     email_verified: true
   }
 });
@@ -940,6 +941,7 @@ export const createGuestTodo = (payload: {
     completed: false,
     deadline_utc: payload.deadline_utc ?? null,
     deadline_is_date_only: payload.deadline_is_date_only ?? false,
+    time_horizon: 'this_week',
     is_overdue: payload.deadline_utc
       ? new Date(payload.deadline_utc).getTime() < Date.now()
       : false,

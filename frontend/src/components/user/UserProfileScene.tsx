@@ -658,9 +658,11 @@ export function UserProfileScene() {
                 {saveState === 'saving' ? 'Saving…' : 'Save'}
               </PadButton>
             ) : null}
-            {saveState === 'saved' ? <SaveStatus $tone="success">Saved</SaveStatus> : null}
-            {saveState === 'error' ? <SaveStatus $tone="error">Save failed</SaveStatus> : null}
-            {saveState === 'saving' ? <SaveStatus $tone="neutral">Saving</SaveStatus> : null}
+            <span aria-live="polite" aria-atomic="true">
+              {saveState === 'saved' ? <SaveStatus $tone="success">Saved</SaveStatus> : null}
+              {saveState === 'error' ? <SaveStatus $tone="error">Save failed</SaveStatus> : null}
+              {saveState === 'saving' ? <SaveStatus $tone="neutral">Saving</SaveStatus> : null}
+            </span>
           </PadButtonRow>
         </LilyPadCard>
 
@@ -669,13 +671,15 @@ export function UserProfileScene() {
             <CardHeader>
               <SectionTitle>Latest Energy</SectionTitle>
               <CardActions>
-                {garminRefreshState === 'success' ? <SaveStatus $tone="success">Updated</SaveStatus> : null}
-                {garminRefreshState === 'error' ? (
-                  <SaveStatus $tone="error">Refresh failed</SaveStatus>
-                ) : null}
-                {garminRefreshState === 'cooldown' ? (
-                  <SaveStatus $tone="neutral">Cooldown</SaveStatus>
-                ) : null}
+                <span aria-live="polite" aria-atomic="true">
+                  {garminRefreshState === 'success' ? <SaveStatus $tone="success">Updated</SaveStatus> : null}
+                  {garminRefreshState === 'error' ? (
+                    <SaveStatus $tone="error">Refresh failed</SaveStatus>
+                  ) : null}
+                  {garminRefreshState === 'cooldown' ? (
+                    <SaveStatus $tone="neutral">Cooldown</SaveStatus>
+                  ) : null}
+                </span>
                 <CardActionButton
                   $variant="primary"
                   type="button"
@@ -757,7 +761,7 @@ export function UserProfileScene() {
                 value={garminPassword}
                 disabled={isGuest}
                 onChange={(event) => setGarminPassword(event.target.value)}
-                placeholder="••••••••"
+                placeholder="Enter Garmin password"
               />
             </Field>
           </InlineForm>

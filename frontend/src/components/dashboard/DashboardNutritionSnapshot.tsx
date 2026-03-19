@@ -63,9 +63,19 @@ const Bar = styled.div<{ $percent: number }>`
     content: '';
     position: absolute;
     inset: 0;
-    background: ${({ theme }) => theme.palette?.pond?.['200'] ?? '#7ED7C4'};
+    background: ${({ $percent, theme }) => {
+      if ($percent > 100) {
+        return theme.palette?.ember?.['300'] ?? theme.colors.accent;
+      }
+      return theme.palette?.pond?.['200'] ?? theme.colors.success;
+    }};
     width: ${({ $percent }) => Math.min(100, Math.max(0, $percent))}%;
+    transition: width 0.3s ease, background 0.3s ease;
   }
+  ${({ $percent, theme }) =>
+    $percent > 100
+      ? `box-shadow: 0 0 8px ${theme.palette?.ember?.['200'] ?? theme.colors.accent}40;`
+      : ''}
 `;
 
 const Note = styled.p`

@@ -3029,7 +3029,7 @@ export function ProjectsPage() {
   }, [peekDetail?.page.id, peekDetail?.page.title]);
 
   useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
+    const handler = (event: globalThis.KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setPaletteOpen(true);

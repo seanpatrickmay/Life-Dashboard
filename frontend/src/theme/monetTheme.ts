@@ -225,6 +225,9 @@ type ScenePalette = {
   bloomHighlight: string;
   willowLight: string;
   willowShadow: string;
+  skyTop?: string;
+  skyMid?: string;
+  horizon?: string;
 };
 
 export type Layer = {

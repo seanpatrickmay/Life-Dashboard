@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import styled from 'styled-components';
 
 import { Card } from '../components/common/Card';
@@ -79,9 +79,40 @@ const SectionHeader = styled(Card)`
   padding: clamp(12px, 2vw, 16px) clamp(14px, 2vw, 20px);
 `;
 
+const STORAGE_KEY = 'nutrition-sections';
+
+function readPersistedSections(): { goals: boolean; foods: boolean } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { goals: false, foods: false };
+}
+
+function persistSections(goals: boolean, foods: boolean) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ goals, foods }));
+}
+
 export function NutritionPage() {
-  const [goalsOpen, setGoalsOpen] = useState(false);
-  const [foodsOpen, setFoodsOpen] = useState(false);
+  const persisted = readPersistedSections();
+  const [goalsOpen, setGoalsOpen] = useState(persisted.goals);
+  const [foodsOpen, setFoodsOpen] = useState(persisted.foods);
+
+  const toggleGoals = useCallback(() => {
+    setGoalsOpen(prev => {
+      const next = !prev;
+      persistSections(next, foodsOpen);
+      return next;
+    });
+  }, [foodsOpen]);
+
+  const toggleFoods = useCallback(() => {
+    setFoodsOpen(prev => {
+      const next = !prev;
+      persistSections(goalsOpen, next);
+      return next;
+    });
+  }, [goalsOpen]);
 
   return (
     <Page>
@@ -94,7 +125,7 @@ export function NutritionPage() {
         <SectionHeader>
           <SectionToggle
             type="button"
-            onClick={() => setGoalsOpen(prev => !prev)}
+            onClick={toggleGoals}
             aria-expanded={goalsOpen}
           >
             <span data-halo="heading">Nutrient Goals</span>
@@ -112,7 +143,7 @@ export function NutritionPage() {
         <SectionHeader>
           <SectionToggle
             type="button"
-            onClick={() => setFoodsOpen(prev => !prev)}
+            onClick={toggleFoods}
             aria-expanded={foodsOpen}
           >
             <span data-halo="heading">Food Manager</span>

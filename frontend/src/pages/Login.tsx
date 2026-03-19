@@ -39,10 +39,15 @@ const Subtitle = styled.p`
   line-height: 1.5;
 `;
 
-const ErrorText = styled.p`
-  margin: -10px 0 18px;
+const ErrorBanner = styled.div`
+  margin: -6px 0 16px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid ${({ theme }) => theme.colors.danger};
+  background: ${({ theme }) => theme.colors.dangerSubtle};
   color: ${({ theme }) => theme.colors.danger};
   font-size: 0.85rem;
+  line-height: 1.4;
 `;
 
 const Actions = styled.div`
@@ -184,7 +189,11 @@ export function LoginPage() {
         <Subtitle>
           Sign in to sync your Garmin metrics, refine your nutrition plan, and keep the Monet assistant tuned to your rhythms.
         </Subtitle>
-        {authError && <ErrorText>Sign-in failed. Please try again.</ErrorText>}
+        {authError && (
+          <ErrorBanner role="alert">
+            Sign-in failed. Please try again.
+          </ErrorBanner>
+        )}
         <Actions>
           <GoogleButton type="button" onClick={handleLogin}>
             Continue with Google

@@ -145,6 +145,11 @@ const CardButton = styled.div<{
   border-radius: 8px;
   border: 1px ${({ $kind }) => ($kind === 'todo' ? 'dashed' : 'solid')}
     ${({ theme, $kind }) => ($kind === 'todo' ? theme.palette.lilac['200'] : theme.colors.borderSubtle)};
+  border-left: 3px solid ${({ theme, $kind, $allDay }) => {
+    if ($kind === 'todo') return theme.palette.lilac['200'];
+    if ($allDay) return theme.palette?.ember?.['200'] ?? theme.colors.accent;
+    return theme.palette?.pond?.['200'] ?? theme.colors.success;
+  }};
   background: ${({ theme }) => theme.colors.overlay};
   cursor: ${({ $dragging }) => ($dragging ? 'grabbing' : 'grab')};
   opacity: ${({ $dragging }) => ($dragging ? 0.55 : 1)};
@@ -362,7 +367,7 @@ const CalendarDayColumn = ({
     const initialEnd = item.end;
     let deltaMinutes = 0;
 
-    const handleMove = (moveEvent: PointerEvent) => {
+    const handleMove = (moveEvent: globalThis.PointerEvent) => {
       const delta = moveEvent.clientY - startY;
       const steps = Math.round(delta / RESIZE_STEP_PX);
       deltaMinutes = steps * RESIZE_STEP_MINUTES;

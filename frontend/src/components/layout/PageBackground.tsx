@@ -12,7 +12,7 @@ const drift = keyframes`
   100% { background-position: 0 0; }
 `;
 
-const Surface = styled.div.attrs({ 'data-scene-surface': 'true' })`
+const Surface = styled.div.attrs({ 'data-scene-surface': 'true' } as Record<string, string>)`
   position: relative;
   min-height: 100vh;
   width: 100%;

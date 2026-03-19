@@ -120,7 +120,7 @@ export function ReadinessCard() {
         </LabelRow>
         <Narrative>{narrative}</Narrative>
         {!isLoading && !hasStructured && (
-          <Notice>Structured insight missing.</Notice>
+          <Notice>Detailed breakdown is being prepared.</Notice>
         )}
       </ContentBlock>
     </Hero>

@@ -37,8 +37,18 @@ const Bar = styled.div<{ $percent?: number | null }>`
     display: block;
     height: 100%;
     width: ${({ $percent }) => ($percent != null ? Math.min(100, Math.max(0, $percent)) : 0)}%;
-    background: ${({ theme }) => theme.palette?.pond?.['200'] ?? '#7ED7C4'};
+    background: ${({ $percent, theme }) => {
+      if ($percent != null && $percent > 100) {
+        return theme.palette?.ember?.['300'] ?? theme.colors.accent;
+      }
+      return theme.palette?.pond?.['200'] ?? theme.colors.success;
+    }};
+    transition: width 0.3s ease, background 0.3s ease;
   }
+  ${({ $percent, theme }) =>
+    $percent != null && $percent > 100
+      ? `box-shadow: 0 0 8px ${theme.palette?.ember?.['200'] ?? theme.colors.accent}40;`
+      : ''}
 `;
 
 export function NutritionDashboard() {

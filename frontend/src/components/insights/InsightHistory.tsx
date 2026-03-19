@@ -16,7 +16,7 @@ const Section = styled.div`
 
 const MetricStrip = styled.button<{ $expanded: boolean }>`
   display: grid;
-  grid-template-columns: 8px 1fr auto auto;
+  grid-template-columns: 8px auto 1fr auto auto;
   align-items: center;
   gap: clamp(10px, 1.5vw, 16px);
   padding: clamp(10px, 1.5vw, 14px) clamp(14px, 2vw, 20px);
@@ -48,6 +48,20 @@ const ScoreDot = styled.span<{ $score: number | null | undefined }>`
   flex-shrink: 0;
   background: ${({ $score, theme }) => {
     if ($score == null) return theme.colors.borderSubtle;
+    if ($score >= 7) return theme.colors.success;
+    if ($score >= 4) return theme.palette?.ember?.['300'] ?? theme.colors.accent;
+    return theme.colors.danger;
+  }};
+`;
+
+const TierLabel = styled.span<{ $score: number | null | undefined }>`
+  font-size: 0.62rem;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  min-width: 28px;
+  color: ${({ $score, theme }) => {
+    if ($score == null) return theme.colors.textSecondary;
     if ($score >= 7) return theme.colors.success;
     if ($score >= 4) return theme.palette?.ember?.['300'] ?? theme.colors.accent;
     return theme.colors.danger;
@@ -168,6 +182,13 @@ export function InsightHistory() {
   const fmt = (value?: number | null, decimals = 0) =>
     typeof value === 'number' ? value.toFixed(decimals) : '—';
 
+  const tierLabel = (score?: number | null) => {
+    if (score == null) return '—';
+    if (score >= 7) return 'Good';
+    if (score >= 4) return 'Fair';
+    return 'Low';
+  };
+
   const sections = [
     { key: 'hrv', title: 'HRV', value: fmt(data?.hrv_value_ms), unit: 'ms', note: data?.hrv_note, score: data?.hrv_score },
     { key: 'rhr', title: 'Resting HR', value: fmt(data?.rhr_value_bpm), unit: 'bpm', note: data?.rhr_note, score: data?.rhr_score },
@@ -197,7 +218,7 @@ export function InsightHistory() {
       )}
 
       {!isLoading && !hasStructured && (
-        <Warning>Structured Monet insight missing. Investigate AI generation and parsing pipeline.</Warning>
+        <Warning>Detailed insights are still being prepared. Check back shortly.</Warning>
       )}
 
       <Section>
@@ -211,6 +232,7 @@ export function InsightHistory() {
               aria-label={`${s.title}: ${s.value} ${s.unit}${s.score != null ? `, score ${s.score} out of 10` : ''}`}
             >
               <ScoreDot $score={s.score} />
+              <TierLabel $score={s.score}>{tierLabel(s.score)}</TierLabel>
               <MetricName>{s.title}</MetricName>
               <MetricValue>{s.value} {s.unit}</MetricValue>
               <MetricScore>{s.score != null ? `${s.score}/10` : ''}</MetricScore>

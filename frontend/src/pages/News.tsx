@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import styled from 'styled-components';
 
 import { Card } from '../components/common/Card';
 import { useNewsFeed } from '../hooks/useNewsFeed';
-import { CATEGORY_LABELS, type Category } from '../services/newsFeedService';
+import { CATEGORY_LABELS, getLastRefresh, type Category } from '../services/newsFeedService';
 import { fadeUp, reducedMotion } from '../styles/animations';
 
 const CATEGORY_COLORS: Record<Category, string> = {
@@ -39,6 +39,20 @@ const Title = styled.h1`
   font-size: clamp(1.2rem, 2.5vw, 1.5rem);
   letter-spacing: 0.2em;
   text-transform: uppercase;
+`;
+
+const RefreshGroup = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+`;
+
+const LastRefreshed = styled.span`
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  opacity: 0.4;
+  white-space: nowrap;
 `;
 
 const RefreshButton = styled.button`
@@ -107,6 +121,12 @@ const CategoryTab = styled.button<{ $active: boolean; $color: string }>`
   }
 `;
 
+const TabCount = styled.span`
+  font-size: 0.58rem;
+  opacity: 0.5;
+  margin-left: 3px;
+`;
+
 const CategoryBlock = styled.div`
   display: flex;
   flex-direction: column;
@@ -157,7 +177,7 @@ const ScrollTrack = styled.div`
   -webkit-mask-image: linear-gradient(to right, black calc(100% - 40px), transparent 100%);
 `;
 
-const ArticleCard = styled.a<{ $borderColor: string }>`
+const ArticleCard = styled.a<{ $borderColor: string; $isRead?: boolean }>`
   flex: 0 0 min(320px, 80vw);
   scroll-snap-align: start;
   display: flex;
@@ -171,10 +191,12 @@ const ArticleCard = styled.a<{ $borderColor: string }>`
   text-decoration: none;
   color: inherit;
   cursor: pointer;
+  opacity: ${({ $isRead }) => ($isRead ? 0.55 : 1)};
 
   &:hover {
     border-color: ${({ $borderColor }) => $borderColor};
     transform: translateY(-1px);
+    opacity: 1;
   }
 
   &:focus-visible {
@@ -213,6 +235,41 @@ const ArticleMeta = styled.div`
   opacity: 0.35;
   margin-top: auto;
   padding-top: 2px;
+`;
+
+const ScrollWrapper = styled.div`
+  position: relative;
+`;
+
+const ScrollArrow = styled.button<{ $side: 'left' | 'right' }>`
+  position: absolute;
+  top: 50%;
+  ${({ $side }) => $side}: -4px;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  background: ${({ theme }) => theme.colors.backgroundCard};
+  color: ${({ theme }) => theme.colors.textPrimary};
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+  box-shadow: ${({ theme }) => theme.shadows.soft};
+
+  &:hover {
+    opacity: 1;
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
 `;
 
 const EmptyState = styled.div`
@@ -259,9 +316,17 @@ export function NewsPage() {
     <Page>
       <TopBar>
         <Title data-halo="heading">Reading List</Title>
-        <RefreshButton onClick={refreshFeed} disabled={isRefreshing}>
-          {isRefreshing ? 'Refreshing...' : 'Refresh'}
-        </RefreshButton>
+        <RefreshGroup>
+          {(() => {
+            const lastRefresh = getLastRefresh();
+            return lastRefresh
+              ? <LastRefreshed>{formatTimeAgo(lastRefresh)}</LastRefreshed>
+              : null;
+          })()}
+          <RefreshButton onClick={refreshFeed} disabled={isRefreshing}>
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </RefreshButton>
+        </RefreshGroup>
       </TopBar>
 
       {!allQuery.isLoading && visibleCategories.length > 0 && (
@@ -281,6 +346,7 @@ export function NewsPage() {
               onClick={() => setActiveFilter(cat)}
             >
               {CATEGORY_LABELS[cat]}
+              <TabCount>{(allQuery.data?.[cat] || []).length}</TabCount>
             </CategoryTab>
           ))}
         </CategoryStrip>
@@ -303,29 +369,52 @@ export function NewsPage() {
               {articles.length === 0 ? (
                 <EmptyState>No articles yet.</EmptyState>
               ) : (
-                <ScrollTrack
-                  ref={el => { scrollRefs.current[cat] = el; }}
-                >
-                  {articles.map(article => (
-                    <ArticleCard
-                      key={article.id}
-                      href={article.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      $borderColor={color}
-                      onClick={() => markRead(article.id)}
-                    >
-                      <ArticleTitle data-halo="body">{article.title}</ArticleTitle>
-                      {article.summary && (
-                        <ArticleSummary>{article.summary}</ArticleSummary>
-                      )}
-                      <ArticleMeta>
-                        <span>{article.sourceName}</span>
-                        <span>{formatTimeAgo(article.publishedAt || article.fetchedAt)}</span>
-                      </ArticleMeta>
-                    </ArticleCard>
-                  ))}
-                </ScrollTrack>
+                <ScrollWrapper>
+                  <ScrollArrow
+                    $side="left"
+                    aria-label={`Scroll ${CATEGORY_LABELS[cat]} left`}
+                    onClick={() => {
+                      const el = scrollRefs.current[cat];
+                      if (el) el.scrollBy({ left: -300, behavior: 'smooth' });
+                    }}
+                  >
+                    ‹
+                  </ScrollArrow>
+                  <ScrollTrack
+                    ref={el => { scrollRefs.current[cat] = el; }}
+                  >
+                    {articles.map(article => (
+                      <ArticleCard
+                        key={article.id}
+                        href={article.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        $borderColor={color}
+                        $isRead={!!article.readAt}
+                        onClick={() => markRead(article.id)}
+                      >
+                        <ArticleTitle data-halo="body" title={article.title}>{article.title}</ArticleTitle>
+                        {article.summary && (
+                          <ArticleSummary>{article.summary}</ArticleSummary>
+                        )}
+                        <ArticleMeta>
+                          <span>{article.sourceName}</span>
+                          <span>{formatTimeAgo(article.publishedAt || article.fetchedAt)}</span>
+                        </ArticleMeta>
+                      </ArticleCard>
+                    ))}
+                  </ScrollTrack>
+                  <ScrollArrow
+                    $side="right"
+                    aria-label={`Scroll ${CATEGORY_LABELS[cat]} right`}
+                    onClick={() => {
+                      const el = scrollRefs.current[cat];
+                      if (el) el.scrollBy({ left: 300, behavior: 'smooth' });
+                    }}
+                  >
+                    ›
+                  </ScrollArrow>
+                </ScrollWrapper>
               )}
             </CategoryBlock>
           );

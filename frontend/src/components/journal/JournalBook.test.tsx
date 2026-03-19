@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from 'styled-components';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,8 +37,21 @@ const theme = {
       '700': '#525252',
       '900': '#171717'
     }
+  },
+  colors: {
+    surfaceRaised: '#1e1e2e',
+    overlay: 'rgba(0,0,0,0.3)',
+    overlayHover: 'rgba(0,0,0,0.1)',
+    overlayActive: 'rgba(0,0,0,0.2)',
+    textPrimary: '#fff',
+    textSecondary: '#aaa',
+    borderSubtle: '#333',
+    focusRing: '#7ED7C4',
+    scrollThumb: '#555',
+    scrollTrack: '#222',
+    accent: '#7ED7C4'
   }
-};
+} as unknown as import('styled-components').DefaultTheme;
 
 const todayKey = '2026-03-10';
 const priorDayKey = '2026-03-09';
@@ -165,6 +178,7 @@ describe('JournalBook', () => {
     renderJournalBook();
 
     fireEvent.click(screen.getByLabelText('Previous day'));
+    act(() => { vi.advanceTimersByTime(200); });
 
     expect(screen.getByText('2:15 PM')).toBeInTheDocument();
     expect(screen.getByText('Admin')).toBeInTheDocument();

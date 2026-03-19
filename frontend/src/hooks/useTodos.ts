@@ -7,7 +7,7 @@ const TODOS_QUERY_KEY = ['todos', 'list'];
 
 export function useTodos() {
   const queryClient = useQueryClient();
-  const invalidateTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const invalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingUpdatesRef = useRef<Set<number>>(new Set());
 
   // Debounced invalidation to prevent multiple refreshes
