@@ -58,7 +58,7 @@ const Shell = styled.div<{ $peekOpen: boolean }>`
   min-height: calc(100vh - 180px);
 
   @media (max-width: 1180px) {
-    grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-columns: 250px minmax(0, 1fr) 0px;
   }
 
   @media (max-width: 900px) {

@@ -24,7 +24,9 @@ const BookShell = styled.div`
   display: grid;
   --book-gap: clamp(16px, 2.5vw, 28px);
   gap: 0;
-  grid-template-columns: minmax(240px, 0.95fr) var(--book-gap) minmax(320px, 1.2fr);
+  grid-template-columns: minmax(200px, 0.95fr) var(--book-gap) minmax(260px, 1.2fr);
+  max-width: 100%;
+  overflow-x: hidden;
   padding: clamp(16px, 3vw, 28px);
   border-radius: 36px;
   background: ${({ theme }) => theme.colors.surfaceRaised};
@@ -102,8 +104,8 @@ const Page = styled.section`
     background-image: url(${paperFiberLight}), url(${mistWashLight});
     background-size: 420px 420px, cover;
     background-repeat: repeat, no-repeat;
-    opacity: 0.65;
-    mix-blend-mode: multiply;
+    opacity: ${({ theme }) => theme.mode === 'dark' ? 0.12 : 0.35};
+    mix-blend-mode: ${({ theme }) => theme.mode === 'dark' ? 'overlay' : 'multiply'};
     pointer-events: none;
     z-index: 0;
   }
@@ -115,7 +117,7 @@ const Page = styled.section`
     background-image: url(${edgeBleedLight});
     background-size: cover;
     background-repeat: no-repeat;
-    opacity: 0.55;
+    opacity: ${({ theme }) => theme.mode === 'dark' ? 0.25 : 0.45};
     pointer-events: none;
     z-index: 0;
   }

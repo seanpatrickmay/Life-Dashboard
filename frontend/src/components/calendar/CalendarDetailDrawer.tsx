@@ -1,7 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import styled, { css } from 'styled-components';
 import { composeLayers, getCardLayers } from '../../theme/monetTheme';
-import { Z_LAYERS } from '../../styles/zLayers';
 import type { CalendarEvent, TodoItem } from '../../services/api';
 import type { CalendarItem } from './CalendarWeekView';
 
@@ -15,42 +14,36 @@ type Props = {
   onChangeScope?: (scope: RecurrenceScope) => void;
 };
 
-const Backdrop = styled.div<{ $open: boolean }>`
-  position: fixed;
-  inset: 0;
-  background: ${({ theme }) => theme.colors.overlay};
-  opacity: ${({ $open }) => ($open ? 1 : 0)};
-  pointer-events: ${({ $open }) => ($open ? 'auto' : 'none')};
-  transition: opacity 0.2s ease;
-  z-index: ${Z_LAYERS.overlays};
-`;
-
-const Drawer = styled.aside<{ $open: boolean }>`
-  position: fixed;
-  top: 0;
-  right: 0;
-  height: 100vh;
-  width: min(420px, 92vw);
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 28px 24px;
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border-left: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.18);
-  transform: translateX(${({ $open }) => ($open ? '0' : '100%')});
-  transition: transform 0.28s ease;
-  z-index: ${Z_LAYERS.overlays + 1};
-  overflow: hidden;
+const Panel = styled.div<{ $open: boolean }>`
+  display: grid;
+  grid-template-rows: ${({ $open }) => ($open ? '1fr' : '0fr')};
+  transition: grid-template-rows 0.3s ease;
 
   @media (prefers-reduced-motion: reduce) {
     transition-duration: 0.01ms;
   }
+`;
+
+const PanelInner = styled.div`
+  overflow: hidden;
+`;
+
+const PanelCard = styled.div`
+  position: relative;
+  border-radius: 24px;
+  padding: clamp(18px, 2vw, 28px);
+  background: ${({ theme }) => theme.colors.backgroundCard};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  box-shadow: ${({ theme }) => theme.shadows.soft};
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 
   &::before {
     content: '';
     position: absolute;
     inset: 0;
+    border-radius: 24px;
     pointer-events: none;
     opacity: 0.5;
     ${({ theme }) => {
@@ -66,14 +59,16 @@ const Drawer = styled.aside<{ $open: boolean }>`
   }
 `;
 
-const DrawerContent = styled.div`
+const PanelContent = styled.div`
   position: relative;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  height: 100%;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 32px;
+
+  @media (max-width: 700px) {
+    grid-template-columns: 1fr;
+  }
 `;
 
 const HeaderRow = styled.div`
@@ -81,6 +76,7 @@ const HeaderRow = styled.div`
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  grid-column: 1 / -1;
 `;
 
 const Title = styled.h2`
@@ -102,6 +98,7 @@ const CloseButton = styled.button`
   text-transform: uppercase;
   font-size: 0.7rem;
   cursor: pointer;
+  flex-shrink: 0;
 
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};
@@ -112,7 +109,11 @@ const CloseButton = styled.button`
 const Section = styled.section`
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+`;
+
+const FullWidthSection = styled(Section)`
+  grid-column: 1 / -1;
 `;
 
 const Label = styled.span`
@@ -145,7 +146,7 @@ const Badge = styled.span`
 const ScrollSection = styled.div`
   padding-right: 4px;
   overflow: auto;
-  max-height: 240px;
+  max-height: 180px;
   border-radius: 12px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   background: ${({ theme }) => theme.colors.surfaceInset};
@@ -282,101 +283,113 @@ export function CalendarDetailDrawer({
   const busyLabel = event?.transparency === 'transparent' ? 'Free' : 'Busy';
 
   return (
-    <>
-      <Backdrop $open={open} onClick={onClose} aria-label="Close" />
-      <Drawer $open={open} role="dialog" aria-hidden={!open}>
-        <DrawerContent>
-          <HeaderRow>
-            <Title>{item?.title ?? 'Details'}</Title>
-            <CloseButton type="button" onClick={onClose} aria-label="Close detail drawer">
-              Close
-            </CloseButton>
-          </HeaderRow>
+    <Panel $open={open}>
+      <PanelInner>
+        <PanelCard role="region" aria-label="Event details">
+          <PanelContent>
+            <HeaderRow>
+              <Title>{item?.title ?? 'Details'}</Title>
+              <CloseButton type="button" onClick={onClose} aria-label="Close details">
+                Close
+              </CloseButton>
+            </HeaderRow>
 
-          <Section>
-            <Label>When</Label>
-            <Value>{timeLabel}</Value>
-          </Section>
-
-          {event ? (
-            <>
-              <Section>
-                <Label>Calendar</Label>
-                <Value>{event.calendar_summary}</Value>
-              </Section>
-              <BadgeRow>
-                {event.recurring_event_id ? <Badge>Recurring</Badge> : null}
-                {event.visibility ? <Badge>{event.visibility}</Badge> : null}
-                <Badge>{busyLabel}</Badge>
-              </BadgeRow>
-              {event.recurring_event_id && onChangeScope ? (
-                <Section>
-                  <Label>Edit scope</Label>
-                  <ScopeRow>
-                    {(['occurrence', 'future', 'series'] as RecurrenceScope[]).map((scope) => (
-                      <ScopeButton
-                        key={scope}
-                        $active={recurrenceScope === scope}
-                        type="button"
-                        onClick={() => onChangeScope(scope)}
-                      >
-                        {scope === 'occurrence'
-                          ? 'This event'
-                          : scope === 'future'
-                            ? 'This & future'
-                            : 'Entire series'}
-                      </ScopeButton>
-                    ))}
-                  </ScopeRow>
-                </Section>
-              ) : null}
-              {event.location ? (
-                <Section>
-                  <Label>Location</Label>
-                  <Value>{event.location}</Value>
-                </Section>
-              ) : null}
-              {event.conference_link || event.hangout_link ? (
-                <Section>
-                  <Label>Meeting link</Label>
-                  <MeetingLink
-                    href={event.conference_link ?? event.hangout_link ?? '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Join meeting
-                  </MeetingLink>
-                </Section>
-              ) : null}
-              {attendeeList.length ? (
-                <Section>
-                  <Label>Attendees</Label>
-                  <AttendeeList>
-                    {attendeeList.map((attendee) => (
-                      <AttendeeRow key={attendee.key}>
-                        <span>{attendee.label}</span>
-                        <AttendeeStatus>{attendee.status}</AttendeeStatus>
-                      </AttendeeRow>
-                    ))}
-                  </AttendeeList>
-                </Section>
-              ) : null}
-              <Section>
-                <Label>Description</Label>
-                <ScrollSection>
-                  <DescriptionText>{event.description || 'No description available.'}</DescriptionText>
-                </ScrollSection>
-              </Section>
-            </>
-          ) : (
             <Section>
-              <Label>Todo</Label>
-              <Value>{todo?.text ?? 'No details available.'}</Value>
+              <Label>When</Label>
+              <Value>{timeLabel}</Value>
             </Section>
-          )}
-        </DrawerContent>
-      </Drawer>
-    </>
+
+            {event ? (
+              <>
+                <Section>
+                  <Label>Calendar</Label>
+                  <Value>{event.calendar_summary}</Value>
+                </Section>
+
+                <Section>
+                  <Label>Status</Label>
+                  <BadgeRow>
+                    {event.recurring_event_id ? <Badge>Recurring</Badge> : null}
+                    {event.visibility ? <Badge>{event.visibility}</Badge> : null}
+                    <Badge>{busyLabel}</Badge>
+                  </BadgeRow>
+                </Section>
+
+                {event.recurring_event_id && onChangeScope ? (
+                  <Section>
+                    <Label>Edit scope</Label>
+                    <ScopeRow>
+                      {(['occurrence', 'future', 'series'] as RecurrenceScope[]).map((scope) => (
+                        <ScopeButton
+                          key={scope}
+                          $active={recurrenceScope === scope}
+                          type="button"
+                          onClick={() => onChangeScope(scope)}
+                        >
+                          {scope === 'occurrence'
+                            ? 'This event'
+                            : scope === 'future'
+                              ? 'This & future'
+                              : 'Entire series'}
+                        </ScopeButton>
+                      ))}
+                    </ScopeRow>
+                  </Section>
+                ) : null}
+
+                {event.location ? (
+                  <Section>
+                    <Label>Location</Label>
+                    <Value>{event.location}</Value>
+                  </Section>
+                ) : null}
+
+                {event.conference_link || event.hangout_link ? (
+                  <Section>
+                    <Label>Meeting link</Label>
+                    <MeetingLink
+                      href={event.conference_link ?? event.hangout_link ?? '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Join meeting
+                    </MeetingLink>
+                  </Section>
+                ) : null}
+
+                {attendeeList.length ? (
+                  <Section>
+                    <Label>Attendees</Label>
+                    <AttendeeList>
+                      {attendeeList.map((attendee) => (
+                        <AttendeeRow key={attendee.key}>
+                          <span>{attendee.label}</span>
+                          <AttendeeStatus>{attendee.status}</AttendeeStatus>
+                        </AttendeeRow>
+                      ))}
+                    </AttendeeList>
+                  </Section>
+                ) : null}
+
+                {event.description ? (
+                  <FullWidthSection>
+                    <Label>Description</Label>
+                    <ScrollSection>
+                      <DescriptionText>{event.description}</DescriptionText>
+                    </ScrollSection>
+                  </FullWidthSection>
+                ) : null}
+              </>
+            ) : (
+              <Section>
+                <Label>Todo</Label>
+                <Value>{todo?.text ?? 'No details available.'}</Value>
+              </Section>
+            )}
+          </PanelContent>
+        </PanelCard>
+      </PanelInner>
+    </Panel>
   );
 }
 

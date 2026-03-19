@@ -8,6 +8,14 @@ import { GoalsPanel } from '../components/nutrition/GoalsPanel';
 import { FoodManager } from '../components/nutrition/FoodManager';
 import { fadeUp, reducedMotion } from '../styles/animations';
 
+const Title = styled.h1`
+  margin: 0;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 1rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+`;
+
 const Page = styled.div`
   display: flex;
   flex-direction: column;
@@ -116,6 +124,7 @@ export function NutritionPage() {
 
   return (
     <Page>
+      <Title data-halo="heading">Nutrition</Title>
       <TopGrid>
         <NutritionDashboard />
         <MenuPanel />

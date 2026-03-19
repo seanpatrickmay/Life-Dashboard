@@ -27,8 +27,13 @@ const Nav = styled.nav`
   gap: clamp(12px, 3vw, 28px);
   justify-content: space-between;
   padding: clamp(12px, 1.5vh, 20px) clamp(8px, 2vw, 24px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar { display: none; }
   a {
-    flex: 1;
+    flex: none;
+    white-space: nowrap;
     text-align: center;
     font-family: ${({ theme }) => theme.fonts.heading};
     font-size: clamp(0.68rem, 0.9vw, 0.85rem);
@@ -101,7 +106,7 @@ export function PageShell({ children }: PropsWithChildren) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const guestMode = isGuestMode();
-  const fullWidth = pathname.startsWith('/calendar') || pathname.startsWith('/projects');
+  const fullWidth = pathname.startsWith('/calendar') || pathname.startsWith('/projects') || pathname.startsWith('/news');
   return (
     <Frame $fullWidth={fullWidth}>
       {guestMode ? (

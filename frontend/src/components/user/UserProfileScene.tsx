@@ -51,14 +51,19 @@ const RefreshButton = styled.button`
   border-radius: 999px;
   padding: 10px 18px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: transparent;
+  background: ${({ theme }) => theme.colors.overlay};
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   color: ${({ theme }) => theme.colors.textPrimary};
   font-family: ${({ theme }) => theme.fonts.heading};
   letter-spacing: 0.16em;
   text-transform: uppercase;
   font-size: 0.75rem;
   cursor: pointer;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s ease, background 0.15s ease;
+  &:hover:not(:disabled) {
+    background: ${({ theme }) => theme.colors.overlayActive};
+  }
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
@@ -245,6 +250,15 @@ const StatusPill = styled.span<{ $active?: boolean }>`
   border: 1px solid ${({ $active, theme }) => ($active ? theme.colors.success : theme.colors.borderSubtle)};
   background: ${({ $active, theme }) => ($active ? theme.colors.successSubtle : theme.colors.surfaceRaised)};
   color: ${({ theme }) => theme.colors.textPrimary};
+`;
+
+const BigValue = styled.strong`
+  font-size: 1.6rem;
+`;
+
+const SubText = styled.p`
+  opacity: 0.8;
+  margin: 0;
 `;
 
 const HelperText = styled.p`
@@ -692,20 +706,20 @@ export function UserProfileScene() {
             </CardHeader>
             {profileQuery.data?.latest_energy ? (
               <>
-                <strong style={{ fontSize: '1.6rem' }}>
+                <BigValue>
                   {Math.round(profileQuery.data.latest_energy.total_kcal ?? 0)} kcal
-                </strong>
-                <p style={{ opacity: 0.8, margin: 0 }}>
+                </BigValue>
+                <SubText>
                   {profileQuery.data.latest_energy.metric_date} · Source:{' '}
                   {profileQuery.data.latest_energy.source ?? 'calculated'}
-                </p>
-                <p style={{ opacity: 0.8, margin: 0 }}>
+                </SubText>
+                <SubText>
                   Active {Math.round(profileQuery.data.latest_energy.active_kcal ?? 0)} kcal · BMR{' '}
                   {Math.round(profileQuery.data.latest_energy.bmr_kcal ?? 0)} kcal
-                </p>
+                </SubText>
               </>
             ) : (
-              <p style={{ opacity: 0.8 }}>No energy data yet.</p>
+              <SubText>No energy data yet.</SubText>
             )}
           </LilyPadCard>
 
@@ -722,10 +736,10 @@ export function UserProfileScene() {
                 </GoalChip>
               ))}
             </GoalsList>
-            <p style={{ opacity: 0.75, margin: '6px 0 0' }}>
+            <SubText>
               Computed {profileQuery.data?.goals?.[0]?.computed_at?.split('T')[0] ?? '—'} · Source:{' '}
               {profileQuery.data?.goals?.[0]?.calorie_source ?? 'calculated'}
-            </p>
+            </SubText>
           </LilyPadCard>
         </StackColumn>
       </SectionGrid>

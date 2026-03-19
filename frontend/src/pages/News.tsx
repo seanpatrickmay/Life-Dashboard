@@ -244,7 +244,7 @@ const ScrollWrapper = styled.div`
 const ScrollArrow = styled.button<{ $side: 'left' | 'right' }>`
   position: absolute;
   top: 50%;
-  ${({ $side }) => $side}: -4px;
+  ${({ $side }) => $side}: 4px;
   transform: translateY(-50%);
   z-index: 2;
   width: 28px;

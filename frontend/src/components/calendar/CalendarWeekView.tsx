@@ -41,6 +41,11 @@ const WeekGrid = styled.div`
   gap: 4px;
   width: 100%;
   height: 100%;
+
+  @media (max-width: 900px) {
+    grid-template-columns: repeat(7, minmax(140px, 1fr));
+    overflow-x: auto;
+  }
 `;
 
 const DayColumn = styled.div<{ $muted: boolean; $isToday: boolean }>`
@@ -48,7 +53,7 @@ const DayColumn = styled.div<{ $muted: boolean; $isToday: boolean }>`
   flex-direction: column;
   gap: 3px;
   min-height: 0;
-  padding: 2px;
+  padding: 6px;
   border-radius: 20px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   background: ${({ theme }) => theme.colors.overlay};

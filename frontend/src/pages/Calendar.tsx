@@ -2,22 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { CalendarWeekView, type CalendarItem } from '../components/calendar/CalendarWeekView';
 import { CalendarDetailDrawer } from '../components/calendar/CalendarDetailDrawer';
-import { PageAssistantPanel } from '../components/assistant/PageAssistantPanel';
 import { useCalendarEvents, useCalendarStatus, useCalendars } from '../hooks/useCalendar';
 import { useTodos } from '../hooks/useTodos';
 import { Card } from '../components/common/Card';
 import { fadeUp, reducedMotion } from '../styles/animations';
-import type { AssistantPageContext, CalendarEvent, TodoItem } from '../services/api';
+import type { CalendarEvent, TodoItem } from '../services/api';
 
 const Layout = styled.div`
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  display: flex;
+  flex-direction: column;
   gap: 16px;
-  align-items: start;
-
-  @media (max-width: 1200px) {
-    grid-template-columns: 1fr;
-  }
 `;
 
 const CalendarShell = styled.div`
@@ -29,9 +23,6 @@ const CalendarShell = styled.div`
   ${reducedMotion}
 `;
 
-const AssistantRail = styled.aside`
-  min-width: 0;
-`;
 
 const HeaderRow = styled.div`
   display: flex;
@@ -94,8 +85,15 @@ const ActionButton = styled.button<{ $primary?: boolean }>`
   cursor: pointer;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   background: ${({ theme, $primary }) =>
-    $primary ? theme.colors.overlayActive : 'transparent'};
+    $primary ? theme.colors.overlayActive : theme.colors.overlay};
   color: ${({ theme }) => theme.colors.textPrimary};
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.overlayActive};
+  }
 
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};
@@ -216,6 +214,8 @@ const ControlsToggle = styled.button`
   padding: 6px 12px;
   cursor: pointer;
   transition: background 0.15s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 
   &:hover {
     background: ${({ theme }) => theme.colors.overlayActive};
@@ -367,30 +367,6 @@ export function CalendarPage() {
     });
   };
 
-  const assistantContext = useMemo<AssistantPageContext>(() => {
-    const selectedEntity: AssistantPageContext['selected_entity'] = {};
-    if (selectedItem?.kind === 'event') {
-      selectedEntity.calendar_event_id = (selectedItem.data as CalendarEvent).id;
-      selectedEntity.recurrence_scope = recurrenceScope;
-    }
-    if (selectedItem?.kind === 'todo') {
-      selectedEntity.todo_id = (selectedItem.data as TodoItem).id;
-    }
-    return {
-      page: 'calendar',
-      selected_entity: selectedEntity,
-      visible_range: {
-        start_iso: windowStart.toISOString(),
-        end_iso: windowEnd.toISOString()
-      }
-    };
-  }, [selectedItem, recurrenceScope, windowStart, windowEnd]);
-
-  const refreshCalendarData = () => {
-    void eventsQuery.eventsQuery.refetch();
-    void calendarsQuery.refetch();
-    void todosQuery.refetch();
-  };
 
   return (
     <Layout>
@@ -489,14 +465,6 @@ export function CalendarPage() {
         />
       </CalendarShell>
 
-      <AssistantRail>
-        <PageAssistantPanel
-          title="Calendar Assistant"
-          placeholder="Try: create an event tomorrow 3-4pm called Follow-up"
-          context={assistantContext}
-          onActionsApplied={refreshCalendarData}
-        />
-      </AssistantRail>
     </Layout>
   );
 }

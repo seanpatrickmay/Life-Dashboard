@@ -5,6 +5,14 @@ import { LifeContextPanel } from '../components/insights/LifeContextPanel';
 import { InsightHistory } from '../components/insights/InsightHistory';
 import { fadeUp, reducedMotion } from '../styles/animations';
 
+const Title = styled.h1`
+  margin: 0;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 1rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+`;
+
 const Page = styled.div`
   display: flex;
   flex-direction: column;
@@ -17,6 +25,7 @@ const Page = styled.div`
 export function InsightsPage() {
   return (
     <Page>
+      <Title data-halo="heading">Insights</Title>
       <ReadinessCard />
       <LifeContextPanel />
       <InsightHistory />
