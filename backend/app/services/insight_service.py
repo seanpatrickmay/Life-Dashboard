@@ -1,16 +1,18 @@
 """Generates readiness insights using OpenAI."""
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import json
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.openai_client import OpenAIResponsesClient
 from app.core.config import settings
-from app.db.models.entities import DailyMetric, ReadinessInsight
+from app.db.models.calendar import CalendarEvent, GoogleCalendar
+from app.db.models.entities import DailyEnergy, DailyMetric, ReadinessInsight
+from app.db.models.todo import TodoItem
 from app.prompts.llm_prompts import (
     READINESS_PERSONA,
     READINESS_RESPONSE_INSTRUCTIONS,
@@ -41,7 +43,8 @@ class InsightService:
         fallback_narrative = existing_insight.response_text if existing_insight else None
         fallback_score = existing_insight.readiness_score if existing_insight else None
 
-        prompt = self._build_prompt(metric, history)
+        life_context = await self._gather_life_context(user_id, metric_date)
+        prompt = self._build_prompt(metric, history, life_context=life_context)
         logger.debug("Readiness prompt for {}:\n{}", metric_date, prompt)
         try:
             client = await self._get_client()
@@ -217,7 +220,142 @@ class InsightService:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
-    def _build_prompt(self, metric: DailyMetric | None, history: list[DailyMetric]) -> str:
+    async def _gather_life_context(self, user_id: int, metric_date: date) -> dict:
+        """Gather cross-system context to enrich the readiness insight."""
+        context: dict = {}
+        try:
+            context["todos"] = await self._gather_todo_context(user_id, metric_date)
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not gather todo context for insight")
+
+        try:
+            context["nutrition"] = await self._gather_nutrition_context(user_id, metric_date)
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not gather nutrition context for insight")
+
+        try:
+            context["calendar"] = await self._gather_calendar_context(user_id, metric_date)
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not gather calendar context for insight")
+
+        try:
+            context["energy"] = await self._gather_energy_context(user_id, metric_date)
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not gather energy context for insight")
+
+        return context
+
+    async def _gather_todo_context(self, user_id: int, metric_date: date) -> dict:
+        now_utc = datetime.now(timezone.utc) if hasattr(datetime.now(timezone.utc), 'date') else datetime.utcnow()
+        stmt = select(
+            func.count().label("total"),
+            func.count().filter(TodoItem.completed.is_(True)).label("completed"),
+            func.count().filter(
+                TodoItem.deadline_utc.is_not(None),
+                TodoItem.deadline_utc < now_utc,
+                TodoItem.completed.is_(False),
+            ).label("overdue"),
+        ).where(TodoItem.user_id == user_id)
+        result = await self.session.execute(stmt)
+        row = result.one()
+        return {
+            "total_active": row.total,
+            "completed": row.completed,
+            "overdue": row.overdue,
+        }
+
+    async def _gather_nutrition_context(self, user_id: int, metric_date: date) -> dict | None:
+        from app.services.nutrition_intake_service import NutritionIntakeService
+        svc = NutritionIntakeService(self.session)
+        summary = await svc.daily_summary(user_id, metric_date)
+        nutrients = summary.get("nutrients", [])
+        key_macros = {}
+        for n in nutrients:
+            if n["slug"] in ("energy_kcal", "protein_g", "carbohydrate_g", "fat_g"):
+                key_macros[n["slug"]] = {
+                    "amount": n["amount"],
+                    "goal": n["goal"],
+                    "percent_of_goal": n["percent_of_goal"],
+                }
+        return key_macros if key_macros else None
+
+    async def _gather_calendar_context(self, user_id: int, metric_date: date) -> dict:
+        from app.utils.timezone import EASTERN_TZ
+        start_utc = datetime.combine(metric_date, datetime.min.time(), tzinfo=EASTERN_TZ)
+        end_utc = start_utc + timedelta(days=1)
+        stmt = (
+            select(func.count().label("count"))
+            .select_from(CalendarEvent)
+            .join(GoogleCalendar, CalendarEvent.calendar_id == GoogleCalendar.id)
+            .where(
+                CalendarEvent.user_id == user_id,
+                CalendarEvent.start_time >= start_utc,
+                CalendarEvent.start_time < end_utc,
+                GoogleCalendar.selected.is_(True),
+            )
+        )
+        result = await self.session.execute(stmt)
+        count = result.scalar() or 0
+        return {"events_today": count}
+
+    async def _gather_energy_context(self, user_id: int, metric_date: date) -> dict | None:
+        stmt = select(DailyEnergy).where(
+            DailyEnergy.user_id == user_id,
+            DailyEnergy.metric_date == metric_date,
+        )
+        result = await self.session.execute(stmt)
+        energy = result.scalar_one_or_none()
+        if not energy:
+            return None
+        return {
+            "active_kcal": energy.active_kcal,
+            "bmr_kcal": energy.bmr_kcal,
+            "total_kcal": energy.total_kcal,
+        }
+
+    def _build_life_context_block(self, context: dict) -> str:
+        """Format cross-system context into a prompt block."""
+        lines = ["Lifestyle context (use to enrich your analysis):"]
+
+        todos = context.get("todos")
+        if todos:
+            lines.append(f"- Tasks: {todos['total_active']} total, {todos['completed']} completed, {todos['overdue']} overdue")
+            if todos["overdue"] > 3:
+                lines.append("  (High task backlog may indicate cognitive stress)")
+
+        nutrition = context.get("nutrition")
+        if nutrition:
+            parts = []
+            for slug, data in nutrition.items():
+                label = slug.replace("_g", "").replace("_kcal", "").replace("_", " ").title()
+                pct = data.get("percent_of_goal")
+                if pct is not None:
+                    parts.append(f"{label}: {data['amount']:.0f}/{data['goal']:.0f} ({pct:.0f}%)")
+            if parts:
+                lines.append(f"- Nutrition today: {', '.join(parts)}")
+
+        calendar = context.get("calendar")
+        if calendar and calendar.get("events_today", 0) > 0:
+            count = calendar["events_today"]
+            lines.append(f"- Calendar: {count} event{'s' if count != 1 else ''} scheduled today")
+            if count >= 5:
+                lines.append("  (Heavy schedule may limit recovery time)")
+
+        energy = context.get("energy")
+        if energy:
+            parts = []
+            if energy.get("active_kcal") is not None:
+                parts.append(f"Active: {energy['active_kcal']:.0f} kcal")
+            if energy.get("total_kcal") is not None:
+                parts.append(f"Total: {energy['total_kcal']:.0f} kcal")
+            if parts:
+                lines.append(f"- Energy expenditure: {', '.join(parts)}")
+
+        if len(lines) == 1:
+            return ""
+        return "\n".join(lines)
+
+    def _build_prompt(self, metric: DailyMetric | None, history: list[DailyMetric], life_context: dict | None = None) -> str:
         today = eastern_today()
 
         def avg(values: list[float | None]) -> float | None:
@@ -383,16 +521,21 @@ class InsightService:
 
         today_snapshot = "\n".join(snapshot_lines)
 
-        return "\n\n".join(
-            [
-                READINESS_PERSONA,
-                READINESS_SCORE_GUIDANCE.strip(),
-                data_block,
-                metric_summary_block,
-                today_snapshot,
-                READINESS_RESPONSE_INSTRUCTIONS,
-            ]
-        )
+        blocks = [
+            READINESS_PERSONA,
+            READINESS_SCORE_GUIDANCE.strip(),
+            data_block,
+            metric_summary_block,
+            today_snapshot,
+        ]
+
+        if life_context:
+            context_block = self._build_life_context_block(life_context)
+            if context_block:
+                blocks.append(context_block)
+
+        blocks.append(READINESS_RESPONSE_INSTRUCTIONS)
+        return "\n\n".join(blocks)
 
     def _maybe_parse_structured(self, narrative: str | None) -> dict | None:
         if not narrative:

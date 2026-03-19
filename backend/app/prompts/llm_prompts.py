@@ -745,4 +745,5 @@ Return ONLY valid JSON (no backticks, no prose outside JSON) with the following 
 - Each pillar score must be your subjective judgment; do NOT compute, average, or sum the numbers.
 - Overall readiness score_100 must be determined independently (do not derive it from the four pillar scores).
 - Use Monet-inspired yet concise language (1-2 sentences) for every insight, first citing the numeric trend then interpreting it physiologically.
+- If lifestyle context is provided (tasks, nutrition, calendar, energy), weave it naturally into the overall_readiness insight. For example, a heavy calendar with low HRV suggests extra recovery emphasis; good nutrition compliance supports training readiness.
 """
