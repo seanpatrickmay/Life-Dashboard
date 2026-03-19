@@ -123,3 +123,136 @@ class TestNutrientMath:
                 user_id=1, ingredient_id=999, quantity=1.0, unit="piece",
                 day=date(2026, 3, 19),
             )
+
+
+def _require_live_llm() -> None:
+    """Skip this test unless RUN_LIVE_LLM_TESTS=1 is set in the environment."""
+    import os
+    if os.getenv("RUN_LIVE_LLM_TESTS") != "1":
+        pytest.skip("Set RUN_LIVE_LLM_TESTS=1 to run live LLM evaluations.")
+
+
+# ── Layer 2: AI Extraction Accuracy ──
+# These tests call the REAL _extract_food_mentions with a live LLM.
+# Mark @pytest.mark.live_llm so they only run when explicitly opted in.
+
+class TestAIExtraction:
+    """Verify the AI correctly extracts foods from natural language (live LLM)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.live_llm
+    async def test_simple_food_extraction(self):
+        """'I had 2 eggs' should extract eggs with qty ~2."""
+        _require_live_llm()
+        from app.services.claude_nutrition_agent import NutritionAssistantAgent
+
+        session = AsyncMock()
+        agent = NutritionAssistantAgent(session)
+        # Call the REAL extraction method (hits OpenAI)
+        result = await agent._extract_food_mentions("I had 2 eggs")
+
+        assert len(result["foods"]) >= 1
+        egg_item = next((f for f in result["foods"] if "egg" in f["name"].lower()), None)
+        assert egg_item is not None, f"Expected 'egg' in foods, got: {result['foods']}"
+        assert egg_item["quantity"] == pytest.approx(2, abs=0.5)
+
+    @pytest.mark.asyncio
+    @pytest.mark.live_llm
+    async def test_multi_food_extraction(self):
+        """'chicken salad and a banana' should extract 2 items."""
+        _require_live_llm()
+        from app.services.claude_nutrition_agent import NutritionAssistantAgent
+
+        session = AsyncMock()
+        agent = NutritionAssistantAgent(session)
+        result = await agent._extract_food_mentions("I ate a chicken salad and a banana")
+
+        assert len(result["foods"]) >= 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.live_llm
+    async def test_quantity_with_units(self):
+        """'a cup of Greek yogurt' should extract qty ~1, unit containing 'cup'."""
+        _require_live_llm()
+        from app.services.claude_nutrition_agent import NutritionAssistantAgent
+
+        session = AsyncMock()
+        agent = NutritionAssistantAgent(session)
+        result = await agent._extract_food_mentions("I had a cup of Greek yogurt")
+
+        assert len(result["foods"]) >= 1
+        yogurt = result["foods"][0]
+        assert yogurt["quantity"] == pytest.approx(1, abs=0.5)
+        assert "cup" in yogurt["unit"].lower()
+
+    @pytest.mark.asyncio
+    @pytest.mark.live_llm
+    async def test_supplements_extraction(self):
+        """'took vitamin D and fish oil' should extract 2 supplement items."""
+        _require_live_llm()
+        from app.services.claude_nutrition_agent import NutritionAssistantAgent
+
+        session = AsyncMock()
+        agent = NutritionAssistantAgent(session)
+        result = await agent._extract_food_mentions("I took vitamin D and fish oil this morning")
+
+        assert len(result["foods"]) >= 2
+
+
+# ── Layer 3: End-to-End Calorie Pipeline ──
+# Combines mocked extraction (for determinism) with real _accumulate + daily_summary.
+
+class TestEndToEndCalories:
+    """Verify extraction -> logging -> daily_summary produces correct calorie totals."""
+
+    @pytest.mark.asyncio
+    async def test_known_ingredient_through_daily_summary(self):
+        """
+        Mock extraction to return 3 eggs.
+        Build intake records with known calorie profiles.
+        Run daily_summary and assert calories = 216.
+        """
+        session = AsyncMock()
+        service = NutritionIntakeService(session)
+
+        # Build realistic intake objects with proper nutrient profiles
+        egg_intakes = [
+            _make_intake("Egg", quantity=3.0, unit="piece", calories=72.0, protein=6.0, fat=5.0),
+        ]
+
+        service.repo.fetch_for_date = AsyncMock(return_value=egg_intakes)
+        service.goals_service.list_goals = AsyncMock(return_value=[
+            {"slug": "calories", "goal": 2000.0, "display_name": "Calories", "unit": "kcal"},
+            {"slug": "protein", "goal": 160.0, "display_name": "Protein", "unit": "g"},
+        ])
+
+        summary = await service.daily_summary(user_id=1, day=date(2026, 3, 19))
+        cal = next(n for n in summary["nutrients"] if n["slug"] == "calories")
+        protein = next(n for n in summary["nutrients"] if n["slug"] == "protein")
+
+        assert cal["amount"] == pytest.approx(216.0)  # 3 * 72
+        assert protein["amount"] == pytest.approx(18.0)  # 3 * 6
+
+    @pytest.mark.asyncio
+    async def test_mixed_meal_calorie_total(self):
+        """
+        2 eggs (72 each) + 1 toast (80) + 1 cup yogurt (150) = 374 kcal.
+        """
+        session = AsyncMock()
+        service = NutritionIntakeService(session)
+
+        intakes = [
+            _make_intake("Egg", quantity=2.0, unit="piece", calories=72.0),
+            _make_intake("Toast", quantity=1.0, unit="slice", calories=80.0),
+            _make_intake("Greek yogurt", quantity=1.0, unit="cup", calories=150.0),
+        ]
+
+        service.repo.fetch_for_date = AsyncMock(return_value=intakes)
+        service.goals_service.list_goals = AsyncMock(return_value=[
+            {"slug": "calories", "goal": 2000.0, "display_name": "Calories", "unit": "kcal"},
+        ])
+
+        summary = await service.daily_summary(user_id=1, day=date(2026, 3, 19))
+        cal = next(n for n in summary["nutrients"] if n["slug"] == "calories")
+        assert cal["amount"] == pytest.approx(374.0)
+        assert cal["percent_of_goal"] == pytest.approx(18.7)  # 374/2000*100
