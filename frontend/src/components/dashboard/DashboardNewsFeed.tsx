@@ -90,8 +90,8 @@ const CategoryPill = styled.span<{ $color: string }>`
   text-transform: uppercase;
   padding: 2px 7px;
   border-radius: 6px;
-  background: ${({ $color }) => $color.replace('0.7', '0.18')};
-  color: ${({ $color }) => $color};
+  background: ${({ $color }) => ($color || 'rgba(200,200,200,0.7)').replace('0.7', '0.18')};
+  color: ${({ $color }) => $color || 'rgba(200,200,200,0.7)'};
   margin-top: 2px;
   white-space: nowrap;
 `;
@@ -164,8 +164,8 @@ export function DashboardNewsFeed() {
               rel="noopener noreferrer"
               onClick={() => handleArticleClick(article.id)}
             >
-              <CategoryPill $color={CATEGORY_COLORS[article.category]}>
-                {CATEGORY_LABELS[article.category]}
+              <CategoryPill $color={CATEGORY_COLORS[article.category] || 'rgba(200,200,200,0.7)'}>
+                {CATEGORY_LABELS[article.category] || article.category}
               </CategoryPill>
               <ArticleContent>
                 <ArticleTitle data-halo="body">
