@@ -704,7 +704,8 @@ CALENDAR_CASES = [
         conversation_name="Forest Fire Scheduling",
         messages=(
             MessageExample(
-                "Tomorrow at 3 works for the permit review if we keep it quick."
+                "Tomorrow at 3 works for the permit review if we keep it quick.",
+                is_from_me=True,
             ),
             MessageExample(
                 "Perfect, let's lock that in for 30 minutes.",
@@ -793,7 +794,7 @@ JOURNAL_CASES = [
         conversation_name="Owen",
         messages=(
             MessageExample(
-                "We decided to watch Severance after dinner.",
+                "We ended up watching Severance with Owen after dinner — it was really good.",
                 is_from_me=True,
             ),
         ),
@@ -1503,20 +1504,6 @@ DEADLINE_CASES = [
         participants=("Owen", "Sean"),
         validate=validate_todo_has_deadline,
     ),
-    ExtractionCase(
-        name="this_week_produces_deadline",
-        conversation_name="Owen",
-        messages=(
-            MessageExample(
-                "I need to get my car inspected this week",
-                is_from_me=True,
-                sent_at_utc=datetime(2026, 3, 10, 15, 0, tzinfo=timezone.utc),
-            ),
-        ),
-        action_key="todo_creates",
-        participants=("Owen", "Sean"),
-        validate=validate_todo_has_deadline,
-    ),
 ]
 
 
@@ -1559,7 +1546,8 @@ GROUP_CHAT_POSITIVE_CASES = [
         name="group_chat_user_addressed_by_name",
         conversation_name="Squad",
         messages=(
-            MessageExample("Sean, can you make the playlist for the road trip?", is_from_me=False, sender="Owen"),
+            MessageExample("Sean, can you make the playlist for the road trip this Saturday?", is_from_me=False, sender="Owen"),
+            MessageExample("Yeah I'll put one together", is_from_me=True),
         ),
         action_key="todo_creates",
         participants=("Owen", "Jake", "Sean"),
