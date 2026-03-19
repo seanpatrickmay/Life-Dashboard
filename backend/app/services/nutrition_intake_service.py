@@ -19,6 +19,7 @@ from app.db.repositories.nutrition_ingredients_repository import (
     NutritionIngredientsRepository,
     NutritionRecipesRepository,
 )
+from app.db.repositories.nutrition_suggestions_repository import NutritionSuggestionsRepository
 from app.services.nutrition_goals_service import NutritionGoalsService
 from app.utils.timezone import eastern_today
 
@@ -57,6 +58,7 @@ class NutritionIntakeService:
                 source=NutritionIntakeSource.MANUAL,
             )
             await self.session.flush()
+            await self._mark_suggestions_stale(user_id)
             await self.session.commit()
             return {
                 "id": intake.id,
@@ -76,6 +78,7 @@ class NutritionIntakeService:
             day=day,
             source=NutritionIntakeSource.MANUAL,
         )
+        await self._mark_suggestions_stale(user_id)
         await self.session.commit()
         return created
 
@@ -95,12 +98,18 @@ class NutritionIntakeService:
         if intake is None:
             raise ValueError("Intake not found")
         await self.session.flush()
+        await self._mark_suggestions_stale(owner_user_id)
         await self.session.commit()
         return self._serialize_entry(intake)
 
     async def delete_intake(self, intake_id: int, *, owner_user_id: int) -> None:
         await self.repo.delete_intake(intake_id, owner_user_id=owner_user_id)
+        await self._mark_suggestions_stale(owner_user_id)
         await self.session.commit()
+
+    async def _mark_suggestions_stale(self, user_id: int) -> None:
+        repo = NutritionSuggestionsRepository(self.session)
+        await repo.mark_stale(user_id)
 
     async def daily_summary(self, user_id: int, day: date) -> dict[str, Any]:
         intakes = await self.repo.fetch_for_date(user_id, day)

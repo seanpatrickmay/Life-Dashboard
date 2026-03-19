@@ -7,6 +7,7 @@ import { MenuPanel } from '../components/nutrition/MenuPanel';
 import { GoalsPanel } from '../components/nutrition/GoalsPanel';
 import { FoodManager } from '../components/nutrition/FoodManager';
 import { NutritionChatPanel } from '../components/nutrition/NutritionChatPanel';
+import { QuickLogPanel } from '../components/nutrition/QuickLogPanel';
 import { useNutritionHistory } from '../hooks/useNutritionIntake';
 import { fadeUp, reducedMotion } from '../styles/animations';
 
@@ -197,6 +198,7 @@ type SectionState = {
   goals: boolean;
   foods: boolean;
   chat: boolean;
+  quicklog: boolean;
 };
 
 const DEFAULTS: SectionState = {
@@ -206,6 +208,7 @@ const DEFAULTS: SectionState = {
   goals: false,
   foods: false,
   chat: true,
+  quicklog: true,
 };
 
 function readPersistedSections(): SectionState {
@@ -288,6 +291,27 @@ export function NutritionPage() {
       <Title data-halo="heading">Nutrition</Title>
 
       <MacroHero />
+
+      {/* Quick Log */}
+      <SectionCard>
+        <SectionToggle
+          type="button"
+          onClick={() => toggle('quicklog')}
+          aria-expanded={sections.quicklog}
+        >
+          <ToggleLeft>
+            <span>Quick Log</span>
+          </ToggleLeft>
+          <Chevron $open={sections.quicklog}>▶</Chevron>
+        </SectionToggle>
+        <CollapsibleWrapper $open={sections.quicklog}>
+          <CollapsibleInner>
+            <SectionContent>
+              <QuickLogPanel />
+            </SectionContent>
+          </CollapsibleInner>
+        </CollapsibleWrapper>
+      </SectionCard>
 
       {/* Nutrition Assistant */}
       <SectionCard>

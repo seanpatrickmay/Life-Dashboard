@@ -22,6 +22,8 @@ import {
   getGuestNutritionGoals,
   getGuestNutritionHistory,
   getGuestNutritionMenu,
+  getGuestNutritionSuggestions,
+  quickLogGuestFood,
   getGuestProjectBoard,
   getGuestReadinessSummary,
   getGuestRefreshStatus,
@@ -398,6 +400,20 @@ export type NutritionMenuResponse = {
   }>;
 };
 
+export type NutritionSuggestionItem = {
+  ingredient_id: number | null;
+  recipe_id: number | null;
+  name: string;
+  quantity: number;
+  unit: string;
+  calories_estimate: number;
+  reason: string;
+};
+
+export type NutritionSuggestionsResponse = {
+  suggestions: NutritionSuggestionItem[];
+};
+
 export const fetchNutritionMenu = async (day?: string): Promise<NutritionMenuResponse> => {
   if (isGuestMode()) {
     return getGuestNutritionMenu(day);
@@ -510,6 +526,27 @@ export const sendNutritionChatMessage = async (
     return getGuestNutritionChatResponse({ message, session_id });
   }
   const { data } = await api.post('/api/nutrition/assistant/message', { message, session_id });
+  return data;
+};
+
+export const fetchNutritionSuggestions = async (): Promise<NutritionSuggestionsResponse> => {
+  if (isGuestMode()) {
+    return getGuestNutritionSuggestions();
+  }
+  const { data } = await api.get('/api/nutrition/suggestions');
+  return data;
+};
+
+export const quickLogFood = async (payload: {
+  ingredient_id?: number | null;
+  recipe_id?: number | null;
+  quantity: number;
+  unit: string;
+}): Promise<Record<string, unknown>> => {
+  if (isGuestMode()) {
+    return quickLogGuestFood(payload);
+  }
+  const { data } = await api.post('/api/nutrition/quick-log', payload);
   return data;
 };
 
