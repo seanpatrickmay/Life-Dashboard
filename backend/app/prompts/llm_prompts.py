@@ -167,6 +167,13 @@ Return ONLY valid JSON with this shape:
       "source_message_ids": number[],
       "reason": string
     }
+  ],
+  "nutrition_logs": [
+    {
+      "foods": [{"name": string, "quantity": number, "unit": string}],
+      "source_message_ids": number[],
+      "reason": string
+    }
   ]
 }
 
@@ -226,8 +233,21 @@ Return ONLY valid JSON with this shape:
 - Default to "this_month" when timing is vague but within the next few weeks.
 - Only use "this_year" for genuinely long-range items with no near-term urgency.
 
+=== NUTRITION LOG RULES ===
+- Extract food mentions ONLY from user-authored messages (is_from_me=true).
+- Detect when the user mentions eating, drinking, or taking supplements: "I ate...", "just had...", "breakfast was...", "had a smoothie", "took my vitamins", "had my creatine", "drinking a protein shake".
+- Each food item needs name, quantity (default 1 if unspecified), and unit (cup, piece, serving, pill, etc.).
+- Do NOT extract from:
+  - Other people's messages about their own meals ("Jake says he had pizza" → not the user's intake).
+  - Hypothetical or future food plans ("I might grab sushi later" → not consumed yet).
+  - Hunger statements without actual consumption ("I'm so hungry", "I need to eat" → no food logged).
+  - Restaurant recommendations or recipe discussions without consumption ("you should try the tacos there").
+- A single message can yield multiple foods: "Had eggs, toast, and a coffee" → 3 food items.
+- Include supplements: "took vitamin D and fish oil" → 2 items.
+- Preserve specificity: "two scrambled eggs with cheddar" is better than just "eggs".
+
 === GENERAL EXTRACTION RULES ===
-- Return every distinct, well-supported action in the chunk. A single chunk can yield multiple todos, multiple journal entries, and multiple workspace updates.
+- Return every distinct, well-supported action in the chunk. A single chunk can yield multiple todos, multiple journal entries, multiple workspace updates, and nutrition logs.
 - Do not choose one "best" action. If two actions are independently supported, emit both.
 - Every action must include `source_message_ids`, using the exact `messages[].id` values that support that action.
 - If one message introduces the action and another confirms it, include both message IDs in chronological order.
@@ -320,8 +340,26 @@ Examples:
 
 18. NEGATIVE — Wishful thinking: "I'd love to learn piano someday" or "Maybe I'll start running again"
    Output idea:
-   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[]}
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[],"nutrition_logs":[]}
    Reason: Aspirational statements without concrete commitment are not todos.
+
+19. POSITIVE — Nutrition log from user message (is_from_me=true): "Just had two eggs, toast, and a coffee"
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[],"nutrition_logs":[{"foods":[{"name":"eggs","quantity":2,"unit":"piece"},{"name":"toast","quantity":1,"unit":"slice"},{"name":"coffee","quantity":1,"unit":"cup"}],"source_message_ids":[1],"reason":"User reported consuming breakfast foods."}]}
+
+20. POSITIVE — Supplement intake: "Took my vitamin D and fish oil this morning"
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[],"nutrition_logs":[{"foods":[{"name":"vitamin D pill","quantity":1,"unit":"pill"},{"name":"fish oil capsule","quantity":1,"unit":"capsule"}],"source_message_ids":[1],"reason":"User reported taking supplements."}]}
+
+21. NEGATIVE — Someone else's food: In a chat with Sam, Sam (is_from_me=false) says "I just had the best burger"
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[],"nutrition_logs":[]}
+   Reason: Another person's meal, not the user's intake.
+
+22. NEGATIVE — Future food plan: "I might grab sushi later tonight"
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[],"nutrition_logs":[]}
+   Reason: Hypothetical, not consumed yet.
 
 DATA:
 {payload_json}
@@ -346,8 +384,16 @@ Return ONLY valid JSON with this shape:
   "todo_completions": [{"approved": boolean, "reason": string}],
   "calendar_creates": [{"approved": boolean, "reason": string}],
   "journal_entries": [{"approved": boolean, "reason": string}],
-  "workspace_updates": [{"approved": boolean, "reason": string}]
+  "workspace_updates": [{"approved": boolean, "reason": string}],
+  "nutrition_logs": [{"approved": boolean, "reason": string}]
 }
+
+=== NUTRITION LOG VERIFICATION ===
+- Only approve nutrition logs where the user (is_from_me=true) clearly describes food they actually consumed.
+- Reject nutrition logs from other people's messages about their own meals.
+- Reject when the message is about future plans ("might eat", "thinking about getting"), not past/present consumption.
+- Reject hunger statements without actual consumption ("I'm starving", "need to eat").
+- Approve when the user explicitly states they ate, drank, or took something: "I had...", "just ate...", "took my vitamins".
 
 === AUTOMATED MESSAGE REJECTION ===
 - Reject any action derived from automated, system-generated, or business notification messages (verification codes, delivery alerts, bank notifications, marketing texts, appointment reminders from businesses, "reply STOP" messages).
@@ -740,10 +786,37 @@ Return ONLY valid JSON (no backticks, no prose outside JSON) with the following 
   "rhr": { "score": number (0-10), "insight": string },
   "sleep": { "score": number (0-10), "insight": string },
   "training_load": { "score": number (0-10), "insight": string },
+  "nutrition": { "score": number (0-10), "insight": string } | null,
+  "productivity": { "score": number (0-10), "insight": string } | null,
   "overall_readiness": { "score_100": number (1-100), "label": string, "insight": string }
 }
+
+=== CORE BIOMETRIC PILLARS ===
 - Each pillar score must be your subjective judgment; do NOT compute, average, or sum the numbers.
-- Overall readiness score_100 must be determined independently (do not derive it from the four pillar scores).
+- Overall readiness score_100 must be determined independently (do not derive it from pillar scores).
 - Use Monet-inspired yet concise language (1-2 sentences) for every insight, first citing the numeric trend then interpreting it physiologically.
-- If lifestyle context is provided (tasks, nutrition, calendar, energy), weave it naturally into the overall_readiness insight. For example, a heavy calendar with low HRV suggests extra recovery emphasis; good nutrition compliance supports training readiness.
+
+=== NUTRITION PILLAR (include when nutrition data is provided) ===
+- Set to null if no nutrition data is available.
+- When present, evaluate how nutrition intake supports or undermines recovery and performance.
+- Key factors: caloric balance vs expenditure, protein adequacy for recovery, 7-day trends showing chronic deficits.
+- A significant caloric deficit during high training load should lower both the nutrition score and influence overall readiness.
+- Chronically low protein (< 70% of goal over 7 days) directly impairs muscle recovery.
+- Score 8-10: intake well-matched to goals and training demands.
+- Score 5-7: minor gaps but generally adequate.
+- Score 1-4: significant deficits that are actively impairing recovery.
+
+=== PRODUCTIVITY PILLAR (include when task/calendar data is provided) ===
+- Set to null if no task or calendar data is available.
+- Evaluate cognitive load and its impact on recovery quality.
+- High overdue task counts and dense schedules reduce mental recovery.
+- Score 8-10: light load, plenty of recovery space.
+- Score 5-7: moderate load, manageable but monitor.
+- Score 1-4: overwhelming schedule or backlog, likely fragmenting rest.
+
+=== CROSS-SYSTEM INTEGRATION ===
+- The overall_readiness insight MUST synthesize all available pillars, not just biometrics.
+- When multiple signals converge (e.g., poor sleep + caloric deficit + heavy schedule), note the compounding effect.
+- When signals diverge (e.g., great biometrics but overwhelming schedule), note the tension.
+- If journal entries reveal emotional context (stress, celebration, travel), reference it naturally.
 """

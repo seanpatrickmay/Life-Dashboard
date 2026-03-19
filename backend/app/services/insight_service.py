@@ -12,6 +12,7 @@ from app.clients.openai_client import OpenAIResponsesClient
 from app.core.config import settings
 from app.db.models.calendar import CalendarEvent, GoogleCalendar
 from app.db.models.entities import DailyEnergy, DailyMetric, ReadinessInsight
+from app.db.models.journal import JournalEntry
 from app.db.models.todo import TodoItem
 from app.prompts.llm_prompts import (
     READINESS_PERSONA,
@@ -243,10 +244,15 @@ class InsightService:
         except Exception:  # noqa: BLE001
             logger.debug("Could not gather energy context for insight")
 
+        try:
+            context["journal"] = await self._gather_journal_context(user_id, metric_date)
+        except Exception:  # noqa: BLE001
+            logger.debug("Could not gather journal context for insight")
+
         return context
 
     async def _gather_todo_context(self, user_id: int, metric_date: date) -> dict:
-        now_utc = datetime.now(timezone.utc) if hasattr(datetime.now(timezone.utc), 'date') else datetime.utcnow()
+        now_utc = datetime.now(timezone.utc)
         stmt = select(
             func.count().label("total"),
             func.count().filter(TodoItem.completed.is_(True)).label("completed"),
@@ -267,17 +273,32 @@ class InsightService:
     async def _gather_nutrition_context(self, user_id: int, metric_date: date) -> dict | None:
         from app.services.nutrition_intake_service import NutritionIntakeService
         svc = NutritionIntakeService(self.session)
+
+        key_slugs = (
+            "energy_kcal", "protein_g", "carbohydrate_g", "fat_g",
+            "fiber_g", "vitamin_d_mcg", "iron_mg", "calcium_mg",
+        )
+
+        # Today's intake
         summary = await svc.daily_summary(user_id, metric_date)
         nutrients = summary.get("nutrients", [])
-        key_macros = {}
+        context: dict = {}
         for n in nutrients:
-            if n["slug"] in ("energy_kcal", "protein_g", "carbohydrate_g", "fat_g"):
-                key_macros[n["slug"]] = {
-                    "amount": n["amount"],
+            if n["slug"] in key_slugs:
+                context[n["slug"]] = {
+                    "today": n["amount"],
                     "goal": n["goal"],
-                    "percent_of_goal": n["percent_of_goal"],
+                    "today_pct": n["percent_of_goal"],
                 }
-        return key_macros if key_macros else None
+
+        # 7-day rolling average for trend detection
+        rolling = await svc.rolling_average(user_id, days=7)
+        for n in rolling.get("nutrients", []):
+            if n["slug"] in key_slugs and n["slug"] in context:
+                context[n["slug"]]["avg_7d"] = n["average_amount"]
+                context[n["slug"]]["avg_7d_pct"] = n["percent_of_goal"]
+
+        return context if context else None
 
     async def _gather_calendar_context(self, user_id: int, metric_date: date) -> dict:
         from app.utils.timezone import EASTERN_TZ
@@ -313,47 +334,116 @@ class InsightService:
             "total_kcal": energy.total_kcal,
         }
 
+    async def _gather_journal_context(self, user_id: int, metric_date: date) -> list[str] | None:
+        stmt = (
+            select(JournalEntry.text)
+            .where(
+                JournalEntry.user_id == user_id,
+                JournalEntry.local_date == metric_date,
+            )
+            .order_by(JournalEntry.created_at.desc())
+            .limit(10)
+        )
+        result = await self.session.execute(stmt)
+        texts = [row[0] for row in result.all() if row[0] and row[0].strip()]
+        return texts if texts else None
+
     def _build_life_context_block(self, context: dict) -> str:
-        """Format cross-system context into a prompt block."""
-        lines = ["Lifestyle context (use to enrich your analysis):"]
+        """Format cross-system context into a structured analytical prompt block."""
+        sections: list[str] = []
 
-        todos = context.get("todos")
-        if todos:
-            lines.append(f"- Tasks: {todos['total_active']} total, {todos['completed']} completed, {todos['overdue']} overdue")
-            if todos["overdue"] > 3:
-                lines.append("  (High task backlog may indicate cognitive stress)")
-
+        # --- Nutrition analysis (today + 7-day trends) ---
         nutrition = context.get("nutrition")
         if nutrition:
-            parts = []
+            nutr_lines = ["=== NUTRITION ANALYSIS ==="]
+            nutr_lines.append("Analyze how nutrition intake affects recovery and readiness:")
             for slug, data in nutrition.items():
-                label = slug.replace("_g", "").replace("_kcal", "").replace("_", " ").title()
-                pct = data.get("percent_of_goal")
-                if pct is not None:
-                    parts.append(f"{label}: {data['amount']:.0f}/{data['goal']:.0f} ({pct:.0f}%)")
-            if parts:
-                lines.append(f"- Nutrition today: {', '.join(parts)}")
+                label = slug.replace("_g", "").replace("_kcal", "").replace("_mcg", "").replace("_mg", "").replace("_", " ").title()
+                today_val = data.get("today", 0)
+                goal_val = data.get("goal", 0)
+                today_pct = data.get("today_pct")
+                avg_7d = data.get("avg_7d")
+                avg_7d_pct = data.get("avg_7d_pct")
 
+                line = f"- {label}: {today_val:.0f}/{goal_val:.0f}"
+                if today_pct is not None:
+                    line += f" ({today_pct:.0f}% of goal)"
+                if avg_7d is not None and avg_7d_pct is not None:
+                    line += f" | 7-day avg: {avg_7d:.0f} ({avg_7d_pct:.0f}%)"
+                    if avg_7d_pct < 60:
+                        line += " ⚠ chronically low"
+                    elif avg_7d_pct > 130:
+                        line += " ⚠ consistently over goal"
+                nutr_lines.append(line)
+
+            # Caloric balance if energy expenditure available
+            energy = context.get("energy")
+            if energy and energy.get("total_kcal") is not None and "energy_kcal" in nutrition:
+                intake_kcal = nutrition["energy_kcal"].get("today", 0)
+                expenditure_kcal = energy["total_kcal"]
+                balance = intake_kcal - expenditure_kcal
+                sign = "+" if balance >= 0 else ""
+                nutr_lines.append(f"- Caloric balance: {sign}{balance:.0f} kcal (intake {intake_kcal:.0f} − expenditure {expenditure_kcal:.0f})")
+                if balance < -500:
+                    nutr_lines.append("  → Significant deficit: may impair recovery, especially with training load")
+                elif balance < -200:
+                    nutr_lines.append("  → Moderate deficit: monitor energy levels during activity")
+
+            sections.append("\n".join(nutr_lines))
+
+        # --- Cognitive load / productivity ---
+        todos = context.get("todos")
         calendar = context.get("calendar")
-        if calendar and calendar.get("events_today", 0) > 0:
-            count = calendar["events_today"]
-            lines.append(f"- Calendar: {count} event{'s' if count != 1 else ''} scheduled today")
-            if count >= 5:
-                lines.append("  (Heavy schedule may limit recovery time)")
+        has_todo_data = todos and (todos.get("total_active", 0) > 0 or todos.get("overdue", 0) > 0)
+        calendar_count = calendar.get("events_today", 0) if calendar else 0
+        if has_todo_data or calendar_count > 0:
+            load_lines = ["=== COGNITIVE LOAD ==="]
+            load_lines.append("Consider how task burden and schedule density affect mental recovery:")
+            if has_todo_data:
+                load_lines.append(
+                    f"- Tasks: {todos['total_active']} active, {todos['completed']} completed, {todos['overdue']} overdue"
+                )
+                if todos["overdue"] > 5:
+                    load_lines.append("  → Heavy backlog: likely cognitive stress and reduced recovery quality")
+                elif todos["overdue"] > 2:
+                    load_lines.append("  → Growing backlog: may contribute to background stress")
+            if calendar_count > 0:
+                load_lines.append(f"- Calendar: {calendar_count} event{'s' if calendar_count != 1 else ''} today")
+                if calendar_count >= 6:
+                    load_lines.append("  → Very dense schedule: limited recovery windows between obligations")
+                elif calendar_count >= 4:
+                    load_lines.append("  → Moderately busy: balance focused work with recovery breaks")
+            sections.append("\n".join(load_lines))
 
+        # --- Energy expenditure (standalone if not already used in nutrition) ---
         energy = context.get("energy")
-        if energy:
+        if energy and not nutrition:
+            energy_lines = ["=== ENERGY EXPENDITURE ==="]
             parts = []
             if energy.get("active_kcal") is not None:
                 parts.append(f"Active: {energy['active_kcal']:.0f} kcal")
+            if energy.get("bmr_kcal") is not None:
+                parts.append(f"BMR: {energy['bmr_kcal']:.0f} kcal")
             if energy.get("total_kcal") is not None:
                 parts.append(f"Total: {energy['total_kcal']:.0f} kcal")
             if parts:
-                lines.append(f"- Energy expenditure: {', '.join(parts)}")
+                energy_lines.append(f"- {', '.join(parts)}")
+            sections.append("\n".join(energy_lines))
 
-        if len(lines) == 1:
+        # --- Journal / qualitative context ---
+        journal = context.get("journal")
+        if journal:
+            journal_lines = ["=== JOURNAL CONTEXT ==="]
+            journal_lines.append("Recent journal entries that may reflect the user's state of mind:")
+            for entry_text in journal[:5]:
+                truncated = entry_text[:200] + "..." if len(entry_text) > 200 else entry_text
+                journal_lines.append(f"- {truncated}")
+            sections.append("\n".join(journal_lines))
+
+        if not sections:
             return ""
-        return "\n".join(lines)
+        header = "Lifestyle & cross-system analysis (integrate these factors into your readiness assessment):"
+        return header + "\n\n" + "\n\n".join(sections)
 
     def _build_prompt(self, metric: DailyMetric | None, history: list[DailyMetric], life_context: dict | None = None) -> str:
         today = eastern_today()
@@ -628,6 +718,8 @@ class InsightService:
         rhr = section("rhr")
         sleep = section("sleep")
         load = section("training_load")
+        nutrition = section("nutrition")
+        productivity = section("productivity")
 
         metric.insight_hrv_score = section_score(hrv)
         metric.insight_hrv_note = self._safe_text(hrv, "insight")
@@ -644,6 +736,16 @@ class InsightService:
         metric.insight_training_load_score = section_score(load)
         metric.insight_training_load_note = self._safe_text(load, "insight")
         metric.insight_training_load_value = metric.training_load
+
+        # New pillars — stored in the narrative JSON, extracted at read time
+        self._last_nutrition_pillar = {
+            "score": section_score(nutrition),
+            "note": self._safe_text(nutrition, "insight"),
+        } if nutrition else None
+        self._last_productivity_pillar = {
+            "score": section_score(productivity),
+            "note": self._safe_text(productivity, "insight"),
+        } if productivity else None
 
         readiness = structured.get("overall_readiness") or structured.get("morning_readiness")
         readiness = readiness if isinstance(readiness, dict) else None

@@ -26,3 +26,7 @@ class InsightResponse(BaseModel):
     training_load_note: str | None = None
     training_load_score: float | None = None
     morning_note: str | None = None
+    nutrition_note: str | None = None
+    nutrition_score: float | None = None
+    productivity_note: str | None = None
+    productivity_score: float | None = None

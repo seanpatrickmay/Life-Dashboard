@@ -529,6 +529,7 @@ class IMessageProcessingService:
             ("calendar_creates", "calendar.create"),
             ("journal_entries", "journal.entry"),
             ("workspace_updates", "workspace.update"),
+            ("nutrition_logs", "nutrition.log"),
         ]
         for key, action_type in action_specs:
             actions = extracted.get(key) or []
@@ -593,6 +594,12 @@ class IMessageProcessingService:
                         action=action,
                         time_zone=time_zone,
                     )
+                elif key == "nutrition_logs":
+                    applied = await self._apply_nutrition_log(
+                        run=run,
+                        cluster=cluster,
+                        action=action,
+                    )
                 else:
                     applied = await self._apply_workspace_update(
                         run=run,
@@ -653,6 +660,7 @@ class IMessageProcessingService:
             ("calendar_creates", "calendar.create"),
             ("journal_entries", "journal.entry"),
             ("workspace_updates", "workspace.update"),
+            ("nutrition_logs", "nutrition.log"),
         ]
         for key, action_type in action_specs:
             for index, action in enumerate(extracted.get(key) or []):
@@ -890,6 +898,11 @@ class IMessageProcessingService:
                     str(action.get("reason") or ""),
                 ]
             )
+        elif action_type == "nutrition.log":
+            foods = action.get("foods") or []
+            for food in foods:
+                fields.append(str(food.get("name", "")))
+            fields.append(str(action.get("reason") or ""))
         return " ".join(field for field in fields if field).strip()
 
     def _infer_source_message_ids(
@@ -934,6 +947,11 @@ class IMessageProcessingService:
             elif action_type == "workspace.update":
                 if any(marker in lowered_text for marker in ("agreed", "requires", "keep", "should", "must")):
                     score += 0.3
+            elif action_type == "nutrition.log":
+                if self._message_is_from_me(message):
+                    score += 0.8
+                if any(marker in lowered_text for marker in ("ate", "had", "eating", "drank", "took", "breakfast", "lunch", "dinner", "snack", "smoothie", "coffee")):
+                    score += 0.5
             elif action_type == "project.inference":
                 if str(action.get("project_name") or "").strip().lower() in lowered_text:
                     score += 0.75
@@ -2570,6 +2588,86 @@ class IMessageProcessingService:
             status="applied",
             target_journal_entry_id=entry.id,
             action=action,
+            supporting_message_ids=source_message_ids,
+            source_occurred_at_utc=occurred_at_utc,
+            applied=True,
+        )
+        return True
+
+    async def _apply_nutrition_log(
+        self,
+        *,
+        run: IMessageProcessingRun,
+        cluster: MessageCluster,
+        action: dict[str, Any],
+    ) -> bool:
+        foods = action.get("foods")
+        if not foods or not isinstance(foods, list):
+            return False
+        source_message_ids = self._normalize_action_source_message_ids(
+            cluster.messages,
+            "nutrition.log",
+            action,
+        )
+        occurred_at_utc = self._action_source_occurred_at_utc(
+            cluster=cluster,
+            action_type="nutrition.log",
+            action=action,
+            source_message_ids=source_message_ids,
+        ) or self._cluster_reference_time_utc(cluster=cluster, prefer_user_messages=True)
+        food_names = ", ".join(str(f.get("name", "")) for f in foods[:5])
+        fingerprint = stable_fingerprint(
+            "nutrition.log",
+            cluster.conversation.id,
+            food_names.lower(),
+            occurred_at_utc.date().isoformat(),
+        )
+        if await self._audit_exists(run.user_id, fingerprint):
+            return False
+        try:
+            from app.services.claude_nutrition_agent import NutritionAssistantAgent
+            agent = NutritionAssistantAgent(self.session)
+            food_descriptions = []
+            for food in foods:
+                name = str(food.get("name", "")).strip()
+                if not name:
+                    continue
+                qty = food.get("quantity", 1)
+                unit = food.get("unit", "serving")
+                food_descriptions.append(f"{qty} {unit} {name}")
+            if not food_descriptions:
+                return False
+            message_text = "I had " + ", ".join(food_descriptions)
+            result = await agent.respond(
+                user_id=run.user_id,
+                message=message_text,
+            )
+            logged_count = len(result.logged_entries)
+            logger.info(
+                "[imessage] nutrition log applied: {} foods logged from conversation {}",
+                logged_count,
+                cluster.conversation.id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[imessage] nutrition log failed: {}", exc)
+            await self._record_non_applied_action(
+                run=run,
+                cluster=cluster,
+                action_type="nutrition.log",
+                action=action,
+                status="error",
+                project_id=None,
+                judge_reasoning=f"Nutrition logging failed: {exc}",
+            )
+            return False
+        await self._record_action_audit(
+            run=run,
+            cluster=cluster,
+            action_type="nutrition.log",
+            fingerprint=fingerprint,
+            status="applied",
+            action=action,
+            applied_payload={"foods_logged": logged_count, "message": message_text},
             supporting_message_ids=source_message_ids,
             source_occurred_at_utc=occurred_at_utc,
             applied=True,

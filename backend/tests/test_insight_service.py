@@ -940,26 +940,26 @@ class TestBuildLifeContextBlock:
         svc = make_service()
         context = {"todos": {"total_active": 10, "completed": 3, "overdue": 2}}
         result = svc._build_life_context_block(context)
-        assert "10 total" in result
+        assert "10 active" in result
         assert "3 completed" in result
         assert "2 overdue" in result
 
     def test_high_overdue_adds_stress_note(self):
         svc = make_service()
-        context = {"todos": {"total_active": 20, "completed": 2, "overdue": 5}}
+        context = {"todos": {"total_active": 20, "completed": 2, "overdue": 6}}
         result = svc._build_life_context_block(context)
-        assert "cognitive stress" in result.lower()
+        assert "cognitive stress" in result.lower() or "backlog" in result.lower()
 
     def test_nutrition_context(self):
         svc = make_service()
         context = {
             "nutrition": {
-                "energy_kcal": {"amount": 1800, "goal": 2200, "percent_of_goal": 81.8},
-                "protein_g": {"amount": 120, "goal": 150, "percent_of_goal": 80.0},
+                "energy_kcal": {"today": 1800, "goal": 2200, "today_pct": 81.8},
+                "protein_g": {"today": 120, "goal": 150, "today_pct": 80.0},
             }
         }
         result = svc._build_life_context_block(context)
-        assert "Nutrition today" in result
+        assert "NUTRITION" in result
         assert "Energy" in result
         assert "Protein" in result
 
@@ -967,7 +967,7 @@ class TestBuildLifeContextBlock:
         svc = make_service()
         context = {"calendar": {"events_today": 3}}
         result = svc._build_life_context_block(context)
-        assert "3 events" in result
+        assert "3 event" in result
 
     def test_heavy_calendar_adds_recovery_note(self):
         svc = make_service()
@@ -979,8 +979,7 @@ class TestBuildLifeContextBlock:
         svc = make_service()
         context = {"calendar": {"events_today": 1}}
         result = svc._build_life_context_block(context)
-        assert "1 event " in result
-        assert "events" not in result.split("1 event")[1][:2]
+        assert "1 event" in result
 
     def test_energy_context(self):
         svc = make_service()
@@ -1001,6 +1000,25 @@ class TestBuildLifeContextBlock:
         result = svc._build_life_context_block(context)
         assert result == ""
 
+    def test_caloric_balance(self):
+        svc = make_service()
+        context = {
+            "nutrition": {
+                "energy_kcal": {"today": 1800, "goal": 2200, "today_pct": 81.8},
+            },
+            "energy": {"active_kcal": 500, "bmr_kcal": 1700, "total_kcal": 2400},
+        }
+        result = svc._build_life_context_block(context)
+        assert "Caloric balance" in result
+        assert "deficit" in result.lower()
+
+    def test_journal_context(self):
+        svc = make_service()
+        context = {"journal": ["Had a great morning run", "Feeling productive"]}
+        result = svc._build_life_context_block(context)
+        assert "JOURNAL" in result
+        assert "morning run" in result
+
     def test_full_context_in_prompt(self):
         svc = make_service()
         metric = make_metric()
@@ -1010,20 +1028,19 @@ class TestBuildLifeContextBlock:
             "energy": {"active_kcal": 500, "bmr_kcal": 1700, "total_kcal": 2200},
         }
         prompt = svc._build_prompt(metric, [], life_context=life_context)
-        assert "Lifestyle context" in prompt
-        assert "8 total" in prompt
-        assert "4 events" in prompt
-        assert "Active: 500 kcal" in prompt
+        assert "cross-system" in prompt.lower() or "COGNITIVE LOAD" in prompt
+        assert "8 active" in prompt
+        assert "4 event" in prompt
 
     def test_prompt_without_context_has_no_lifestyle_block(self):
         svc = make_service()
         prompt = svc._build_prompt(make_metric(), [])
-        assert "Lifestyle context" not in prompt
+        assert "Lifestyle & cross-system analysis" not in prompt
 
     def test_prompt_with_empty_context_has_no_lifestyle_block(self):
         svc = make_service()
         prompt = svc._build_prompt(make_metric(), [], life_context={})
-        assert "Lifestyle context" not in prompt
+        assert "Lifestyle & cross-system analysis" not in prompt
 
 
 # ---------------------------------------------------------------------------

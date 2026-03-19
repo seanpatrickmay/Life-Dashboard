@@ -210,7 +210,21 @@ export function LilyPadsInsights() {
       value: formatValue(data?.training_load_value),
       subtitle: data?.training_load_note ?? 'Awaiting insight',
       chart: <LoadChart variant="bare" />
-    }
+    },
+    ...(data?.nutrition_note || data?.nutrition_score != null ? [{
+      key: 'nutrition',
+      title: 'Nutrition',
+      value: data?.nutrition_score != null ? `${data.nutrition_score.toFixed(0)}/10` : '—',
+      subtitle: data?.nutrition_note ?? 'Awaiting insight',
+      chart: null as unknown as JSX.Element,
+    }] : []),
+    ...(data?.productivity_note || data?.productivity_score != null ? [{
+      key: 'productivity',
+      title: 'Productivity',
+      value: data?.productivity_score != null ? `${data.productivity_score.toFixed(0)}/10` : '—',
+      subtitle: data?.productivity_note ?? 'Awaiting insight',
+      chart: null as unknown as JSX.Element,
+    }] : []),
   ];
 
   const activeMetric = metricBlocks.find((metric) => metric.key === activeKey) ?? metricBlocks[0];

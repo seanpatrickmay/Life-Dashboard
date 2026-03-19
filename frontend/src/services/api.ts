@@ -176,6 +176,10 @@ export type InsightResponse = {
   training_load_note?: string | null;
   training_load_score?: number | null;
   morning_note?: string | null;
+  nutrition_note?: string | null;
+  nutrition_score?: number | null;
+  productivity_note?: string | null;
+  productivity_score?: number | null;
 };
 
 export type MetricDelta = {

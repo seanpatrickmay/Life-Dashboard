@@ -6,6 +6,7 @@ import { MicronutrientPanel } from '../components/nutrition/MicronutrientPanel';
 import { MenuPanel } from '../components/nutrition/MenuPanel';
 import { GoalsPanel } from '../components/nutrition/GoalsPanel';
 import { FoodManager } from '../components/nutrition/FoodManager';
+import { NutritionChatPanel } from '../components/nutrition/NutritionChatPanel';
 import { useNutritionHistory } from '../hooks/useNutritionIntake';
 import { fadeUp, reducedMotion } from '../styles/animations';
 
@@ -195,6 +196,7 @@ type SectionState = {
   averages: boolean;
   goals: boolean;
   foods: boolean;
+  chat: boolean;
 };
 
 const DEFAULTS: SectionState = {
@@ -203,6 +205,7 @@ const DEFAULTS: SectionState = {
   averages: false,
   goals: false,
   foods: false,
+  chat: true,
 };
 
 function readPersistedSections(): SectionState {
@@ -285,6 +288,27 @@ export function NutritionPage() {
       <Title data-halo="heading">Nutrition</Title>
 
       <MacroHero />
+
+      {/* Nutrition Assistant */}
+      <SectionCard>
+        <SectionToggle
+          type="button"
+          onClick={() => toggle('chat')}
+          aria-expanded={sections.chat}
+        >
+          <ToggleLeft>
+            <span>Nutrition Assistant</span>
+          </ToggleLeft>
+          <Chevron $open={sections.chat}>▶</Chevron>
+        </SectionToggle>
+        <CollapsibleWrapper $open={sections.chat}>
+          <CollapsibleInner>
+            <SectionContent>
+              <NutritionChatPanel />
+            </SectionContent>
+          </CollapsibleInner>
+        </CollapsibleWrapper>
+      </SectionCard>
 
       {/* Today's Meals */}
       <SectionCard>

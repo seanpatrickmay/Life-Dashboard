@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+import time
+from collections import OrderedDict
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
@@ -39,6 +41,54 @@ from app.utils.timezone import eastern_today
 
 
 @dataclass
+class _ConversationTurn:
+    role: str
+    content: str
+    timestamp: float = field(default_factory=time.time)
+
+
+class _ConversationMemory:
+    """In-memory LRU conversation store with TTL expiry (no DB migration needed)."""
+
+    MAX_SESSIONS = 64
+    MAX_TURNS_PER_SESSION = 20
+    TTL_SECONDS = 3600  # 1 hour
+
+    def __init__(self) -> None:
+        self._sessions: OrderedDict[str, list[_ConversationTurn]] = OrderedDict()
+
+    def get_history(self, session_id: str) -> list[_ConversationTurn]:
+        self._evict_expired()
+        turns = self._sessions.get(session_id, [])
+        self._sessions.move_to_end(session_id, last=True) if session_id in self._sessions else None
+        return turns
+
+    def add_turn(self, session_id: str, role: str, content: str) -> None:
+        self._evict_expired()
+        if session_id not in self._sessions:
+            if len(self._sessions) >= self.MAX_SESSIONS:
+                self._sessions.popitem(last=False)
+            self._sessions[session_id] = []
+        self._sessions[session_id].append(_ConversationTurn(role=role, content=content))
+        if len(self._sessions[session_id]) > self.MAX_TURNS_PER_SESSION:
+            self._sessions[session_id] = self._sessions[session_id][-self.MAX_TURNS_PER_SESSION:]
+        self._sessions.move_to_end(session_id, last=True)
+
+    def _evict_expired(self) -> None:
+        now = time.time()
+        expired = [
+            sid for sid, turns in self._sessions.items()
+            if turns and (now - turns[-1].timestamp) > self.TTL_SECONDS
+        ]
+        for sid in expired:
+            del self._sessions[sid]
+
+
+# Module-level singleton so memory persists across requests within the process
+_conversation_memory = _ConversationMemory()
+
+
+@dataclass
 class NutritionAssistantResponse:
     reply: str
     logged_entries: list[dict[str, Any]]
@@ -54,6 +104,7 @@ class NutritionAssistantAgent:
         self.intake_repo = NutritionIntakeRepository(session)
         self.unit_normalizer = NutritionUnitNormalizer()
         self.client = OpenAIResponsesClient()
+        self.memory = _conversation_memory
 
     async def respond(
         self, user_id: int, message: str, request_id: str | None = None
@@ -62,7 +113,10 @@ class NutritionAssistantAgent:
         logger.info(
             f"[nutrition] respond start id={request_id} user={user_id} text={message}"
         )
-        parsed = await self._extract_food_mentions(message)
+        self.memory.add_turn(request_id, "user", message)
+        history = self.memory.get_history(request_id)
+        context_text = self._build_conversation_context(message, history)
+        parsed = await self._extract_food_mentions(context_text)
         logger.info(
             f"[nutrition] parsed foods={parsed.get('foods')} summary={parsed.get('summary')}"
         )
@@ -170,8 +224,28 @@ class NutritionAssistantAgent:
         ):
             reply += "\nNote: items marked unconfirmed still need a quick review."
 
+        self.memory.add_turn(request_id, "assistant", reply)
         logger.info(f"[nutrition] respond complete id={request_id} reply={reply}")
         return NutritionAssistantResponse(reply=reply, logged_entries=entries)
+
+    def _build_conversation_context(
+        self, current_message: str, history: list[_ConversationTurn]
+    ) -> str:
+        """Build context-aware prompt text from conversation history."""
+        if len(history) <= 1:
+            return current_message
+        prior_turns = [
+            t for t in history
+            if not (t.role == "user" and t.content == current_message and t is history[-1])
+        ]
+        if not prior_turns:
+            return current_message
+        context_lines = ["Previous conversation:"]
+        for turn in prior_turns[:-1]:
+            prefix = "User" if turn.role == "user" else "Assistant"
+            context_lines.append(f"  {prefix}: {turn.content}")
+        context_lines.append(f"\nCurrent message: {current_message}")
+        return "\n".join(context_lines)
 
     async def _extract_food_mentions(self, user_text: str) -> dict[str, Any]:
         prompt = NUTRITION_FOOD_EXTRACTION_PROMPT.format(user_text=user_text)

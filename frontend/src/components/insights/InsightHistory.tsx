@@ -135,6 +135,15 @@ const ChartCard = styled(Card)`
   }
 `;
 
+const NoteCardWide = styled(Card)`
+  padding: clamp(12px, 1.5vw, 18px);
+  margin: 4px clamp(14px, 2vw, 20px) clamp(14px, 2vw, 20px);
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  white-space: pre-line;
+`;
+
 const GreetingSection = styled(Card)`
   padding: clamp(16px, 2vw, 24px);
   display: flex;
@@ -189,12 +198,25 @@ export function InsightHistory() {
     return 'Low';
   };
 
-  const sections = [
-    { key: 'hrv', title: 'HRV', value: fmt(data?.hrv_value_ms), unit: 'ms', note: data?.hrv_note, score: data?.hrv_score },
-    { key: 'rhr', title: 'Resting HR', value: fmt(data?.rhr_value_bpm), unit: 'bpm', note: data?.rhr_note, score: data?.rhr_score },
-    { key: 'sleep', title: 'Sleep', value: fmt(data?.sleep_value_hours, 1), unit: 'hrs', note: data?.sleep_note, score: data?.sleep_score },
-    { key: 'load', title: 'Training Load', value: fmt(data?.training_load_value), unit: 'pts', note: data?.training_load_note, score: data?.training_load_score }
+  const biometricSections = [
+    { key: 'hrv', title: 'HRV', value: fmt(data?.hrv_value_ms), unit: 'ms', note: data?.hrv_note, score: data?.hrv_score, hasChart: true },
+    { key: 'rhr', title: 'Resting HR', value: fmt(data?.rhr_value_bpm), unit: 'bpm', note: data?.rhr_note, score: data?.rhr_score, hasChart: true },
+    { key: 'sleep', title: 'Sleep', value: fmt(data?.sleep_value_hours, 1), unit: 'hrs', note: data?.sleep_note, score: data?.sleep_score, hasChart: true },
+    { key: 'load', title: 'Training Load', value: fmt(data?.training_load_value), unit: 'pts', note: data?.training_load_note, score: data?.training_load_score, hasChart: true },
   ];
+
+  const lifestyleSections = [
+    ...(data?.nutrition_note || data?.nutrition_score != null ? [{
+      key: 'nutrition', title: 'Nutrition', value: data?.nutrition_score != null ? `${data.nutrition_score.toFixed(0)}` : '—', unit: '/ 10',
+      note: data?.nutrition_note, score: data?.nutrition_score, hasChart: false,
+    }] : []),
+    ...(data?.productivity_note || data?.productivity_score != null ? [{
+      key: 'productivity', title: 'Productivity', value: data?.productivity_score != null ? `${data.productivity_score.toFixed(0)}` : '—', unit: '/ 10',
+      note: data?.productivity_note, score: data?.productivity_score, hasChart: false,
+    }] : []),
+  ];
+
+  const sections = [...biometricSections, ...lifestyleSections];
 
   const hasStructured = sections.some(s => s.note || s.value !== '—') || !!data?.morning_note;
 
@@ -239,10 +261,14 @@ export function InsightHistory() {
             </MetricStrip>
             <ExpandPanel $open={expanded === s.key}>
               <ExpandInner>
-                <DetailGrid>
-                  <NoteCard>{s.note ?? 'No insight available.'}</NoteCard>
-                  <ChartCard>{chartMap[s.key as MetricKey]}</ChartCard>
-                </DetailGrid>
+                {s.hasChart ? (
+                  <DetailGrid>
+                    <NoteCard>{s.note ?? 'No insight available.'}</NoteCard>
+                    <ChartCard>{chartMap[s.key as MetricKey]}</ChartCard>
+                  </DetailGrid>
+                ) : (
+                  <NoteCardWide>{s.note ?? 'No insight available.'}</NoteCardWide>
+                )}
               </ExpandInner>
             </ExpandPanel>
           </div>

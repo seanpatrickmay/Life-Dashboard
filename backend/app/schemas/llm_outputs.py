@@ -20,12 +20,19 @@ class OverallReadinessOutput(LLMOutputModel):
     insight: str
 
 
+class OptionalPillarOutput(LLMOutputModel):
+    score: float
+    insight: str
+
+
 class ReadinessInsightOutput(LLMOutputModel):
     greeting: str
     hrv: ReadinessPillarOutput
     rhr: ReadinessPillarOutput
     sleep: ReadinessPillarOutput
     training_load: ReadinessPillarOutput
+    nutrition: OptionalPillarOutput | None = None
+    productivity: OptionalPillarOutput | None = None
     overall_readiness: OverallReadinessOutput
 
 
@@ -189,11 +196,24 @@ class IMessageWorkspaceUpdateOutput(LLMOutputModel):
     reason: str
 
 
+class IMessageNutritionFoodOutput(LLMOutputModel):
+    name: str
+    quantity: float = 1.0
+    unit: str = "serving"
+
+
+class IMessageNutritionLogOutput(LLMOutputModel):
+    foods: list[IMessageNutritionFoodOutput] = Field(default_factory=list)
+    source_message_ids: list[int] = Field(default_factory=list)
+    reason: str
+
+
 class IMessageActionExtractionOutput(LLMOutputModel):
     todo_creates: list[IMessageTodoCreateOutput] = Field(default_factory=list)
     todo_completions: list[IMessageTodoCompletionOutput] = Field(default_factory=list)
     journal_entries: list[IMessageJournalEntryOutput] = Field(default_factory=list)
     workspace_updates: list[IMessageWorkspaceUpdateOutput] = Field(default_factory=list)
+    nutrition_logs: list[IMessageNutritionLogOutput] = Field(default_factory=list)
 
 
 class IMessageJudgeDecisionOutput(LLMOutputModel):
@@ -208,6 +228,7 @@ class IMessageActionJudgeOutput(LLMOutputModel):
     calendar_creates: list[IMessageJudgeDecisionOutput] = Field(default_factory=list)
     journal_entries: list[IMessageJudgeDecisionOutput] = Field(default_factory=list)
     workspace_updates: list[IMessageJudgeDecisionOutput] = Field(default_factory=list)
+    nutrition_logs: list[IMessageJudgeDecisionOutput] = Field(default_factory=list)
 
 
 class IMessageDedupDecisionOutput(LLMOutputModel):

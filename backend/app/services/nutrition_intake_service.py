@@ -144,6 +144,9 @@ class NutritionIntakeService:
                     continue
                 bucket[definition.slug] += value * intake.quantity
 
+        days_with_data = len(totals_by_day) if totals_by_day else 0
+        divisor = days_with_data if days_with_data > 0 else 1
+
         goals = await self.goals_service.list_goals(user_id)
         goal_map = {item["slug"]: item for item in goals}
         avg_rows = []
@@ -155,7 +158,7 @@ class NutritionIntakeService:
                 day_totals.get(definition.slug, 0.0)
                 for day_totals in totals_by_day.values()
             )
-            average_amount = total_amount / days if days else 0.0
+            average_amount = total_amount / divisor
             percent = (average_amount / goal_value * 100) if goal_value else None
             avg_rows.append(
                 {
@@ -170,7 +173,7 @@ class NutritionIntakeService:
                     ),
                 }
             )
-        return {"window_days": days, "nutrients": avg_rows}
+        return {"window_days": days, "days_with_data": days_with_data, "nutrients": avg_rows}
 
     def _accumulate(self, intakes) -> dict[str, float]:
         totals: dict[str, float] = {

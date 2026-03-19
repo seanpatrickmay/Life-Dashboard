@@ -102,7 +102,8 @@ export function ReadinessCard() {
 
   const hasStructured = Boolean(
     insight?.greeting ?? insight?.hrv_note ?? insight?.rhr_note ??
-    insight?.sleep_note ?? insight?.training_load_note ?? insight?.morning_note
+    insight?.sleep_note ?? insight?.training_load_note ?? insight?.morning_note ??
+    insight?.nutrition_note ?? insight?.productivity_note
   );
 
   return (
