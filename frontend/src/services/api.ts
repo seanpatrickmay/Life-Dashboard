@@ -816,10 +816,10 @@ export type CalendarEventsResponse = {
 export const fetchCalendarStatus = async (): Promise<CalendarStatus> => {
   if (isGuestMode()) {
     return {
-      connected: false,
-      account_email: null,
-      connected_at: null,
-      last_sync_at: null,
+      connected: true,
+      account_email: 'guest@demo.app',
+      connected_at: new Date().toISOString(),
+      last_sync_at: new Date().toISOString(),
       requires_reauth: false
     };
   }
@@ -829,7 +829,19 @@ export const fetchCalendarStatus = async (): Promise<CalendarStatus> => {
 
 export const fetchCalendars = async (): Promise<CalendarListResponse> => {
   if (isGuestMode()) {
-    return { calendars: [] };
+    return {
+      calendars: [
+        {
+          google_id: 'demo@gmail.com',
+          summary: 'Personal',
+          primary: true,
+          selected: true,
+          is_life_dashboard: false,
+          color_id: null,
+          time_zone: null
+        }
+      ]
+    };
   }
   const { data } = await api.get('/api/calendar/calendars');
   return data;
@@ -850,9 +862,62 @@ export const syncCalendar = async (): Promise<void> => {
   await api.post('/api/calendar/sync');
 };
 
+const buildGuestCalendarEvents = (): CalendarEvent[] => {
+  const base = new Date();
+  const d = (dayOffset: number, hour: number, min = 0) => {
+    const dt = new Date(base.getFullYear(), base.getMonth(), base.getDate() + dayOffset, hour, min);
+    return dt.toISOString();
+  };
+  const ev = (
+    id: number,
+    summary: string,
+    startDay: number,
+    startHour: number,
+    startMin: number,
+    endDay: number,
+    endHour: number,
+    endMin: number,
+    opts: Partial<CalendarEvent> = {}
+  ): CalendarEvent => ({
+    id,
+    calendar_google_id: 'demo@gmail.com',
+    calendar_summary: 'Personal',
+    calendar_primary: true,
+    calendar_is_life_dashboard: false,
+    google_event_id: `demo-${id}`,
+    summary,
+    start_time: d(startDay, startHour, startMin),
+    end_time: d(endDay, endHour, endMin),
+    is_all_day: false,
+    status: 'confirmed',
+    ...opts
+  });
+
+  return [
+    ev(9001, 'Morning run', 0, 7, 0, 0, 7, 45),
+    ev(9002, 'Team standup', 0, 10, 0, 0, 10, 30, { location: 'Zoom' }),
+    ev(9003, 'Lunch with Alex', 0, 12, 30, 0, 13, 30, { location: 'Sweetgreen' }),
+    ev(9004, 'Deep work block', 0, 14, 0, 0, 16, 0),
+    ev(9005, 'Dentist appointment', 1, 9, 0, 1, 10, 0, { location: '123 Main St' }),
+    ev(9006, '1:1 with manager', 1, 11, 0, 1, 11, 30, { location: 'Zoom' }),
+    ev(9007, 'Grocery pickup', 1, 17, 30, 1, 18, 0, { location: 'Whole Foods' }),
+    ev(9008, 'Yoga class', 2, 7, 0, 2, 8, 0, { location: 'CorePower' }),
+    ev(9009, 'Project review', 2, 14, 0, 2, 15, 0),
+    ev(9010, 'Weekend hike', 3, 9, 0, 3, 12, 0, { location: 'Blue Hills', is_all_day: false }),
+    ev(9011, 'Meal prep Sunday', 4, 16, 0, 4, 18, 0),
+    ev(9012, 'Book club', 5, 19, 0, 5, 20, 30, { location: 'Davis Square Library' }),
+  ];
+};
+
 export const fetchCalendarEvents = async (start: string, end: string): Promise<CalendarEventsResponse> => {
   if (isGuestMode()) {
-    return { events: [] };
+    const startMs = new Date(start).getTime();
+    const endMs = new Date(end).getTime();
+    const events = buildGuestCalendarEvents().filter((e) => {
+      const t = new Date(e.start_time!).getTime();
+      return t >= startMs && t <= endMs;
+    });
+    return { events };
   }
   const { data } = await api.get('/api/calendar/events', { params: { start, end } });
   return data;
