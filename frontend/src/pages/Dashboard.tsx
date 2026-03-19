@@ -35,6 +35,7 @@ const Column = styled.div<{ $delay?: number }>`
   display: flex;
   flex-direction: column;
   gap: clamp(20px, 3vw, 32px);
+  min-width: 0;
   animation: ${fadeUp} 0.5s ease-out ${({ $delay }) => ($delay ?? 0) * 0.08}s both;
 `;
 
