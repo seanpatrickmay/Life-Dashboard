@@ -99,7 +99,12 @@ export function NutritionDashboard() {
                     <div>
                       {item.amount ?? 0} / {item.goal ?? '—'} {item.unit}
                     </div>
-                    <Bar $percent={item.percent_of_goal} />
+                    <Bar
+                      $percent={item.percent_of_goal}
+                      role="progressbar"
+                      aria-valuenow={item.percent_of_goal ?? 0}
+                      aria-label={`${item.display_name}: ${item.percent_of_goal ?? 0}% of goal`}
+                    />
                   </ProgressBlock>
                 ))}
               </Grid>
@@ -125,7 +130,12 @@ export function NutritionDashboard() {
                   <ProgressBlock key={item.slug}>
                     <strong>{item.display_name}</strong>
                     <div>{item.percent_of_goal?.toFixed(1) ?? 0}% of goal</div>
-                    <Bar $percent={item.percent_of_goal} />
+                    <Bar
+                      $percent={item.percent_of_goal}
+                      role="progressbar"
+                      aria-valuenow={item.percent_of_goal ?? 0}
+                      aria-label={`${item.display_name}: ${item.percent_of_goal ?? 0}% of goal`}
+                    />
                   </ProgressBlock>
                 ))}
               </Grid>

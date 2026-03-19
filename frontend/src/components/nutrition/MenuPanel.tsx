@@ -40,7 +40,7 @@ const Entries = styled.div`
 
 const EntryCard = styled.div`
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid ${({ theme }) => theme.colors.overlay};
   padding: 10px 12px;
   background: ${({ theme }) => theme.colors.surfaceRaised};
   display: grid;
@@ -181,6 +181,7 @@ export function MenuPanel() {
                   <input
                     type="number"
                     step="0.1"
+                    aria-label="Quantity"
                     value={drafts[entry.id]?.quantity ?? Number(entry.quantity ?? 0)}
                     onChange={(e) => handleChange(entry.id, 'quantity', e.target.value)}
                   />
@@ -188,6 +189,7 @@ export function MenuPanel() {
                 <Field>
                   <label>Unit</label>
                   <input
+                    aria-label="Unit"
                     value={drafts[entry.id]?.unit ?? entry.unit}
                     onChange={(e) => handleChange(entry.id, 'unit', e.target.value)}
                   />

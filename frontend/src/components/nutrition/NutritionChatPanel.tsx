@@ -73,7 +73,7 @@ export function NutritionChatPanel() {
   return (
     <Panel>
       <h3 data-halo="heading">Monet • Nutrition Mentor</h3>
-      <History>
+      <History role="log" aria-live="polite">
         {history.length === 0 && <Entry $role="assistant">Tell me what you ate today and I’ll log it.</Entry>}
         {history.map((entry) => (
           <Entry key={entry.id} $role={entry.role}>
@@ -92,6 +92,7 @@ export function NutritionChatPanel() {
       </History>
       <Form onSubmit={onSubmit}>
         <Input
+          aria-label="Message Monet about nutrition"
           placeholder="e.g. I had 1 cup oatmeal and 1 tbsp chia seeds"
           value={text}
           onChange={(e) => setText(e.target.value)}
