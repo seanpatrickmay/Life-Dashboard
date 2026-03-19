@@ -4,153 +4,129 @@ import { useInsight } from '../../hooks/useInsight';
 import { Card as BaseCard } from '../common/Card';
 import type { MonetTheme, Moment } from '../../theme/monetTheme';
 
-const Section = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: clamp(18px, 2.5vw, 32px);
-`;
-
-const HeroCluster = styled.div`
+const Hero = styled(BaseCard)`
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: clamp(14px, 2vw, 22px);
+  align-items: flex-end;
+  gap: clamp(16px, 3vw, 28px);
+  padding: clamp(20px, 3vw, 32px);
 `;
 
-const HeroTile = styled(BaseCard)`
-  flex: 1 1 min(320px, 48vw);
-  min-width: min(260px, 48vw);
+const ScoreBlock = styled.div`
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: baseline;
+  gap: 10px;
+  flex-shrink: 0;
 `;
 
-const HeroLabel = styled.span`
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.85rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: ${({ theme }) => theme.colors.textSecondary};
-`;
-
-const HeroScore = styled.div`
-  font-size: clamp(3.6rem, 6vw, 4.6rem);
+const Score = styled.div`
+  font-size: clamp(3.2rem, 5.5vw, 4.2rem);
   font-family: ${({ theme }) => theme.fonts.heading};
   line-height: 1;
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
-const HeroScale = styled.div`
+const ScoreSuffix = styled.span`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.9rem;
+  letter-spacing: 0.14em;
+  color: ${({ theme }) => theme.colors.textSecondary};
+`;
+
+const ContentBlock = styled.div`
+  flex: 1;
+  min-width: min(260px, 100%);
   display: flex;
   flex-direction: column;
   gap: 6px;
 `;
 
-const ScaleRow = styled.div`
+const LabelRow = styled.div`
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 12px;
+  flex-wrap: wrap;
 `;
 
-const ScaleValue = styled.strong`
+const StatusLabel = styled.span`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 1rem;
-  letter-spacing: 0.18em;
+  font-size: 0.85rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
-const ScoreLabel = styled.span`
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.95rem;
-  letter-spacing: 0.12em;
-  color: ${({ theme }) => theme.colors.textPrimary};
-`;
-
-const ScaleStamp = styled.small`
-  font-size: 0.8rem;
+const DateStamp = styled.span`
+  font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
-const HeroNarrative = styled.p`
+const Narrative = styled.p`
   margin: 0;
-  font-size: 1rem;
-  line-height: 1.6;
+  font-size: 0.92rem;
+  line-height: 1.55;
   color: ${({ theme }) => theme.colors.textSecondary};
+  max-width: 56ch;
 `;
 
 const Notice = styled.p`
   margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-size: 0.82rem;
   color: ${({ theme }) => theme.palette?.ember?.['300'] ?? theme.colors.textSecondary};
-  font-family: ${({ theme }) => theme.fonts.body};
 `;
 
-const fallbackHeroNarrative: Record<Moment, string> = {
+const fallbackNarrative: Record<Moment, string> = {
   morning: 'Poised for a bright start.',
   noon: 'Steady energy through the day.',
   twilight: 'Ease into the calm.',
   night: 'Restore and settle.'
 };
 
-const momentLabelMap: Record<Moment, string> = {
-  morning: 'Morning',
-  noon: 'Noon',
-  twilight: 'Twilight',
-  night: 'Night'
-};
-
 export function ReadinessCard() {
-  const { data: insight, isLoading: insightLoading } = useInsight();
+  const { data: insight, isLoading } = useInsight();
   const theme = useTheme() as MonetTheme;
-  const activeMoment = (theme.moment ?? 'morning') as Moment;
+  const moment = (theme.moment ?? 'morning') as Moment;
 
-  const heroScore = insightLoading ? '…' : formatValue(insight?.readiness_score);
-  const heroLabel = insight?.readiness_label ?? 'Awaiting insight';
-  const heroNarrative = insight?.morning_note ?? fallbackHeroNarrative[activeMoment];
-  const heroTitle = `${momentLabelMap[activeMoment]} Readiness`;
-  const heroStamp = insight?.metric_date ?? '—';
+  const score = isLoading ? '…' : formatValue(insight?.readiness_score);
+  const label = insight?.readiness_label ?? 'Awaiting insight';
+  const narrative = insight?.morning_note ?? fallbackNarrative[moment];
+  const stamp = insight?.metric_date
+    ? new Date(insight.metric_date).toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric'
+      })
+    : '—';
 
   const hasStructured = Boolean(
-    insight?.greeting ??
-      insight?.hrv_note ??
-      insight?.rhr_note ??
-      insight?.sleep_note ??
-      insight?.training_load_note ??
-      insight?.morning_note
+    insight?.greeting ?? insight?.hrv_note ?? insight?.rhr_note ??
+    insight?.sleep_note ?? insight?.training_load_note ?? insight?.morning_note
   );
 
   return (
-    <Section>
-      <HeroCluster data-hero-readiness="true">
-        <HeroTile>
-          <HeroLabel data-halo="heading">{heroTitle}</HeroLabel>
-          <HeroScore data-halo="heading" aria-label={`Readiness score: ${heroScore} out of 100`}>{heroScore}</HeroScore>
-        </HeroTile>
-        <HeroTile>
-          <HeroLabel data-halo="heading">Status</HeroLabel>
-          <HeroScale>
-            <ScaleRow>
-              <ScaleValue data-halo="heading" aria-hidden="true">/ 100</ScaleValue>
-              <ScoreLabel aria-label={`Readiness status: ${heroLabel}`}>{heroLabel}</ScoreLabel>
-            </ScaleRow>
-            <ScaleStamp>{heroStamp}</ScaleStamp>
-          </HeroScale>
-        </HeroTile>
-        <HeroTile>
-          <HeroLabel data-halo="heading">Today</HeroLabel>
-          <HeroNarrative>{heroNarrative}</HeroNarrative>
-          {!insightLoading && !hasStructured && (
-            <Notice>Structured insight missing. Investigate AI generation.</Notice>
-          )}
-        </HeroTile>
-      </HeroCluster>
-    </Section>
+    <Hero>
+      <ScoreBlock>
+        <Score data-halo="heading" aria-label={`Readiness score: ${score} out of 100`}>
+          {score}
+        </Score>
+        <ScoreSuffix>/ 100</ScoreSuffix>
+      </ScoreBlock>
+      <ContentBlock>
+        <LabelRow>
+          <StatusLabel data-halo="heading">{label}</StatusLabel>
+          <DateStamp>{stamp}</DateStamp>
+        </LabelRow>
+        <Narrative>{narrative}</Narrative>
+        {!isLoading && !hasStructured && (
+          <Notice>Structured insight missing.</Notice>
+        )}
+      </ContentBlock>
+    </Hero>
   );
 }
 
-function formatValue(value?: number | null, decimals = 0) {
-  return typeof value === 'number' ? value.toFixed(decimals) : '—';
+function formatValue(value?: number | null) {
+  return typeof value === 'number' ? value.toFixed(0) : '—';
 }
