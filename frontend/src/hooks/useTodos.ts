@@ -30,7 +30,7 @@ export function useTodos() {
   const todosQuery = useQuery<TodoItem[]>({
     queryKey: [...TODOS_QUERY_KEY, timeZone],
     queryFn: () => fetchTodos(timeZone),
-    staleTime: 5000, // Consider data fresh for 5 seconds
+    staleTime: 30_000, // Consider data fresh for 30 seconds
     refetchInterval: false, // Disable auto-refetch
   });
 

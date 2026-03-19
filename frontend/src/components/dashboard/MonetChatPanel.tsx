@@ -174,7 +174,7 @@ export function MonetChatPanel() {
             Ask me anything about your day, nutrition, or tasks—and I&apos;ll log meals or create to-dos when needed.
           </Message>
         )}
-        {history.map((entry) => (
+        {history.slice(-20).map((entry) => (
           <Message key={entry.id} $role={entry.role}>
             <RoleLabel $role={entry.role}>{entry.role === 'assistant' ? 'Monet' : 'You'}</RoleLabel>
             {entry.status === 'pending' ? (

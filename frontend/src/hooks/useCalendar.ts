@@ -59,6 +59,7 @@ export function useCalendarEvents(
     queryKey: [...CALENDAR_EVENTS_KEY, start, end],
     queryFn: () => fetchCalendarEvents(start, end),
     enabled: enabled && Boolean(start && end),
+    staleTime: 2 * 60 * 1000, // 2 minutes
     refetchOnWindowFocus: options?.refetchOnWindowFocus,
     refetchInterval: options?.refetchInterval,
     refetchIntervalInBackground: options?.refetchIntervalInBackground

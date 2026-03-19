@@ -35,7 +35,7 @@ const CloudSprite = styled.img<{
   height: auto;
   pointer-events: none;
   z-index: ${(p) => p.$z};
-  filter: drop-shadow(0 10px 24px rgba(15, 30, 69, 0.25));
+  will-change: transform;
   animation: ${drift} ${(p) => p.$duration}s linear infinite;
   animation-delay: ${(p) => `-${p.$delay}s`};
   opacity: ${(p) => p.$opacity};
@@ -55,7 +55,7 @@ type CloudConfig = {
 
 const LAYER_CONFIG: Record<LayerKey, CloudConfig> = {
   back: {
-    count: 22,
+    count: 12,
     topRange: [0, 40],
     widthRange: [140, 220],
     durationRange: [180, 260],
@@ -64,7 +64,7 @@ const LAYER_CONFIG: Record<LayerKey, CloudConfig> = {
     z: 1
   },
   mid: {
-    count: 24,
+    count: 14,
     topRange: [20, 60],
     widthRange: [160, 240],
     durationRange: [220, 340],
@@ -73,7 +73,7 @@ const LAYER_CONFIG: Record<LayerKey, CloudConfig> = {
     z: 2
   },
   front: {
-    count: 16,
+    count: 10,
     topRange: [40, 80],
     widthRange: [180, 260],
     durationRange: [260, 380],

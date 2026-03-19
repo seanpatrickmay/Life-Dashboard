@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import styled from 'styled-components';
 import { format, parseISO, isSameDay, addDays } from 'date-fns';
 
@@ -158,7 +158,7 @@ export function DashboardUpcomingEvents() {
     return grouped;
   }, [eventsQuery.data]);
 
-  const formatEventTime = (startTime: string | null, endTime: string | null, isAllDay: boolean) => {
+  const formatEventTime = useCallback((startTime: string | null, endTime: string | null, isAllDay: boolean) => {
     if (isAllDay) return 'All day';
     if (!startTime) return '';
 
@@ -171,9 +171,9 @@ export function DashboardUpcomingEvents() {
     const endFormatted = format(end, 'h:mm a');
 
     return `${startFormatted} - ${endFormatted}`;
-  };
+  }, []);
 
-  const formatDateHeader = (date: Date) => {
+  const formatDateHeader = useCallback((date: Date) => {
     if (isSameDay(date, today)) {
       return 'Today';
     }
@@ -181,7 +181,7 @@ export function DashboardUpcomingEvents() {
       return 'Tomorrow';
     }
     return format(date, 'EEEE, MMM d');
-  };
+  }, [today]);
 
   return (
     <Panel>

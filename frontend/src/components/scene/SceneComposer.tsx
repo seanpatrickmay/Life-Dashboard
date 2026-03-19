@@ -90,6 +90,7 @@ const computeOrbitGeometry = (overlayEl: HTMLDivElement | null): OrbitMetrics | 
 
 const useOrbitMetrics = (overlayRef: React.RefObject<HTMLDivElement>) => {
   const [orbit, setOrbit] = useState<OrbitMetrics | null>(null);
+  const rafRef = useRef<number>(0);
 
   const recompute = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -101,9 +102,14 @@ const useOrbitMetrics = (overlayRef: React.RefObject<HTMLDivElement>) => {
 
   useLayoutEffect(() => {
     recompute();
-    window.addEventListener('resize', recompute);
+    const throttled = () => {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(recompute);
+    };
+    window.addEventListener('resize', throttled);
     return () => {
-      window.removeEventListener('resize', recompute);
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', throttled);
     };
   }, [recompute]);
 
@@ -168,7 +174,6 @@ const BlossomSprite = styled.div`
   background-repeat: no-repeat;
   background-size: contain;
   image-rendering: pixelated;
-  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.16));
   z-index: ${Z_LAYERS.blossoms};
 `;
 
@@ -193,7 +198,6 @@ const FloatingBlossom = styled.div<{ $sprite: string; $glow: string }>`
     background-repeat: no-repeat;
     background-size: contain;
     opacity: 0.6;
-    filter: blur(1px);
   }
   &:after {
     content: '';
@@ -273,6 +277,7 @@ const PadSprite = styled.div<{ $size: number; $depth: number; $sprite: string }>
   background-size: contain;
   image-rendering: pixelated;
   z-index: ${Z_LAYERS.lilyPads};
+  will-change: transform;
   animation: ${slowParallax} 14s ease-in-out infinite;
 `;
 

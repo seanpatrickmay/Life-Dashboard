@@ -1,4 +1,4 @@
-import React, { ReactNode, useLayoutEffect, useRef } from 'react';
+import React, { ReactNode, useLayoutEffect, useRef, useCallback } from 'react';
 import styled, { keyframes, css, useTheme } from 'styled-components';
 import { getRippleLayer, MonetTheme } from '../../theme/monetTheme';
 import { SceneComposer } from '../scene/SceneComposer';
@@ -155,33 +155,39 @@ export function PageBackground({ children, className }: Props) {
   const theme = useTheme() as MonetTheme;
   const moment = theme.moment ?? 'morning';
   const NAV_OFFSET = 360; // px below nav for horizon baseline (just under cloud band)
+  const rafRef = useRef<number>(0);
+  const update = useCallback(() => {
+    const root = surfaceRef.current;
+    if (!root) return;
+    const rootRect = root.getBoundingClientRect();
+    const willowOffsetPx = Math.max(32, rootRect.width * 0.08);
+    root.style.setProperty('--willow-offset', `${willowOffsetPx}px`);
+    const horizon = NAV_OFFSET;
+    root.style.setProperty('--scene-horizon', `${horizon}px`);
+    root.style.setProperty('--bridge-band-bottom', `${horizon}px`);
+    root.style.setProperty('--bridge-top', `${Math.max(0, horizon - 220)}px`);
+    root.style.setProperty('--hero-top', '0px');
+    root.style.setProperty('--hero-right', '0px');
+    root.style.setProperty('--hero-left', '0px');
+    document.documentElement.style.setProperty('--scene-horizon', `${horizon}px`);
+    document.documentElement.style.setProperty('--bridge-band-bottom', `${horizon}px`);
+  }, []);
+
   useLayoutEffect(() => {
-    const update = () => {
-      const root = surfaceRef.current;
-      if (!root) return;
-      const rootRect = root.getBoundingClientRect();
-      const willowOffsetPx = Math.max(32, rootRect.width * 0.08);
-      root.style.setProperty('--willow-offset', `${willowOffsetPx}px`);
-      const horizon = NAV_OFFSET; // px below nav (static anchor)
-      root.style.setProperty('--scene-horizon', `${horizon}px`);
-      root.style.setProperty('--bridge-band-bottom', `${horizon}px`);
-      root.style.setProperty('--bridge-top', `${Math.max(0, horizon - 220)}px`);
-      root.style.setProperty('--hero-top', '0px');
-      root.style.setProperty('--hero-right', '0px');
-      root.style.setProperty('--hero-left', '0px');
-      document.documentElement.style.setProperty('--scene-horizon', `${horizon}px`);
-      document.documentElement.style.setProperty('--bridge-band-bottom', `${horizon}px`);
-    };
     update();
-    const obs = new ResizeObserver(update);
+    const throttledUpdate = () => {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(update);
+    };
+    const obs = new ResizeObserver(throttledUpdate);
     if (surfaceRef.current) obs.observe(surfaceRef.current);
-    const onResize = () => update();
-    window.addEventListener('resize', onResize);
+    window.addEventListener('resize', throttledUpdate);
     return () => {
-      window.removeEventListener('resize', onResize);
+      cancelAnimationFrame(rafRef.current);
+      window.removeEventListener('resize', throttledUpdate);
       obs.disconnect();
     };
-  }, []);
+  }, [update]);
 
   return (
     <Surface className={className} ref={surfaceRef}>
