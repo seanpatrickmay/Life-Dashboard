@@ -24,7 +24,8 @@ import type {
   UserProfileData,
   UserProfileResponse,
   SceneTimeResponse,
-  ReadinessMetricsSummary
+  ReadinessMetricsSummary,
+  NutritionSuggestionsResponse
 } from '../../services/api';
 
 const STORAGE_KEY = 'ld_guest_state';
@@ -1163,6 +1164,27 @@ export const getGuestNutritionHistory = (days = 14): NutritionHistory => {
   const state = getGuestState();
   return { ...state.nutrition_history, window_days: days };
 };
+
+export const getGuestNutritionSuggestions = (): NutritionSuggestionsResponse => ({
+  suggestions: [
+    { ingredient_id: 1001, recipe_id: null, name: 'Greek yogurt', quantity: 1, unit: 'cup', calories_estimate: 150, reason: 'logged 5 of last 7 days' },
+    { ingredient_id: 1002, recipe_id: null, name: 'Blueberries', quantity: 0.5, unit: 'cup', calories_estimate: 42, reason: 'frequent breakfast pairing' },
+    { ingredient_id: null, recipe_id: 2001, name: 'Burrito bowl', quantity: 1, unit: 'serving', calories_estimate: 520, reason: 'logged 3x this week' },
+    { ingredient_id: 1003, recipe_id: null, name: 'Salmon fillet', quantity: 6, unit: 'oz', calories_estimate: 350, reason: 'regular dinner protein' },
+    { ingredient_id: 1004, recipe_id: null, name: 'Dark chocolate', quantity: 1, unit: 'oz', calories_estimate: 170, reason: 'daily evening snack' },
+    { ingredient_id: 1005, recipe_id: null, name: 'Oatmeal', quantity: 1, unit: 'cup', calories_estimate: 154, reason: 'common breakfast item' },
+  ]
+});
+
+export const quickLogGuestFood = (_payload: {
+  ingredient_id?: number | null;
+  recipe_id?: number | null;
+  quantity: number;
+  unit: string;
+}): Record<string, unknown> => ({
+  id: Date.now(),
+  ..._payload,
+});
 
 export const getGuestUserProfile = (): UserProfileResponse => getGuestState().user_profile;
 
