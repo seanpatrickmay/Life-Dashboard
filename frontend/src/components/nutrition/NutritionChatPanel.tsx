@@ -42,7 +42,7 @@ const Input = styled.textarea`
 `;
 
 const Button = styled.button`
-  background: ${({ theme }) => theme.colors.accent};
+  background: ${({ theme }) => theme.palette?.ember?.['200'] ?? '#f5d37c'};
   color: ${({ theme }) => theme.colors.backgroundPage};
   font-family: ${({ theme }) => theme.fonts.heading};
   letter-spacing: 0.1em;

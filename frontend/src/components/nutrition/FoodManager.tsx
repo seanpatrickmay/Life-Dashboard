@@ -5,7 +5,7 @@ import { useNutritionFoods } from '../../hooks/useNutritionFoods';
 import { useNutritionNutrients } from '../../hooks/useNutritionNutrients';
 import { useNutritionGoals } from '../../hooks/useNutritionGoals';
 import { useNutritionRecipes } from '../../hooks/useNutritionRecipes';
-import { type NutritionRecipe, type RecipeComponent } from '../../services/api';
+import { type IngredientStatus, type NutritionRecipe, type RecipeComponent } from '../../services/api';
 import {
   GROUP_LABELS,
   GROUP_ORDER,
@@ -35,7 +35,7 @@ const Tabs = styled.div`
 
 const TabButton = styled.button<{ $active?: boolean }>`
   border: 1px solid rgba(255, 255, 255, 0.2);
-  background: ${({ $active, theme }) => ($active ? theme.colors.accentPrimary : 'transparent')};
+  background: ${({ $active, theme }) => ($active ? theme.palette?.pond?.['200'] ?? '#7ED7C4' : 'transparent')};
   color: ${({ $active, theme }) => ($active ? '#0b0f19' : theme.colors.textPrimary)};
   padding: 8px 12px;
   border-radius: 999px;
@@ -76,7 +76,7 @@ const StatusBadge = styled.span`
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid ${({ theme }) => theme.colors.accentPrimary};
+  border: 2px solid ${({ theme }) => theme.palette?.pond?.['200'] ?? '#7ED7C4'};
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -158,7 +158,7 @@ const Button = styled.button<{ $variant?: 'primary' | 'ghost' }>`
   border-radius: 999px;
   border: ${({ $variant }) => ($variant === 'ghost' ? '1px solid rgba(255,255,255,0.2)' : 'none')};
   background: ${({ $variant, theme }) =>
-    $variant === 'ghost' ? 'transparent' : theme.colors.accentPrimary};
+    $variant === 'ghost' ? 'transparent' : theme.palette?.pond?.['200'] ?? '#7ED7C4'};
   color: ${({ $variant, theme }) =>
     $variant === 'ghost' ? theme.colors.textPrimary : '#0b0f19'};
   font-weight: 600;
@@ -174,7 +174,7 @@ const Button = styled.button<{ $variant?: 'primary' | 'ghost' }>`
 type FormState = {
   name: string;
   default_unit: string;
-  status: string;
+  status: IngredientStatus;
   nutrients: Record<string, number | null>;
 };
 
@@ -190,7 +190,7 @@ type RecipeFormState = {
   name: string;
   default_unit: string;
   servings: number;
-  status: string;
+  status: IngredientStatus;
   components: RecipeLine[];
 };
 
@@ -311,7 +311,7 @@ export function FoodManager() {
     });
   };
 
-  const handleSave = async (nextStatus?: string) => {
+  const handleSave = async (nextStatus?: IngredientStatus) => {
     if (!selectedFood || !formState) return;
     setSaving(true);
     setError(null);
@@ -380,7 +380,7 @@ export function FoodManager() {
     });
   };
 
-  const handleSaveRecipe = async (nextStatus?: string) => {
+  const handleSaveRecipe = async (nextStatus?: IngredientStatus) => {
     if (!selectedRecipeId || !recipeForm) return;
     setSaving(true);
     setError(null);

@@ -183,12 +183,13 @@ export function InsightHistory() {
   ];
 
   const hasStructured = sections.some((section) => section.note || section.value !== '—') || !!data?.morning_note;
-  const chartMap = {
+  type MetricKey = 'hrv' | 'rhr' | 'sleep' | 'load';
+  const chartMap: Record<MetricKey, JSX.Element> = {
     hrv: <HRVChart />,
     rhr: <RHRChart />,
     sleep: <SleepChart />,
     load: <LoadChart />
-  } as const;
+  };
 
   return (
     <List>
@@ -222,7 +223,7 @@ export function InsightHistory() {
                 </MetricValue>
               </InfoCard>
               <InsightCard>{section.note ?? 'Structured insight missing.'}</InsightCard>
-              <ChartCell>{chartMap[section.key]}</ChartCell>
+              <ChartCell>{chartMap[section.key as MetricKey]}</ChartCell>
             </MetricRow>
           ))}
         </MetricsRows>

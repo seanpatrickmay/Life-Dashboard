@@ -84,7 +84,7 @@ const Notice = styled.p`
   margin: 0;
   font-size: 0.9rem;
   line-height: 1.5;
-  color: ${({ theme }) => theme.colors.alert ?? theme.colors.textSecondary};
+  color: ${({ theme }) => theme.palette?.ember?.['300'] ?? theme.colors.textSecondary};
   font-family: ${({ theme }) => theme.fonts.body};
 `;
 

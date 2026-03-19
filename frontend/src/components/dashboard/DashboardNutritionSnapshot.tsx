@@ -63,7 +63,7 @@ const Bar = styled.div<{ $percent: number }>`
     content: '';
     position: absolute;
     inset: 0;
-    background: ${({ theme }) => theme.colors.accent ?? '#f5d37c'};
+    background: ${({ theme }) => theme.palette?.pond?.['200'] ?? '#7ED7C4'};
     width: ${({ $percent }) => Math.min(100, Math.max(0, $percent))}%;
   }
 `;

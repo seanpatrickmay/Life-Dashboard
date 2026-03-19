@@ -36,7 +36,7 @@ const Bar = styled.div<{ $percent?: number | null }>`
     display: block;
     height: 100%;
     width: ${({ $percent }) => ($percent != null ? Math.min(100, Math.max(0, $percent)) : 0)}%;
-    background: ${({ theme }) => theme.colors.accent};
+    background: ${({ theme }) => theme.palette?.pond?.['200'] ?? '#7ED7C4'};
   }
 `;
 
@@ -57,8 +57,9 @@ export function NutritionDashboard() {
   const summary = summaryQuery.data?.nutrients ?? [];
   const history = historyQuery.data?.nutrients ?? [];
 
-  const groupEntries = (items: typeof summary) => {
-    const buckets: Record<GroupKey, typeof items> = {
+  type Groupable = { slug: string; display_name: string; group: string; unit: string; percent_of_goal: number | null; goal: number | null };
+  const groupEntries = <T extends Groupable>(items: T[]) => {
+    const buckets: Record<GroupKey, T[]> = {
       macro: [],
       vitamin: [],
       mineral: []

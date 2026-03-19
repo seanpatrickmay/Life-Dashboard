@@ -75,7 +75,7 @@ const Actions = styled.div`
   }
 
   button:first-of-type {
-    background: ${({ theme }) => theme.colors.accentPrimary};
+    background: ${({ theme }) => theme.palette?.pond?.['200'] ?? '#7ED7C4'};
     color: #0b0f19;
   }
 
