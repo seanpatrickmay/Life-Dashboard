@@ -136,7 +136,6 @@ const HistoryButton = styled.button`
 const NameBox = styled.div`
   display: flex;
   align-items: center;
-  justify-content: center;
   width: 100%;
 `;
 
@@ -146,7 +145,7 @@ const TextField = styled.textarea<{ $overdue: boolean; $completed: boolean }>`
   background: transparent;
   font-size: 0.82rem;
   font-family: ${({ theme }) => theme.fonts.body};
-  text-align: center;
+  text-align: left;
   color: ${({ $completed }) => ($completed ? 'rgba(43,27,19,0.6)' : 'rgba(43,27,19,0.96)')};
   text-decoration: ${({ $completed }) => ($completed ? 'line-through' : 'none')};
   outline: none;

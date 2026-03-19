@@ -13,7 +13,8 @@ export const Z_LAYERS = {
   boatReflection: 2,
   lilyPads: 8,
   lilyPadTextLayer: 9,
-  nav: 13, // highest
+  nav: 13,
+  chatBubble: 20, // floats above everything
   willows: 10,
   blossoms: 10,
   uiCards: 12,

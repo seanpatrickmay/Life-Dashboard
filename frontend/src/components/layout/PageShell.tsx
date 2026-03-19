@@ -3,6 +3,7 @@ import styled, { css } from 'styled-components';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { composeLayers, getCardLayers, palette } from '../../theme/monetTheme';
 import { CloudNavShelf } from './CloudNavShelf';
+import { MonetChatBubble } from '../dashboard/MonetChatPanel';
 import { exitGuestMode, isGuestMode } from '../../demo/guest/guestMode';
 import { clearGuestState } from '../../demo/guest/guestStore';
 
@@ -143,6 +144,7 @@ export function PageShell({ children }: PropsWithChildren) {
         </Nav>
       </CloudNavShelf>
       <Surface>{children}</Surface>
+      <MonetChatBubble />
     </Frame>
   );
 }

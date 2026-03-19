@@ -36,13 +36,12 @@ const CardShell = styled.div`
   &::before {
     content: '';
     position: absolute;
-    left: 10%;
-    right: 10%;
-    bottom: -26px;
-    height: 56px;
-    background: radial-gradient(circle, rgba(15, 30, 69, 0.25) 0%, transparent 70%);
-    filter: blur(18px);
-    opacity: 0.35;
+    left: 15%;
+    right: 15%;
+    bottom: -18px;
+    height: 36px;
+    background: radial-gradient(ellipse, rgba(15, 30, 69, 0.22) 0%, transparent 70%);
+    opacity: 0.4;
     z-index: ${Z_LAYERS.gradient};
   }
 `;
