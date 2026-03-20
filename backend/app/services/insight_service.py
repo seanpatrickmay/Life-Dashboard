@@ -223,33 +223,23 @@ class InsightService:
 
     async def _gather_life_context(self, user_id: int, metric_date: date) -> dict:
         """Gather cross-system context to enrich the readiness insight."""
-        context: dict = {}
-        try:
-            context["todos"] = await self._gather_todo_context(user_id, metric_date)
-        except Exception:  # noqa: BLE001
-            logger.debug("Could not gather todo context for insight")
+        import asyncio
 
-        try:
-            context["nutrition"] = await self._gather_nutrition_context(user_id, metric_date)
-        except Exception:  # noqa: BLE001
-            logger.debug("Could not gather nutrition context for insight")
+        async def _safe(key: str, coro):
+            try:
+                return key, await coro
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Could not gather {} context for insight: {}", key, exc)
+                return key, None
 
-        try:
-            context["calendar"] = await self._gather_calendar_context(user_id, metric_date)
-        except Exception:  # noqa: BLE001
-            logger.debug("Could not gather calendar context for insight")
-
-        try:
-            context["energy"] = await self._gather_energy_context(user_id, metric_date)
-        except Exception:  # noqa: BLE001
-            logger.debug("Could not gather energy context for insight")
-
-        try:
-            context["journal"] = await self._gather_journal_context(user_id, metric_date)
-        except Exception:  # noqa: BLE001
-            logger.debug("Could not gather journal context for insight")
-
-        return context
+        results = await asyncio.gather(
+            _safe("todos", self._gather_todo_context(user_id, metric_date)),
+            _safe("nutrition", self._gather_nutrition_context(user_id, metric_date)),
+            _safe("calendar", self._gather_calendar_context(user_id, metric_date)),
+            _safe("energy", self._gather_energy_context(user_id, metric_date)),
+            _safe("journal", self._gather_journal_context(user_id, metric_date)),
+        )
+        return {key: value for key, value in results if value is not None}
 
     async def _gather_todo_context(self, user_id: int, metric_date: date) -> dict:
         now_utc = datetime.now(timezone.utc)

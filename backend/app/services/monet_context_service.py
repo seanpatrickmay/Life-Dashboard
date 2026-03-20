@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from loguru import logger
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,19 +45,49 @@ class MonetContextBuilder:
         start_date = today - timedelta(days=window_days - 1)
         local_time = _compute_local_time(time_zone)
 
-        metrics = await self.metrics_repo.list_metrics_since(user_id, start_date)
-        metrics_payload = [self._serialize_metric(metric) for metric in metrics]
-        latest_metric = metrics_payload[-1] if metrics_payload else None
+        # Gather data sources with individual error isolation
+        metrics_payload: list[dict] = []
+        latest_metric = None
+        nutrition_today: dict = {}
+        nutrition_history: dict = {}
+        profile_payload: dict = {}
+        todo_payload: list[dict] = []
+        calendar_payload: list[dict] = []
+        workspace_payload: dict = {}
 
-        nutrition_today = await self.nutrition_service.daily_summary(user_id, today)
-        nutrition_history = await self.nutrition_service.rolling_average(user_id, window_days)
+        try:
+            metrics = await self.metrics_repo.list_metrics_since(user_id, start_date)
+            metrics_payload = [self._serialize_metric(metric) for metric in metrics]
+            latest_metric = metrics_payload[-1] if metrics_payload else None
+        except Exception as exc:
+            logger.warning("[context] metrics failed: {}", exc)
 
-        profile_payload = await self.profile_service.fetch_profile_payload(user_id)
+        try:
+            nutrition_today = await self.nutrition_service.daily_summary(user_id, today)
+            nutrition_history = await self.nutrition_service.rolling_average(user_id, window_days)
+        except Exception as exc:
+            logger.warning("[context] nutrition failed: {}", exc)
 
-        todos = await self.todo_repo.list_for_user(user_id)
-        todo_payload = [self._serialize_todo(todo) for todo in todos]
-        calendar_payload = await self._serialize_calendar_events(user_id, window_days, time_zone)
-        workspace_payload = await self._serialize_workspace_knowledge(user_id, page_context)
+        try:
+            profile_payload = await self.profile_service.fetch_profile_payload(user_id)
+        except Exception as exc:
+            logger.warning("[context] profile failed: {}", exc)
+
+        try:
+            todos = await self.todo_repo.list_for_user(user_id)
+            todo_payload = [self._serialize_todo(todo) for todo in todos]
+        except Exception as exc:
+            logger.warning("[context] todos failed: {}", exc)
+
+        try:
+            calendar_payload = await self._serialize_calendar_events(user_id, window_days, time_zone)
+        except Exception as exc:
+            logger.warning("[context] calendar failed: {}", exc)
+
+        try:
+            workspace_payload = await self._serialize_workspace_knowledge(user_id, page_context)
+        except Exception as exc:
+            logger.warning("[context] workspace failed: {}", exc)
 
         return {
             "window_days": window_days,
@@ -166,28 +197,14 @@ class MonetContextBuilder:
             events.append(
                 {
                     "id": event.id,
-                    "calendar": {
-                        "id": calendar.google_id,
-                        "summary": calendar.summary,
-                        "primary": calendar.primary,
-                        "is_life_dashboard": calendar.is_life_dashboard,
-                    },
-                    "google_event_id": event.google_event_id,
-                    "recurring_event_id": event.recurring_event_id,
-                    "ical_uid": event.ical_uid,
+                    "calendar_name": calendar.summary,
                     "summary": event.summary,
-                    "description": _cap_words(event.description, 100),
+                    "description": _cap_words(event.description, 30),
                     "location": event.location,
                     "start_time": event.start_time.isoformat() if event.start_time else None,
                     "end_time": event.end_time.isoformat() if event.end_time else None,
                     "is_all_day": event.is_all_day,
-                    "status": event.status,
-                    "visibility": event.visibility,
-                    "transparency": event.transparency,
-                    "hangout_link": event.hangout_link,
-                    "conference_link": event.conference_link,
-                    "organizer": event.organizer,
-                    "attendees": event.attendees,
+                    "attendee_count": len(event.attendees) if event.attendees else 0,
                 }
             )
         return _dedupe_events(events)

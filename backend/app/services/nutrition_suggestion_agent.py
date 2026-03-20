@@ -7,6 +7,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from loguru import logger
+
 from app.clients.openai_client import OpenAIResponsesClient
 from app.db.models.nutrition import NutritionIngredient, NutritionIntake
 from app.db.repositories.nutrition_suggestions_repository import NutritionSuggestionsRepository
@@ -130,9 +132,13 @@ class NutritionSuggestionAgent:
             frequency_summary=frequency_summary,
         )
 
-        result = await self.client.generate_json(
-            prompt,
-            response_model=NutritionSuggestionOutput,
-        )
+        try:
+            result = await self.client.generate_json(
+                prompt,
+                response_model=NutritionSuggestionOutput,
+            )
+        except Exception as exc:
+            logger.warning("[nutrition-suggestions] LLM failed: {}", exc)
+            return []
 
         return [item.model_dump() for item in result.data.suggestions[:10]]

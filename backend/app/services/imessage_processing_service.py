@@ -1933,7 +1933,8 @@ class IMessageProcessingService:
         )
         try:
             parsed = await self._invoke_model(prompt, IMessageProjectInferenceOutput)
-        except Exception:
+        except Exception as exc:
+            logger.warning("[imessage] project inference LLM failed: {}", exc)
             return self._normalize_project_inference(payload_messages, {
                 "project_name": heuristic_guess.project_name,
                 "confidence": heuristic_guess.confidence,
@@ -1989,8 +1990,11 @@ class IMessageProcessingService:
             **payload,
             "project_inference": project_inference,
         }
-        calendar_extract = await self._extract_calendar_actions(enriched_payload)
-        general_extract = await self._extract_general_actions(enriched_payload, heuristic)
+        # Calendar and general extraction are independent — run in parallel
+        calendar_extract, general_extract = await asyncio.gather(
+            self._extract_calendar_actions(enriched_payload),
+            self._extract_general_actions(enriched_payload, heuristic),
+        )
         return {
             **self._enrich_extracted_actions(
                 payload=enriched_payload,
@@ -2022,7 +2026,8 @@ class IMessageProcessingService:
         )
         try:
             parsed = await self._invoke_model(prompt, IMessageCalendarExtractionOutput)
-        except Exception:
+        except Exception as exc:
+            logger.warning("[imessage] calendar extraction LLM failed: {}", exc)
             return heuristic
         return {
             "calendar_creates": self._normalize_action_list(
@@ -2064,7 +2069,8 @@ class IMessageProcessingService:
         )
         try:
             parsed = await self._invoke_model(prompt, IMessageActionExtractionOutput)
-        except Exception:
+        except Exception as exc:
+            logger.warning("[imessage] action extraction LLM failed: {}", exc)
             return {
                 key: self._normalize_action_list(
                     payload_messages,
@@ -2109,7 +2115,8 @@ class IMessageProcessingService:
         )
         try:
             parsed = await self._invoke_model(prompt, IMessageActionJudgeOutput)
-        except Exception:
+        except Exception as exc:
+            logger.warning("[imessage] action judge LLM failed: {}", exc)
             return heuristic
         return parsed.model_dump()
 
@@ -2885,7 +2892,8 @@ class IMessageProcessingService:
         )
         try:
             parsed = await self._invoke_model(prompt, IMessagePageSelectionOutput)
-        except Exception:
+        except Exception as exc:
+            logger.warning("[imessage] page selection LLM failed: {}", exc)
             return heuristic_match
         parsed_payload = parsed.model_dump()
         if parsed.mode in {"update_existing", "create_new", "skip"}:
@@ -2957,7 +2965,8 @@ class IMessageProcessingService:
         )
         try:
             parsed = await self._invoke_model(prompt, IMessagePageMergeOutput)
-        except Exception:
+        except Exception as exc:
+            logger.warning("[imessage] page merge LLM failed: {}", exc)
             return heuristic
         if parsed.body:
             return {

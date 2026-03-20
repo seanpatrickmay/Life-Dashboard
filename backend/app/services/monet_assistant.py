@@ -699,6 +699,46 @@ class MonetAssistantAgent:
                     )
         return results
 
+    @staticmethod
+    def _slim_context_for_reply(context: dict[str, Any]) -> dict[str, Any]:
+        """Produce a moderate context summary for reply composition.
+
+        Includes enough for the LLM to answer questions about metrics/nutrition
+        but strips raw data arrays, full attendee lists, and workspace bodies."""
+        slim: dict[str, Any] = {}
+        if "time_zone" in context:
+            slim["now_local"] = context["time_zone"].get("now_local")
+        # Latest metric snapshot (single day, not full history)
+        metrics = context.get("metrics") or {}
+        latest = metrics.get("latest")
+        if latest:
+            slim["latest_metric"] = {
+                k: v for k, v in latest.items()
+                if k in ("metric_date", "hrv_avg_ms", "rhr_bpm", "sleep_seconds",
+                         "training_load", "readiness_score", "readiness_label")
+            }
+        # Nutrition summary (today only)
+        nutrition = context.get("nutrition") or {}
+        today_summary = nutrition.get("today_summary")
+        if today_summary:
+            slim["nutrition_today"] = today_summary
+        # Todo counts
+        todos = context.get("todos") or []
+        if todos:
+            open_todos = [t for t in todos if not t.get("completed")]
+            slim["todos"] = {
+                "open_count": len(open_todos),
+                "overdue_count": sum(1 for t in open_todos if t.get("is_overdue")),
+            }
+        # Calendar event summaries (just names and times)
+        events = context.get("calendar_events") or []
+        if events:
+            slim["upcoming_events"] = [
+                {"summary": e.get("summary"), "start": e.get("start_time"), "all_day": e.get("is_all_day")}
+                for e in events[:10]
+            ]
+        return slim
+
     async def _compose_reply(
         self,
         message: str,
@@ -708,7 +748,7 @@ class MonetAssistantAgent:
     ) -> str:
         summary = {
             "message": message,
-            "context": context,
+            "context": self._slim_context_for_reply(context),
             "router_decision": decision.to_prompt_dict(),
             "tool_results": {
                 "tools_used": tool_results.tools_used,

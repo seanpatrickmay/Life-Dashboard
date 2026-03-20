@@ -1,11 +1,13 @@
 """Shared OpenAI Responses API client."""
 from __future__ import annotations
 
+import asyncio
+import time
 from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
 from loguru import logger
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, APITimeoutError, APIConnectionError, RateLimitError, APIStatusError
 from pydantic import BaseModel
 
 from app.core.config import settings
@@ -13,11 +15,26 @@ from app.core.config import settings
 
 StructuredT = TypeVar("StructuredT", bound=BaseModel)
 
+_REQUEST_TIMEOUT = 120.0  # seconds
+_MAX_RETRIES = 2
+_RETRY_BASE_DELAY = 2.0  # seconds, doubles each attempt
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Return True for transient errors worth retrying."""
+    if isinstance(exc, (APITimeoutError, APIConnectionError)):
+        return True
+    if isinstance(exc, RateLimitError):
+        return True
+    if isinstance(exc, APIStatusError) and exc.status_code >= 500:
+        return True
+    return False
+
 
 def build_openai_client() -> AsyncOpenAI:
     if not settings.openai_api_key:
         raise ValueError("OPENAI_API_KEY is not configured.")
-    return AsyncOpenAI(api_key=settings.openai_api_key)
+    return AsyncOpenAI(api_key=settings.openai_api_key, timeout=_REQUEST_TIMEOUT)
 
 
 @dataclass(slots=True)
@@ -74,13 +91,12 @@ class OpenAIResponsesClient:
         max_output_tokens: int | None = None,
     ) -> TextGenerationResult:
         logger.debug("[openai] text response request model={} chars={}", self.model_name, len(prompt))
-        response = await self.client.responses.create(
-            **self._base_request_kwargs(
-                prompt=prompt,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-            ),
+        kwargs = self._base_request_kwargs(
+            prompt=prompt,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
         )
+        response = await self._call_with_retry(self.client.responses.create, **kwargs)
         return TextGenerationResult(
             text=(response.output_text or "").strip(),
             total_tokens=_total_tokens(response),
@@ -139,7 +155,8 @@ class OpenAIResponsesClient:
             temperature=temperature,
             max_output_tokens=max_output_tokens,
         )
-        response = await self.client.responses.parse(
+        response = await self._call_with_retry(
+            self.client.responses.parse,
             **request_kwargs,
             text_format=response_model,
             tools=tools or [],
@@ -152,6 +169,34 @@ class OpenAIResponsesClient:
             text=(response.output_text or "").strip(),
             total_tokens=_total_tokens(response),
         )
+
+    @staticmethod
+    async def _call_with_retry(fn, **kwargs) -> Any:
+        """Call an OpenAI API function with retry on transient errors."""
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            t0 = time.monotonic()
+            try:
+                result = await fn(**kwargs)
+                elapsed = time.monotonic() - t0
+                logger.debug("[openai] call succeeded in {:.1f}s (attempt {})", elapsed, attempt + 1)
+                return result
+            except Exception as exc:
+                elapsed = time.monotonic() - t0
+                last_exc = exc
+                if not _is_retryable(exc) or attempt >= _MAX_RETRIES:
+                    logger.warning(
+                        "[openai] call failed in {:.1f}s (attempt {}/{}, non-retryable={}): {}",
+                        elapsed, attempt + 1, _MAX_RETRIES + 1, not _is_retryable(exc), exc,
+                    )
+                    raise
+                delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                logger.info(
+                    "[openai] retryable error in {:.1f}s (attempt {}/{}), retrying in {:.0f}s: {}",
+                    elapsed, attempt + 1, _MAX_RETRIES + 1, delay, exc,
+                )
+                await asyncio.sleep(delay)
+        raise last_exc  # unreachable but satisfies type checker
 
 
 def _total_tokens(response: Any) -> int | None:
