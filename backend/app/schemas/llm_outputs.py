@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LLMOutputModel(BaseModel):
@@ -47,8 +47,32 @@ class NutritionFoodExtractionOutput(LLMOutputModel):
     summary: str | None = None
 
 
-class NutrientProfileOutput(RootModel[dict[str, float | None]]):
-    pass
+class NutrientProfileOutput(LLMOutputModel):
+    """Nutrient profile with explicit fields for structured output compatibility."""
+    calories: float | None = None
+    protein: float | None = None
+    carbohydrates: float | None = None
+    fat: float | None = None
+    fiber: float | None = None
+    vitamin_a: float | None = None
+    vitamin_c: float | None = None
+    vitamin_d: float | None = None
+    vitamin_e: float | None = None
+    vitamin_k: float | None = None
+    vitamin_b1: float | None = None
+    vitamin_b2: float | None = None
+    vitamin_b3: float | None = None
+    vitamin_b6: float | None = None
+    vitamin_b12: float | None = None
+    folate: float | None = None
+    choline: float | None = None
+    calcium: float | None = None
+    iron: float | None = None
+    magnesium: float | None = None
+    potassium: float | None = None
+    sodium: float | None = None
+    zinc: float | None = None
+    selenium: float | None = None
 
 
 class RecipeDefinitionOutput(LLMOutputModel):

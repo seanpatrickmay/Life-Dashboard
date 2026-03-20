@@ -279,7 +279,7 @@ class NutritionAssistantAgent:
                 prompt,
                 response_model=NutrientProfileOutput,
             )
-            data = result.data.root
+            data = result.data.model_dump()
         except Exception as exc:  # noqa: BLE001
             logger.warning("[nutrition] nutrient lookup failed for {}: {}", food_name, exc)
             data = {}
