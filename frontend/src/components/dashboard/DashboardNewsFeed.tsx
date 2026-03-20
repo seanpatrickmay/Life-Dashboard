@@ -1,9 +1,52 @@
+import { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { Link } from 'react-router-dom';
 
 import { Card } from '../common/Card';
 import { useNewsFeed } from '../../hooks/useNewsFeed';
-import { CATEGORY_LABELS, type Category } from '../../services/newsFeedService';
+import { shortenTitles } from '../../services/api';
+import { CATEGORY_LABELS, type Category, type NewsArticle } from '../../services/newsFeedService';
+
+const SHORT_TITLE_CACHE_KEY = 'ld_short_titles';
+
+function loadTitleCache(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(SHORT_TITLE_CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function saveTitleCache(cache: Record<string, string>) {
+  localStorage.setItem(SHORT_TITLE_CACHE_KEY, JSON.stringify(cache));
+}
+
+function useShortTitles(articles: NewsArticle[]) {
+  const [titleMap, setTitleMap] = useState<Record<string, string>>(loadTitleCache);
+
+  useEffect(() => {
+    if (!articles.length) return;
+
+    const uncached = articles.filter(a => !(a.id in titleMap));
+    if (uncached.length === 0) return;
+
+    let cancelled = false;
+    shortenTitles(uncached.map(a => a.title)).then(shorts => {
+      if (cancelled) return;
+      setTitleMap(prev => {
+        const next = { ...prev };
+        uncached.forEach((a, i) => { next[a.id] = shorts[i] ?? a.title; });
+        saveTitleCache(next);
+        return next;
+      });
+    }).catch(() => {
+      // On failure, fall back to original titles — no-op
+    });
+
+    return () => { cancelled = true; };
+  }, [articles, titleMap]);
+
+  return (id: string, fallback: string) => titleMap[id] ?? fallback;
+}
 
 const CATEGORY_COLORS: Record<Category, string> = {
   tech: 'rgba(120, 180, 255, 0.7)',
@@ -66,8 +109,8 @@ const ArticlesList = styled.div`
 
 const ArticleRow = styled.a`
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  flex-direction: column;
+  gap: 4px;
   padding: 10px 12px;
   border-radius: 14px;
   background: ${({ theme }) => theme.colors.surfaceRaised};
@@ -89,39 +132,25 @@ const ArticleRow = styled.a`
 `;
 
 const CategoryPill = styled.span<{ $color: string }>`
-  flex-shrink: 0;
-  font-size: 0.58rem;
+  align-self: flex-start;
+  font-size: 0.55rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 2px 7px;
-  border-radius: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
   background: ${({ $color }) => ($color || 'rgba(200,200,200,0.7)').replace('0.7', '0.18')};
   color: ${({ $color }) => $color || 'rgba(200,200,200,0.7)'};
-  margin-top: 2px;
   white-space: nowrap;
-`;
-
-const ArticleContent = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
 `;
 
 const ArticleTitle = styled.div`
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: 0.88rem;
   line-height: 1.3;
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-`;
-
-const ArticleSource = styled.div`
-  font-size: 0.65rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  opacity: 0.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 `;
 
 const EmptyState = styled.p`
@@ -143,6 +172,8 @@ const LoadingState = styled.div`
 
 export function DashboardNewsFeed() {
   const { feedQuery, markRead } = useNewsFeed();
+  const articles = feedQuery.data ?? [];
+  const getTitle = useShortTitles(articles);
 
   const handleArticleClick = (articleId: string) => {
     markRead(articleId);
@@ -157,11 +188,11 @@ export function DashboardNewsFeed() {
 
       {feedQuery.isLoading ? (
         <LoadingState>Loading...</LoadingState>
-      ) : !feedQuery.data?.length ? (
+      ) : !articles.length ? (
         <EmptyState>No articles yet</EmptyState>
       ) : (
         <ArticlesList>
-          {feedQuery.data.map(article => (
+          {articles.map(article => (
             <ArticleRow
               key={article.id}
               href={article.url}
@@ -169,17 +200,12 @@ export function DashboardNewsFeed() {
               rel="noopener noreferrer"
               onClick={() => handleArticleClick(article.id)}
             >
+              <ArticleTitle data-halo="body">
+                {getTitle(article.id, article.title)}
+              </ArticleTitle>
               <CategoryPill $color={CATEGORY_COLORS[article.category] || 'rgba(200,200,200,0.7)'}>
                 {CATEGORY_LABELS[article.category] || article.category}
               </CategoryPill>
-              <ArticleContent>
-                <ArticleTitle data-halo="body">
-                  {article.title}
-                </ArticleTitle>
-                <ArticleSource data-halo="body">
-                  {article.sourceName}
-                </ArticleSource>
-              </ArticleContent>
             </ArticleRow>
           ))}
         </ArticlesList>

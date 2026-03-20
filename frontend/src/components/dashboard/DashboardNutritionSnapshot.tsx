@@ -115,7 +115,7 @@ export function DashboardNutritionSnapshot() {
     const goal = entry?.goal ?? null;
     const percent = goal && amount != null ? (amount / goal) * 100 : 0;
     const formatted = amount != null ? Math.round(amount) : null;
-    const goalLabel = goal ? `${goal} ${entry?.unit ?? macro.unit}` : '—';
+    const goalLabel = goal ? `${Math.round(goal)} ${entry?.unit ?? macro.unit}` : '—';
     return {
       key: macro.key,
       label: macro.label,

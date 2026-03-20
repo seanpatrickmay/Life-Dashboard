@@ -128,9 +128,14 @@ export function DashboardUpcomingEvents() {
   const groupedEvents = useMemo(() => {
     if (!eventsQuery.data?.events) return [];
 
-    // Sort events by start time
+    // Filter out events that ended at or before the start of today (e.g. yesterday's all-day events)
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const sortedEvents = [...eventsQuery.data.events]
       .filter(event => event.start_time && event.summary)
+      .filter(event => {
+        if (!event.end_time) return true;
+        return new Date(event.end_time).getTime() > startOfToday.getTime();
+      })
       .sort((a, b) => {
         const timeA = new Date(a.start_time!).getTime();
         const timeB = new Date(b.start_time!).getTime();

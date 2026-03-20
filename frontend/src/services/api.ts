@@ -1205,3 +1205,11 @@ export const updateUserProfile = async (payload: UserProfileData): Promise<UserP
   const { data } = await api.put('/api/user/profile', payload);
   return data;
 };
+
+// News
+
+export const shortenTitles = async (titles: string[]): Promise<string[]> => {
+  if (isGuestMode() || titles.length === 0) return titles;
+  const { data } = await api.post('/api/news/shorten-titles', { titles });
+  return data.short_titles;
+};
