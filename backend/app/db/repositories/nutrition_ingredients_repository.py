@@ -78,27 +78,33 @@ class NutritionIngredientsRepository:
         owner_user_id: int,
         status: NutritionIngredientStatus = NutritionIngredientStatus.UNCONFIRMED,
     ) -> NutritionIngredient:
+        # Check for existing first to avoid unnecessary work
+        existing = await self.get_ingredient_by_name(owner_user_id, name)
+        if existing is not None:
+            return existing
+
         profile_kwargs = {
             definition.column_name: nutrient_values.get(definition.slug)
             for definition in NUTRIENT_DEFINITIONS
         }
-        profile = NutritionIngredientProfile(**profile_kwargs)
-        self.session.add(profile)
-        await self.session.flush()
 
-        ingredient = NutritionIngredient(
-            name=name,
-            default_unit=default_unit,
-            source=source,
-            status=status,
-            owner_user_id=owner_user_id,
-            profile=profile,
-        )
-        self.session.add(ingredient)
         try:
-            await self.session.flush()
+            async with self.session.begin_nested():
+                profile = NutritionIngredientProfile(**profile_kwargs)
+                self.session.add(profile)
+                await self.session.flush()
+
+                ingredient = NutritionIngredient(
+                    name=name,
+                    default_unit=default_unit,
+                    source=source,
+                    status=status,
+                    owner_user_id=owner_user_id,
+                    profile=profile,
+                )
+                self.session.add(ingredient)
+                await self.session.flush()
         except IntegrityError:
-            await self.session.rollback()
             logger.warning("[nutrition] duplicate ingredient '{}' for user {}, fetching existing", name, owner_user_id)
             existing = await self.get_ingredient_by_name(owner_user_id, name)
             if existing is not None:
