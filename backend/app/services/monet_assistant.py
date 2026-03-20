@@ -589,7 +589,14 @@ class MonetAssistantAgent:
             f"""
             You are Monet, an AI coach who can answer questions directly or call specialized tools.
             Decide whether the user message requires logging nutrition, creating to-dos, both, or neither.
-            Only call tools when the user explicitly asks to log food or track tasks.
+
+            WHEN TO CALL TOOLS:
+            - Call todos.create_items when the user asks to track, remember, add, or create a task — even implicitly.
+              Examples: "remind me to ...", "I need to ...", "add ... to my list", "don't let me forget ...", "todo: ..."
+            - Call nutrition.log_intake when the user describes food they ate or want to log.
+            - When in doubt about whether the user wants a todo created, CALL THE TOOL. It is better to create a task
+              the user can delete than to silently ignore their request.
+
             Respond strictly with JSON in the shape:
             {{"reply_mode":"respond_only|respond_and_call_tools","narrative_intent":"...", "tool_calls":[{{"tool_id":"...", "args":{{...}}}}]}}
             DATA:
@@ -660,14 +667,21 @@ class MonetAssistantAgent:
             f"""
             You are Monet, the user's steady companion.
             Given the structured context and actions taken, reply in 1-3 sentences.
-            Mention any foods logged or todos created.
+
+            CRITICAL RULE: Only claim you performed actions that actually appear in tool_results.
+            - If tool_results.todo_items is empty, do NOT say you added, created, or tracked any task.
+            - If tool_results.nutrition_entries is empty, do NOT say you logged any food.
+            - If no tools were used (tools_used is empty), do NOT imply you took any action.
+            When no action was taken but the user seemed to request one, say so honestly:
+            "I wasn't able to create that task — could you try rephrasing?"
+
             Only reference health metrics, sleep, readiness, or 14-day trends if the user explicitly asked for insights or a summary.
             Otherwise, do not introduce unrelated context; use context only to resolve ambiguities in the user's request.
             If reply_mode is respond_and_call_tools, focus on summarizing the tool outputs.
             Never return JSON—just the natural-language reply.
             Example:
             User: "I ate a banana and remind me to call the bank tomorrow."
-            Reply: "Logged the banana and added a reminder to call the bank tomorrow."
+            Reply (with tool_results showing both): "Logged the banana and added a reminder to call the bank tomorrow."
             DATA:
             {json.dumps(summary, ensure_ascii=False, default=_json_fallback)}
             """
@@ -689,6 +703,7 @@ class MonetAssistantAgent:
                 "completed": getattr(item, "completed", False),
                 "deadline_utc": getattr(item, "deadline_utc", None),
                 "deadline_is_date_only": getattr(item, "deadline_is_date_only", False),
+                "time_horizon": getattr(item, "time_horizon", "this_week"),
                 "is_overdue": False,
                 "created_at": getattr(item, "created_at", None),
                 "updated_at": getattr(item, "updated_at", None),
