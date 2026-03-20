@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from loguru import logger
 
 from app.db.models.nutrition import (
     NutritionIngredient,
@@ -93,7 +95,15 @@ class NutritionIngredientsRepository:
             profile=profile,
         )
         self.session.add(ingredient)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except IntegrityError:
+            await self.session.rollback()
+            logger.warning("[nutrition] duplicate ingredient '{}' for user {}, fetching existing", name, owner_user_id)
+            existing = await self.get_ingredient_by_name(owner_user_id, name)
+            if existing is not None:
+                return existing
+            raise
         return ingredient
 
     async def update_ingredient(

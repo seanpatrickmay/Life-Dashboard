@@ -187,30 +187,34 @@ class NutritionAssistantAgent:
                 continue
 
             # Unknown dish: ask recipe agent for structure, create ingredients + recipe, then log
-            suggestion = await self._suggest_recipe(name)
-            if suggestion is None:
-                logger.info("[nutrition] no recipe suggestion for %s", name)
+            try:
+                suggestion = await self._suggest_recipe(name)
+                if suggestion is None:
+                    logger.info("[nutrition] no recipe suggestion for %s", name)
+                    continue
+                created_recipe = await self._ensure_recipe_from_suggestion(
+                    owner_user_id=user_id,
+                    suggestion=suggestion,
+                )
+                await self._log_recipe(
+                    recipe_id=created_recipe.id,
+                    servings=quantity,
+                    user_id=user_id,
+                    request_id=request_id,
+                )
+                entries.append(
+                    {
+                        "recipe_id": created_recipe.id,
+                        "food_name": created_recipe.name,
+                        "quantity": quantity,
+                        "unit": unit,
+                        "status": created_recipe.status.value,
+                        "created": True,
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("[nutrition] failed to create/log recipe for '%s': %s", name, exc)
                 continue
-            created_recipe = await self._ensure_recipe_from_suggestion(
-                owner_user_id=user_id,
-                suggestion=suggestion,
-            )
-            await self._log_recipe(
-                recipe_id=created_recipe.id,
-                servings=quantity,
-                user_id=user_id,
-                request_id=request_id,
-            )
-            entries.append(
-                {
-                    "recipe_id": created_recipe.id,
-                    "food_name": created_recipe.name,
-                    "quantity": quantity,
-                    "unit": unit,
-                    "status": created_recipe.status.value,
-                    "created": True,
-                }
-            )
 
         await self.session.flush()
         suggestions_repo = NutritionSuggestionsRepository(self.session)

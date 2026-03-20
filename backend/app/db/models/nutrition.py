@@ -322,8 +322,11 @@ class NutritionIngredientStatus(str, Enum):
 
 class NutritionIngredient(Base):
     __tablename__ = "nutrition_foods"
+    __table_args__ = (
+        UniqueConstraint("owner_user_id", "name", name="uq_nutrition_food_owner_name"),
+    )
 
-    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
     default_unit: Mapped[str] = mapped_column(String(64), default="serving")
     status: Mapped[NutritionIngredientStatus] = mapped_column(
         SAEnum(

@@ -254,13 +254,28 @@ class MonetAssistantAgent:
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("[assistant] respond failed for user %s: %s", user_id, exc)
+            reply = self._friendly_error_message(exc)
             return AssistantResult(
                 session_id=session_key,
-                reply="Something went wrong on my end — give it another try in a moment.",
+                reply=reply,
                 nutrition_entries=[],
                 todo_items=[],
                 tools_used=[],
             )
+
+    @staticmethod
+    def _friendly_error_message(exc: Exception) -> str:
+        """Return a user-facing message based on the exception type."""
+        exc_str = str(exc).lower()
+        if "insufficient_quota" in exc_str or "exceeded" in exc_str:
+            return "My AI service is temporarily out of quota — this usually resolves within a few hours."
+        if "rate_limit" in exc_str or "429" in exc_str:
+            return "I'm getting rate-limited right now — try again in a minute or two."
+        if "authentication" in exc_str or "api_key" in exc_str or "401" in exc_str:
+            return "There's a configuration issue with my AI service — let Sean know."
+        if "timeout" in exc_str:
+            return "The request timed out — try again with a shorter message."
+        return "Something went wrong on my end — give it another try in a moment."
 
     async def _plan_contextual_actions(
         self,
