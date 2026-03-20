@@ -229,28 +229,38 @@ class MonetAssistantAgent:
                 action_plan_id=None,
             )
 
-        context = await self.context_builder.build_context(
-            user_id,
-            window_days,
-            time_zone=time_zone,
-            page_context=page_context,
-        )
-        logger.debug("[assistant] context built window=%s keys=%s", window_days, context.keys())
-        decision = await self._route_message(message, context)
-        logger.info(
-            "[assistant] router decision mode=%s tools=%s",
-            decision.reply_mode,
-            [call.tool_id for call in decision.tool_calls],
-        )
-        tool_results = await self._execute_tools(user_id, decision.tool_calls)
-        reply = await self._compose_reply(message, context, decision, tool_results)
-        return AssistantResult(
-            session_id=session_key,
-            reply=reply,
-            nutrition_entries=tool_results.nutrition_entries,
-            todo_items=tool_results.todo_items,
-            tools_used=tool_results.tools_used,
-        )
+        try:
+            context = await self.context_builder.build_context(
+                user_id,
+                window_days,
+                time_zone=time_zone,
+                page_context=page_context,
+            )
+            logger.debug("[assistant] context built window=%s keys=%s", window_days, context.keys())
+            decision = await self._route_message(message, context)
+            logger.info(
+                "[assistant] router decision mode=%s tools=%s",
+                decision.reply_mode,
+                [call.tool_id for call in decision.tool_calls],
+            )
+            tool_results = await self._execute_tools(user_id, decision.tool_calls)
+            reply = await self._compose_reply(message, context, decision, tool_results)
+            return AssistantResult(
+                session_id=session_key,
+                reply=reply,
+                nutrition_entries=tool_results.nutrition_entries,
+                todo_items=tool_results.todo_items,
+                tools_used=tool_results.tools_used,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[assistant] respond failed for user %s: %s", user_id, exc)
+            return AssistantResult(
+                session_id=session_key,
+                reply="Something went wrong on my end — give it another try in a moment.",
+                nutrition_entries=[],
+                todo_items=[],
+                tools_used=[],
+            )
 
     async def _plan_contextual_actions(
         self,
@@ -631,7 +641,11 @@ class MonetAssistantAgent:
             if not tool:
                 logger.warning("[assistant] unknown tool requested: %s", call.tool_id)
                 continue
-            tool_output = await tool.run(user_id, call.args)
+            try:
+                tool_output = await tool.run(user_id, call.args)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("[assistant] tool %s failed: %s", call.tool_id, exc)
+                tool_output = {"error": str(exc)}
             results.tools_used.append(call.tool_id)
             results.raw_results[call.tool_id] = tool_output
             if call.tool_id == NutritionLogTool.spec.id:

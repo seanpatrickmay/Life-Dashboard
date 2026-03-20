@@ -6,7 +6,6 @@ import { MicronutrientPanel } from '../components/nutrition/MicronutrientPanel';
 import { MenuPanel } from '../components/nutrition/MenuPanel';
 import { GoalsPanel } from '../components/nutrition/GoalsPanel';
 import { FoodManager } from '../components/nutrition/FoodManager';
-import { NutritionChatPanel } from '../components/nutrition/NutritionChatPanel';
 import { QuickLogPanel } from '../components/nutrition/QuickLogPanel';
 import { useNutritionHistory } from '../hooks/useNutritionIntake';
 import { fadeUp, reducedMotion } from '../styles/animations';
@@ -197,7 +196,6 @@ type SectionState = {
   averages: boolean;
   goals: boolean;
   foods: boolean;
-  chat: boolean;
   quicklog: boolean;
 };
 
@@ -207,7 +205,6 @@ const DEFAULTS: SectionState = {
   averages: false,
   goals: false,
   foods: false,
-  chat: true,
   quicklog: true,
 };
 
@@ -308,27 +305,6 @@ export function NutritionPage() {
           <CollapsibleInner>
             <SectionContent>
               <QuickLogPanel />
-            </SectionContent>
-          </CollapsibleInner>
-        </CollapsibleWrapper>
-      </SectionCard>
-
-      {/* Nutrition Assistant */}
-      <SectionCard>
-        <SectionToggle
-          type="button"
-          onClick={() => toggle('chat')}
-          aria-expanded={sections.chat}
-        >
-          <ToggleLeft>
-            <span>Nutrition Assistant</span>
-          </ToggleLeft>
-          <Chevron $open={sections.chat}>▶</Chevron>
-        </SectionToggle>
-        <CollapsibleWrapper $open={sections.chat}>
-          <CollapsibleInner>
-            <SectionContent>
-              <NutritionChatPanel />
             </SectionContent>
           </CollapsibleInner>
         </CollapsibleWrapper>

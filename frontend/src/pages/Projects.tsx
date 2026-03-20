@@ -27,8 +27,6 @@ import type {
   WorkspaceView
 } from '../services/workspaceApi';
 import { createWorkspaceAssetUpload, uploadWorkspaceAssetContent } from '../services/workspaceApi';
-import { PageAssistantPanel } from '../components/assistant/PageAssistantPanel';
-import type { AssistantPageContext } from '../services/api';
 
 const Root = styled.div`
   --workspace-bg: ${({ theme }) => theme.colors.backgroundPage};
@@ -2977,16 +2975,6 @@ export function ProjectsPage() {
   const deferredPaletteQuery = useDeferredValue(paletteQuery);
   const searchQuery = useWorkspaceSearch(deferredPaletteQuery, paletteOpen);
 
-  const projectsContext = useMemo<AssistantPageContext>(() => {
-    const ctx: AssistantPageContext = { page: 'projects' };
-    if (detail) {
-      ctx.selected_entity = {
-        project_id: detail.page.id,
-        project_name: detail.page.title,
-      };
-    }
-    return ctx;
-  }, [detail]);
   const [status, setStatus] = useState<Status>(null);
   const [titleDrafts, setTitleDrafts] = useState<Record<number, string>>({});
   const [collapsedSections, setCollapsedSections] = useState({
@@ -3903,12 +3891,6 @@ export function ProjectsPage() {
             </SidebarSection>
           ) : null}
 
-          <PageAssistantPanel
-            title="Monet • Projects"
-            placeholder="e.g. Create a todo to review the quarterly report"
-            context={projectsContext}
-            onActionsApplied={() => void pageQuery.refetch()}
-          />
         </Sidebar>
 
         <Main>

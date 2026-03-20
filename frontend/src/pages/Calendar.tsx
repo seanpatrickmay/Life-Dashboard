@@ -2,12 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import styled from 'styled-components';
 import { CalendarWeekView, type CalendarItem } from '../components/calendar/CalendarWeekView';
 import { CalendarDetailDrawer } from '../components/calendar/CalendarDetailDrawer';
-import { PageAssistantPanel } from '../components/assistant/PageAssistantPanel';
 import { useCalendarEvents, useCalendarStatus, useCalendars } from '../hooks/useCalendar';
 import { useTodos } from '../hooks/useTodos';
 import { Card } from '../components/common/Card';
 import { fadeUp, reducedMotion } from '../styles/animations';
-import type { CalendarEvent, TodoItem, AssistantPageContext } from '../services/api';
+import type { CalendarEvent, TodoItem } from '../services/api';
 
 const Layout = styled.div`
   display: flex;
@@ -295,24 +294,6 @@ export function CalendarPage() {
   const status = statusQuery.data;
   const calendars = calendarsQuery.data?.calendars ?? [];
 
-  const calendarContext = useMemo<AssistantPageContext>(() => {
-    const ctx: AssistantPageContext = {
-      page: 'calendar',
-      visible_range: {
-        start_iso: windowStart.toISOString(),
-        end_iso: windowEnd.toISOString(),
-      },
-    };
-    if (selectedItem?.kind === 'event') {
-      const event = selectedItem.data as CalendarEvent;
-      ctx.selected_entity = { calendar_event_id: event.id };
-    } else if (selectedItem?.kind === 'todo') {
-      const todo = selectedItem.data as TodoItem;
-      ctx.selected_entity = { todo_id: todo.id };
-    }
-    return ctx;
-  }, [windowStart, windowEnd, selectedItem]);
-
   const handleConnect = () => {
     const redirect = encodeURIComponent(`${window.location.origin}/calendar`);
     window.location.href = `/api/calendar/google/login?redirect=${redirect}`;
@@ -484,12 +465,6 @@ export function CalendarPage() {
         />
       </CalendarShell>
 
-      <PageAssistantPanel
-        title="Monet • Calendar"
-        placeholder="e.g. Create a meeting tomorrow at 2pm"
-        context={calendarContext}
-        onActionsApplied={() => eventsQuery.eventsQuery.refetch()}
-      />
     </Layout>
   );
 }
