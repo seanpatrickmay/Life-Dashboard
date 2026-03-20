@@ -17,6 +17,7 @@ from app.routers import (
   insights,
   journal,
   metrics,
+  news,
   nutrition,
   projects,
   system,
