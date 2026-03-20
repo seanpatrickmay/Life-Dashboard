@@ -305,6 +305,29 @@ class NutritionAssistantAgent:
             "ingredients": [item.model_dump() for item in result.data.ingredients],
         }
 
+    @staticmethod
+    def _clamp_per_serving_qty(qty: float, servings: float, unit: str) -> float:
+        """Clamp ingredient quantity so per-serving amount stays realistic."""
+        effective_servings = servings if servings > 0 else 1.0
+        per_serving = qty / effective_servings
+        unit_lower = unit.lower().strip()
+        # Max realistic per-serving amounts by unit type
+        volume_units = {"cup", "cups", "tbsp", "tablespoon", "tsp", "teaspoon", "ml", "l", "liter", "fl oz", "oz"}
+        weight_units = {"g", "gram", "grams", "kg", "lb", "lbs", "oz", "ounce", "ounces"}
+        if unit_lower in volume_units:
+            max_per_serving = 4.0  # 4 cups per serving is generous
+        elif unit_lower in weight_units:
+            max_per_serving = 500.0  # 500g per serving
+        else:
+            max_per_serving = 10.0  # 10 servings/pieces/etc
+        if per_serving > max_per_serving:
+            logger.warning(
+                "[nutrition] clamping ingredient qty: {:.1f} {} / {:.0f} servings = {:.1f} per serving (max {})",
+                qty, unit, servings, per_serving, max_per_serving,
+            )
+            return max_per_serving * effective_servings
+        return qty
+
     async def _ensure_recipe_from_suggestion(
         self, *, owner_user_id: int, suggestion: dict[str, Any]
     ) -> NutritionRecipe:
@@ -321,8 +344,9 @@ class NutritionAssistantAgent:
             ing_name = (raw.get("name") or "").strip()
             if not ing_name:
                 continue
-            qty = self._safe_float(raw.get("quantity")) or 1.0
+            raw_qty = self._safe_float(raw.get("quantity")) or 1.0
             unit = (raw.get("unit") or "100g").strip()
+            qty = self._clamp_per_serving_qty(raw_qty, servings, unit)
             ingredient = await self.ingredients_repo.get_ingredient_by_name(owner_user_id, ing_name)
             created = False
             if ingredient is None:

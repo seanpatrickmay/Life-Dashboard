@@ -8,14 +8,14 @@ import { useCalendarEvents } from '../../hooks/useCalendar';
 const Panel = styled(Card)`
   display: flex;
   flex-direction: column;
-  gap: clamp(12px, 2vw, 18px);
+  gap: 8px;
   overflow: hidden;
 `;
 
 const Heading = styled.h3`
   margin: 0;
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: clamp(0.95rem, 2vw, 1.1rem);
+  font-size: clamp(0.85rem, 1.8vw, 0.95rem);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   flex-shrink: 0;
@@ -24,101 +24,97 @@ const Heading = styled.h3`
 const EventsList = styled.div`
   display: flex;
   flex-direction: column;
-  gap: clamp(10px, 1.5vw, 14px);
+  gap: 2px;
   overflow-y: auto;
-  max-height: 420px;
+  max-height: 380px;
 
-  /* Subtle scrollbar styling */
-  &::-webkit-scrollbar {
-    width: 4px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
+  &::-webkit-scrollbar { width: 3px; }
+  &::-webkit-scrollbar-track { background: transparent; }
   &::-webkit-scrollbar-thumb {
     background: ${({ theme }) => theme.colors.scrollThumb};
     border-radius: 2px;
-
-    &:hover {
-      background: ${({ theme }) => theme.colors.scrollThumb};
-    }
   }
 `;
 
-const EventCard = styled.div`
+const EventRow = styled.div`
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
   gap: 6px;
-  padding: clamp(10px, 2vw, 14px);
-  border-radius: 18px;
-  background: ${({ theme }) => theme.colors.surfaceRaised};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  transition: all 0.2s ease;
+  padding: 6px 4px;
+  border-radius: 10px;
+  transition: background 0.15s ease;
 
   &:hover {
     background: ${({ theme }) => theme.colors.overlayHover};
-    border-color: ${({ theme }) => theme.colors.borderSubtle};
-  }
-
-  &:focus-visible {
-    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
-    outline-offset: 2px;
   }
 `;
 
-const EventTime = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
-  letter-spacing: 0.1em;
+const EventTime = styled.span`
+  flex-shrink: 0;
+  width: 6.5em;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  opacity: 0.8;
+  opacity: 0.6;
+  text-align: left;
+`;
+
+const EventDetails = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 `;
 
 const EventSummary = styled.div`
   font-family: ${({ theme }) => theme.fonts.body};
-  font-size: 1rem;
-  line-height: 1.4;
+  font-size: 0.88rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 `;
 
-const EventLocation = styled.div`
-  font-size: 0.85rem;
-  opacity: 0.7;
-  font-style: italic;
+const EventLocation = styled.span`
+  font-size: 0.7rem;
+  opacity: 0.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 `;
 
 const EmptyState = styled.p`
   margin: 0;
-  font-size: 0.9rem;
-  opacity: 0.8;
+  font-size: 0.82rem;
+  opacity: 0.6;
   text-align: center;
-  padding: 20px;
+  padding: 12px 0;
 `;
 
 const LoadingState = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px;
-  font-size: 1.2rem;
-  opacity: 0.6;
+  padding: 18px;
+  font-size: 0.9rem;
+  opacity: 0.5;
 `;
 
 const DateDivider = styled.div`
-  font-size: 0.8rem;
+  font-size: 0.68rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  opacity: 0.6;
-  margin-top: 8px;
-  padding-bottom: 4px;
+  opacity: 0.45;
+  margin-top: 6px;
+  padding: 0 4px 3px;
   border-bottom: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+
+  &:first-child {
+    margin-top: 0;
+  }
 `;
 
 export function DashboardUpcomingEvents() {
-  // Get events for the next 7 days
   const today = new Date();
   const startDate = today.toISOString().split('T')[0];
   const endDate = addDays(today, 7).toISOString().split('T')[0];
@@ -128,7 +124,6 @@ export function DashboardUpcomingEvents() {
   const groupedEvents = useMemo(() => {
     if (!eventsQuery.data?.events) return [];
 
-    // Filter out events that ended at or before the start of today (e.g. yesterday's all-day events)
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const sortedEvents = [...eventsQuery.data.events]
       .filter(event => event.start_time && event.summary)
@@ -142,7 +137,6 @@ export function DashboardUpcomingEvents() {
         return timeA - timeB;
       });
 
-    // Group events by day
     const grouped: Array<{ date: Date; events: typeof sortedEvents }> = [];
     let currentDate: Date | null = null;
     let currentGroup: typeof sortedEvents = [];
@@ -178,29 +172,23 @@ export function DashboardUpcomingEvents() {
     if (!endTime) return startFormatted;
 
     const end = parseISO(endTime);
-    const endFormatted = format(end, 'h:mm a');
-
-    return `${startFormatted} - ${endFormatted}`;
+    return `${startFormatted}–${format(end, 'h:mm a')}`;
   }, []);
 
   const formatDateHeader = useCallback((date: Date) => {
-    if (isSameDay(date, today)) {
-      return 'Today';
-    }
-    if (isSameDay(date, addDays(today, 1))) {
-      return 'Tomorrow';
-    }
-    return format(date, 'EEEE, MMM d');
+    if (isSameDay(date, today)) return 'Today';
+    if (isSameDay(date, addDays(today, 1))) return 'Tomorrow';
+    return format(date, 'EEE, MMM d');
   }, [today]);
 
   return (
     <Panel>
-      <Heading data-halo="heading">Upcoming Events</Heading>
+      <Heading data-halo="heading">Upcoming</Heading>
 
       {eventsQuery.isLoading ? (
         <LoadingState>Loading...</LoadingState>
       ) : groupedEvents.length === 0 ? (
-        <EmptyState>No upcoming events in the next 7 days</EmptyState>
+        <EmptyState>No events in the next 7 days</EmptyState>
       ) : (
         <EventsList>
           {groupedEvents.map(({ date, events }) => (
@@ -209,19 +197,21 @@ export function DashboardUpcomingEvents() {
                 {formatDateHeader(date)}
               </DateDivider>
               {events.map(event => (
-                <EventCard key={event.id}>
+                <EventRow key={event.id}>
                   <EventTime data-halo="body">
                     {formatEventTime(event.start_time, event.end_time, event.is_all_day)}
                   </EventTime>
-                  <EventSummary data-halo="body">
-                    {event.summary}
-                  </EventSummary>
-                  {event.location && (
-                    <EventLocation data-halo="body">
-                      📍 {event.location}
-                    </EventLocation>
-                  )}
-                </EventCard>
+                  <EventDetails>
+                    <EventSummary data-halo="body">
+                      {event.summary}
+                    </EventSummary>
+                    {event.location && (
+                      <EventLocation data-halo="body">
+                        {event.location}
+                      </EventLocation>
+                    )}
+                  </EventDetails>
+                </EventRow>
               ))}
             </div>
           ))}

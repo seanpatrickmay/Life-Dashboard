@@ -61,7 +61,7 @@ const CATEGORY_COLORS: Record<Category, string> = {
 const Panel = styled(Card)`
   display: flex;
   flex-direction: column;
-  gap: clamp(10px, 1.5vw, 14px);
+  gap: 8px;
   overflow: hidden;
 `;
 
@@ -75,7 +75,7 @@ const HeadingRow = styled.div`
 const Heading = styled.h3`
   margin: 0;
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: clamp(0.95rem, 2vw, 1.1rem);
+  font-size: clamp(0.85rem, 1.8vw, 0.95rem);
   letter-spacing: 0.16em;
   text-transform: uppercase;
 `;
@@ -95,7 +95,7 @@ const ViewAllLink = styled(Link)`
 const ArticlesList = styled.div`
   display: flex;
   flex-direction: column;
-  gap: clamp(6px, 1vw, 8px);
+  gap: 3px;
   overflow-y: auto;
   max-height: 380px;
 
@@ -110,19 +110,16 @@ const ArticlesList = styled.div`
 const ArticleRow = styled.a`
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: ${({ theme }) => theme.colors.surfaceRaised};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  transition: all 0.2s ease;
+  gap: 3px;
+  padding: 6px 6px;
+  border-radius: 10px;
+  transition: background 0.15s ease;
   text-decoration: none;
   color: inherit;
   cursor: pointer;
 
   &:hover {
     background: ${({ theme }) => theme.colors.overlayHover};
-    border-color: ${({ theme }) => theme.colors.borderSubtle};
   }
 
   &:focus-visible {
@@ -145,28 +142,27 @@ const CategoryPill = styled.span<{ $color: string }>`
 
 const ArticleTitle = styled.div`
   font-family: ${({ theme }) => theme.fonts.body};
-  font-size: 0.88rem;
+  font-size: 0.85rem;
   line-height: 1.3;
+  white-space: nowrap;
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
 `;
 
 const EmptyState = styled.p`
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   opacity: 0.6;
   text-align: center;
-  padding: 16px 0;
+  padding: 12px 0;
 `;
 
 const LoadingState = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 28px;
-  font-size: 1rem;
+  padding: 18px;
+  font-size: 0.9rem;
   opacity: 0.5;
 `;
 
