@@ -309,21 +309,36 @@ class NutritionAssistantAgent:
             "ingredients": [item.model_dump() for item in result.data.ingredients],
         }
 
-    @staticmethod
-    def _clamp_per_serving_qty(qty: float, servings: float, unit: str) -> float:
+    # Per-serving clamp limits by unit (keeps LLM hallucinated quantities sane)
+    _CLAMP_LIMITS: dict[str, float] = {
+        # Volume – small
+        "tsp": 12.0, "teaspoon": 12.0,
+        "tbsp": 8.0, "tablespoon": 8.0,
+        # Volume – medium
+        "fl oz": 32.0, "fl_oz": 32.0,
+        "cup": 6.0, "cups": 6.0,
+        "ml": 1000.0, "milliliter": 1000.0,
+        # Volume – large
+        "l": 2.0, "liter": 2.0,
+        # Weight – small
+        "g": 1000.0, "gram": 1000.0, "grams": 1000.0,
+        "oz": 32.0, "ounce": 32.0, "ounces": 32.0,
+        # Weight – large
+        "kg": 2.0, "lb": 4.0, "lbs": 4.0,
+        # Discrete
+        "piece": 10.0, "pieces": 10.0, "whole": 6.0,
+        "shot": 6.0, "shots": 6.0,
+        "slice": 10.0, "slices": 10.0,
+    }
+    _DEFAULT_CLAMP = 20.0
+
+    @classmethod
+    def _clamp_per_serving_qty(cls, qty: float, servings: float, unit: str) -> float:
         """Clamp ingredient quantity so per-serving amount stays realistic."""
         effective_servings = servings if servings > 0 else 1.0
         per_serving = qty / effective_servings
         unit_lower = unit.lower().strip()
-        # Max realistic per-serving amounts by unit type
-        volume_units = {"cup", "cups", "tbsp", "tablespoon", "tsp", "teaspoon", "ml", "l", "liter", "fl oz", "oz"}
-        weight_units = {"g", "gram", "grams", "kg", "lb", "lbs", "oz", "ounce", "ounces"}
-        if unit_lower in volume_units:
-            max_per_serving = 4.0  # 4 cups per serving is generous
-        elif unit_lower in weight_units:
-            max_per_serving = 500.0  # 500g per serving
-        else:
-            max_per_serving = 10.0  # 10 servings/pieces/etc
+        max_per_serving = cls._CLAMP_LIMITS.get(unit_lower, cls._DEFAULT_CLAMP)
         if per_serving > max_per_serving:
             logger.warning(
                 "[nutrition] clamping ingredient qty: {:.1f} {} / {:.0f} servings = {:.1f} per serving (max {})",
