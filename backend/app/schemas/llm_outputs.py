@@ -126,7 +126,19 @@ class TodoCalendarTitleOutput(LLMOutputModel):
 
 class AssistantActionPlanItemOutput(LLMOutputModel):
     action_type: str
-    params: dict[str, Any] = Field(default_factory=dict)
+    params_json: str = Field(
+        default="{}",
+        description="Action parameters as a JSON-encoded string",
+    )
+
+    @property
+    def params(self) -> dict[str, Any]:
+        import json as _json
+        try:
+            parsed = _json.loads(self.params_json)
+            return parsed if isinstance(parsed, dict) else {}
+        except (ValueError, TypeError):
+            return {}
 
 
 class AssistantActionPlanOutput(LLMOutputModel):
@@ -135,7 +147,19 @@ class AssistantActionPlanOutput(LLMOutputModel):
 
 class AssistantToolCallOutput(LLMOutputModel):
     tool_id: str
-    args: dict[str, Any] = Field(default_factory=dict)
+    args_json: str = Field(
+        default="{}",
+        description="Tool arguments as a JSON-encoded string",
+    )
+
+    @property
+    def args(self) -> dict[str, Any]:
+        import json as _json
+        try:
+            parsed = _json.loads(self.args_json)
+            return parsed if isinstance(parsed, dict) else {}
+        except (ValueError, TypeError):
+            return {}
 
 
 class AssistantRouterOutput(LLMOutputModel):

@@ -325,7 +325,8 @@ class MonetAssistantAgent:
             - If required fields are missing, output no actions.
             - Use selected ids in page_context when user implies "this/selected/current".
             - Output strict JSON only:
-            {{"actions":[{{"action_type":"...", "params":{{...}}}}]}}
+            {{"actions":[{{"action_type":"...", "params_json":"{{...}}"}}]}}
+            IMPORTANT: params_json must be a JSON-encoded STRING (not a nested object).
             DATA:
             {json.dumps(payload, ensure_ascii=False, default=_json_fallback)}
             """
@@ -335,7 +336,10 @@ class MonetAssistantAgent:
             response_model=AssistantActionPlanOutput,
             temperature=0.2,
         )
-        raw_actions = [item.model_dump() for item in result.data.actions]
+        raw_actions = [
+            {"action_type": item.action_type, "params": item.params}
+            for item in result.data.actions
+        ]
         actions: list[AssistantAction] = []
         for raw_action in raw_actions or []:
             if not isinstance(raw_action, dict):
@@ -603,12 +607,31 @@ class MonetAssistantAgent:
                 tags.append(text[:64])
         return tags
 
+    @staticmethod
+    def _slim_context_for_router(context: dict[str, Any]) -> dict[str, Any]:
+        """Produce a lightweight context summary for routing decisions.
+
+        The router only needs enough info to decide intent (nutrition, todo, or
+        general chat) — not the full 186K payload of metrics, nutrition history,
+        calendar events, etc."""
+        slim: dict[str, Any] = {}
+        if "time_zone" in context:
+            slim["now_local"] = context["time_zone"].get("now_local")
+        if "todos" in context:
+            open_count = sum(1 for t in context["todos"] if not t.get("completed"))
+            slim["open_todo_count"] = open_count
+        if "nutrition" in context:
+            today = context["nutrition"].get("today_summary") or {}
+            slim["nutrition_logged_today"] = bool(today.get("foods"))
+        return slim
+
     async def _route_message(self, message: str, context: dict[str, Any]) -> RouterDecision:
         tools = self.tool_registry.prompt_specs()
+        slim_context = self._slim_context_for_router(context)
         payload = {
             "message": message,
             "available_tools": tools,
-            "context": context,
+            "context": slim_context,
         }
         prompt = dedent(
             f"""
@@ -623,7 +646,8 @@ class MonetAssistantAgent:
               the user can delete than to silently ignore their request.
 
             Respond strictly with JSON in the shape:
-            {{"reply_mode":"respond_only|respond_and_call_tools","narrative_intent":"...", "tool_calls":[{{"tool_id":"...", "args":{{...}}}}]}}
+            {{"reply_mode":"respond_only|respond_and_call_tools","narrative_intent":"...", "tool_calls":[{{"tool_id":"...", "args_json":"{{...}}"}}]}}
+            IMPORTANT: args_json must be a JSON-encoded STRING (not a nested object), e.g. "{{\\"message\\":\\"I ate a banana\\"}}"
             DATA:
             {json.dumps(payload, ensure_ascii=False, default=_json_fallback)}
             """
@@ -634,8 +658,8 @@ class MonetAssistantAgent:
                 response_model=AssistantRouterOutput,
                 temperature=0.2,
             )
-        except Exception:
-            logger.warning("[assistant] router returned invalid payload, defaulting to respond_only")
+        except Exception as exc:
+            logger.warning("[assistant] router failed ({}), defaulting to respond_only", exc)
             return RouterDecision("respond_only", "Reply to the user directly.", [])
 
         reply_mode = result.data.reply_mode or "respond_only"
