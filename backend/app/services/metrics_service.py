@@ -38,6 +38,9 @@ class MetricsService:
             "metric_changes": {},
         }
 
+    # How many recent days are always fetched regardless of change detection.
+    _FRESH_WINDOW_DAYS = 2
+
     async def ingest(
         self,
         user_id: int,
@@ -51,7 +54,9 @@ class MetricsService:
         energy_payload: list[dict[str, Any]] | None = None,
     ) -> dict:
         start_date = eastern_today() - timedelta(days=lookback_days - 1)
+        end_date = eastern_today()
         cutoff_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=EASTERN_TZ)
+
         if self.garmin is not None:
             garmin = self.garmin
         else:
@@ -74,25 +79,36 @@ class MetricsService:
                 return self._empty_summary()
             # Release the read-only transaction before long-running Garmin API calls.
             await self.session.rollback()
+
         try:
+            # --- Phase 1: Fetch activities + detect historical changes -------
             if activities is None:
                 logger.info("Fetching Garmin activities since {}", cutoff_dt)
                 activities = await asyncio.to_thread(garmin.fetch_recent_activities, cutoff_dt)
             activities = self._filter_recent_activities(activities, cutoff_dt)
-
             ingested = await self.activity_repo.upsert_many(user_id, activities)
 
-            end_date = eastern_today()
-            if hrv_payload is None:
-                hrv_payload = await asyncio.to_thread(garmin.fetch_daily_hrv, start_date, end_date)
-            if rhr_payload is None:
-                rhr_payload = await asyncio.to_thread(garmin.fetch_daily_rhr, start_date, end_date)
-            if sleep_payload is None:
-                sleep_payload = await asyncio.to_thread(garmin.fetch_sleep, start_date, end_date)
-            if load_payload is None:
-                load_payload = await asyncio.to_thread(garmin.fetch_training_loads, start_date, end_date)
-            if energy_payload is None:
-                energy_payload = await asyncio.to_thread(garmin.fetch_daily_energy, start_date, end_date)
+            # Determine which date ranges actually need metric fetches.
+            fresh_start = end_date - timedelta(days=self._FRESH_WINDOW_DAYS - 1)
+            historical_dates = await self._detect_changed_historical_dates(
+                user_id, activities, start_date, fresh_start - timedelta(days=1),
+            )
+
+            # --- Phase 2: Fetch metrics concurrently -------------------------
+            hrv_payload, rhr_payload, sleep_payload, load_payload, energy_payload = (
+                await self._fetch_metrics_concurrent(
+                    garmin,
+                    fresh_start=fresh_start,
+                    end_date=end_date,
+                    historical_dates=historical_dates,
+                    start_date=start_date,
+                    hrv_payload=hrv_payload,
+                    rhr_payload=rhr_payload,
+                    sleep_payload=sleep_payload,
+                    load_payload=load_payload,
+                    energy_payload=energy_payload,
+                )
+            )
         except Exception:  # noqa: BLE001
             if self.garmin is None:
                 await GarminConnectionService(self.session).mark_reauth_required(user_id, True)
@@ -184,6 +200,134 @@ class MetricsService:
                 metric_day.isoformat(): sorted(fields) for metric_day, fields in metric_changes.items() if fields
             },
         }
+
+    async def _detect_changed_historical_dates(
+        self,
+        user_id: int,
+        activities: list[dict[str, Any]],
+        history_start: date,
+        history_end: date,
+    ) -> set[date]:
+        """Compare fetched activities against DB to find dates with new uploads.
+
+        Returns the set of *historical* dates (before the fresh window) that
+        contain activities not yet in the database — e.g. from a late watch sync.
+        """
+        if history_start > history_end:
+            return set()
+
+        known_ids = await self.activity_repo.get_known_garmin_ids(user_id, history_start)
+        changed_dates: set[date] = set()
+        for payload in activities:
+            garmin_id = payload.get("activityId")
+            if garmin_id is None:
+                continue
+            if int(garmin_id) in known_ids:
+                continue
+            activity_date = self._parse_activity_date(payload)
+            if activity_date and history_start <= activity_date <= history_end:
+                changed_dates.add(activity_date)
+
+        if changed_dates:
+            logger.info(
+                "[garmin] detected {} historical dates with new activities: {}",
+                len(changed_dates),
+                sorted(changed_dates),
+            )
+        else:
+            logger.debug("[garmin] no new historical activities detected, skipping historical metric fetch")
+        return changed_dates
+
+    async def _fetch_metrics_concurrent(
+        self,
+        garmin: GarminClient,
+        *,
+        fresh_start: date,
+        end_date: date,
+        historical_dates: set[date],
+        start_date: date,
+        hrv_payload: list[dict[str, Any]] | None,
+        rhr_payload: list[dict[str, Any]] | None,
+        sleep_payload: list[dict[str, Any]] | None,
+        load_payload: list[dict[str, Any]] | None,
+        energy_payload: list[dict[str, Any]] | None,
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+    ]:
+        """Fetch all five metric types concurrently.
+
+        The fresh window (today + yesterday) is always fetched.  Historical
+        dates are only fetched for days where new activities were detected.
+        If *all* payloads are pre-supplied (testing), no Garmin calls are made.
+        """
+        # Build the list of date ranges to fetch.  Always include the fresh
+        # window; add contiguous spans around changed historical dates.
+        ranges = self._build_fetch_ranges(fresh_start, end_date, historical_dates, start_date)
+        logger.info("[garmin] fetch ranges: {}", [(s.isoformat(), e.isoformat()) for s, e in ranges])
+
+        async def _gather_for_ranges(
+            fetcher,
+            existing: list[dict[str, Any]] | None,
+        ) -> list[dict[str, Any]]:
+            if existing is not None:
+                return existing
+            tasks = [
+                asyncio.to_thread(fetcher, rng_start, rng_end)
+                for rng_start, rng_end in ranges
+            ]
+            results = await asyncio.gather(*tasks)
+            combined: list[dict[str, Any]] = []
+            for batch in results:
+                combined.extend(batch)
+            return combined
+
+        # Run all five metric fetches concurrently.
+        hrv_result, rhr_result, sleep_result, load_result, energy_result = await asyncio.gather(
+            _gather_for_ranges(garmin.fetch_daily_hrv, hrv_payload),
+            _gather_for_ranges(garmin.fetch_daily_rhr, rhr_payload),
+            _gather_for_ranges(garmin.fetch_sleep, sleep_payload),
+            _gather_for_ranges(garmin.fetch_training_loads, load_payload),
+            _gather_for_ranges(garmin.fetch_daily_energy, energy_payload),
+        )
+        return hrv_result, rhr_result, sleep_result, load_result, energy_result
+
+    @staticmethod
+    def _build_fetch_ranges(
+        fresh_start: date,
+        end_date: date,
+        historical_dates: set[date],
+        earliest: date,
+    ) -> list[tuple[date, date]]:
+        """Merge the fresh window with changed historical dates into contiguous spans."""
+        # Start with all dates that need fetching.
+        fetch_dates: set[date] = set()
+        current = fresh_start
+        while current <= end_date:
+            fetch_dates.add(current)
+            current += timedelta(days=1)
+        fetch_dates.update(historical_dates)
+
+        if not fetch_dates:
+            return []
+
+        # Collapse into contiguous ranges.
+        sorted_dates = sorted(fetch_dates)
+        ranges: list[tuple[date, date]] = []
+        rng_start = sorted_dates[0]
+        rng_end = sorted_dates[0]
+        for d in sorted_dates[1:]:
+            if d == rng_end + timedelta(days=1):
+                rng_end = d
+            else:
+                ranges.append((rng_start, rng_end))
+                rng_start = d
+                rng_end = d
+        ranges.append((rng_start, rng_end))
+        return ranges
 
     def _filter_recent_activities(self, activities: list[dict[str, Any]], cutoff: datetime) -> list[dict[str, Any]]:
         entries: list[tuple[dict[str, Any], datetime | None]] = []

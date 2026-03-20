@@ -1,10 +1,10 @@
 """Activity persistence helpers."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Iterable
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.entities import Activity
@@ -61,6 +61,18 @@ class ActivityRepository:
                 )
             count += 1
         return count
+
+    async def get_known_garmin_ids(self, user_id: int, since: date) -> set[int]:
+        """Return the set of garmin_id values we already have on or after *since*."""
+        stmt = (
+            select(Activity.garmin_id)
+            .where(
+                Activity.user_id == user_id,
+                func.date(Activity.start_time) >= since,
+            )
+        )
+        result = await self.session.execute(stmt)
+        return {row[0] for row in result.all()}
 
     async def purge_all(self) -> None:
         await self.session.execute(delete(Activity))

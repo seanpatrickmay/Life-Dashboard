@@ -1,14 +1,22 @@
 """Wrapper around python-garminconnect for easier dependency injection."""
 from __future__ import annotations
 
+import threading
+import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from garminconnect import Garmin
+from garminconnect import Garmin, GarminConnectTooManyRequestsError
 from loguru import logger
 
 from app.core.config import settings
+
+# Rate limiting: delay between individual Garmin API calls (seconds)
+_CALL_DELAY = 1.0
+# Retry config for 429 errors
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY = 10.0  # seconds, doubles each retry
 
 
 class GarminClient:
@@ -44,6 +52,7 @@ class GarminClient:
             else:
                 raise RuntimeError("Unable to determine a writable Garmin tokens directory.")
         self.client = Garmin()
+        self._api_lock = threading.Lock()
 
     def authenticate(self) -> None:
         if self._load_tokens():
@@ -83,13 +92,38 @@ class GarminClient:
             if full_name:
                 self.client.full_name = full_name
 
+    def _throttled_call(self, func, *args, **kwargs) -> Any:
+        """Call a Garmin API function with rate limiting and retry on 429.
+
+        Uses a lock so concurrent threads share one rate-limit window.
+        """
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                with self._api_lock:
+                    time.sleep(_CALL_DELAY)
+                    return func(*args, **kwargs)
+            except GarminConnectTooManyRequestsError:
+                if attempt >= _MAX_RETRIES:
+                    logger.warning(
+                        "[garmin] rate limited after {} retries for {}",
+                        _MAX_RETRIES, func.__name__,
+                    )
+                    raise
+                delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                logger.info(
+                    "[garmin] rate limited on {}, retrying in {:.0f}s (attempt {}/{})",
+                    func.__name__, delay, attempt + 1, _MAX_RETRIES,
+                )
+                time.sleep(delay)
+        return None  # unreachable
+
     def fetch_recent_activities(self, cutoff: datetime) -> list[dict[str, Any]]:
         self.authenticate()
         activities: list[dict[str, Any]] = []
         start = 0
         while start < settings.garmin_max_activities:
             batch_size = min(settings.garmin_page_size, settings.garmin_max_activities - start)
-            batch = self.client.get_activities(start, batch_size)
+            batch = self._throttled_call(self.client.get_activities, start, batch_size)
             if not batch:
                 break
             activities.extend(batch)
@@ -108,8 +142,8 @@ class GarminClient:
             raw: Any | None = None
             if hasattr(self.client, "get_hrv_data"):
                 try:
-                    raw = self.client.get_hrv_data(current.isoformat())
-                except Exception as exc:  # noqa: BLE001
+                    raw = self._throttled_call(self.client.get_hrv_data, current.isoformat())
+                except (GarminConnectTooManyRequestsError, Exception) as exc:
                     logger.warning("Garmin HRV fetch failed for {}: {}", current, exc)
                     raw = None
             daily_entries = self._normalize_hrv_payload(raw, current)
@@ -132,9 +166,9 @@ class GarminClient:
 
             if hasattr(self.client, "get_rhr_day"):
                 try:
-                    payload = self.client.get_rhr_day(iso)
+                    payload = self._throttled_call(self.client.get_rhr_day, iso)
                     resting_value = self._extract_resting_hr(payload)
-                except Exception as exc:  # noqa: BLE001
+                except (GarminConnectTooManyRequestsError, Exception) as exc:
                     logger.debug("Failed to fetch resting HR for {}: {}", iso, exc)
 
             if resting_value is not None:
@@ -153,8 +187,8 @@ class GarminClient:
         while current <= end_date:
             iso = current.isoformat()
             try:
-                payload = self.client.get_training_status(iso)
-            except Exception as exc:  # noqa: BLE001
+                payload = self._throttled_call(self.client.get_training_status, iso)
+            except (GarminConnectTooManyRequestsError, Exception) as exc:
                 logger.debug("Failed to fetch training status for {}: {}", iso, exc)
                 current += timedelta(days=1)
                 continue
@@ -173,7 +207,7 @@ class GarminClient:
         current = start_date
         while current <= end_date:
             try:
-                day_data = self.client.get_sleep_data(current.isoformat())
+                day_data = self._throttled_call(self.client.get_sleep_data, current.isoformat())
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Failed to fetch sleep for %s: %s", current, exc)
                 day_data = None
@@ -189,7 +223,7 @@ class GarminClient:
         while current <= end_date:
             iso = current.isoformat()
             try:
-                summary = self.client.get_user_summary(iso)
+                summary = self._throttled_call(self.client.get_user_summary, iso)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Failed to fetch user summary for %s: %s", iso, exc)
                 summary = None
