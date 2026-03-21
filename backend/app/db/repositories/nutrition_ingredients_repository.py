@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -15,6 +17,20 @@ from app.db.models.nutrition import (
     NutritionRecipeComponent,
     NUTRIENT_DEFINITIONS,
 )
+
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def _tokenize(text: str) -> set[str]:
+    return set(_TOKEN_RE.findall(text.lower()))
+
+
+def _token_overlap_score(query_tokens: set[str], name_tokens: set[str]) -> float:
+    if not query_tokens or not name_tokens:
+        return 0.0
+    overlap = len(query_tokens & name_tokens)
+    return overlap / max(len(query_tokens), len(name_tokens))
 
 
 class NutritionIngredientsRepository:
@@ -68,6 +84,25 @@ class NutritionIngredientsRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def search_ingredients_fuzzy(
+        self, owner_user_id: int, query: str, *, limit: int = 5, min_score: float = 0.4
+    ) -> list[NutritionIngredient]:
+        stmt = (
+            select(NutritionIngredient)
+            .where(NutritionIngredient.owner_user_id == owner_user_id)
+            .options(selectinload(NutritionIngredient.profile))
+        )
+        result = await self.session.execute(stmt)
+        all_ingredients = list(result.scalars().all())
+        query_tokens = _tokenize(query)
+        scored = [
+            (_token_overlap_score(query_tokens, _tokenize(ing.name)), ing)
+            for ing in all_ingredients
+        ]
+        scored = [(score, ing) for score, ing in scored if score >= min_score]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [ing for _, ing in scored[:limit]]
 
     async def create_ingredient(
         self,
@@ -196,6 +231,32 @@ class NutritionRecipesRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def search_recipes_fuzzy(
+        self, owner_user_id: int, query: str, *, limit: int = 5, min_score: float = 0.3
+    ) -> list[NutritionRecipe]:
+        stmt = (
+            select(NutritionRecipe)
+            .where(NutritionRecipe.owner_user_id == owner_user_id)
+            .options(
+                selectinload(NutritionRecipe.components)
+                .selectinload(NutritionRecipeComponent.ingredient)
+                .selectinload(NutritionIngredient.profile),
+                selectinload(NutritionRecipe.components).selectinload(
+                    NutritionRecipeComponent.child_recipe
+                ),
+            )
+        )
+        result = await self.session.execute(stmt)
+        all_recipes = list(result.scalars().all())
+        query_tokens = _tokenize(query)
+        scored = [
+            (_token_overlap_score(query_tokens, _tokenize(r.name)), r)
+            for r in all_recipes
+        ]
+        scored = [(score, r) for score, r in scored if score >= min_score]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [r for _, r in scored[:limit]]
 
     async def create_recipe(
         self,

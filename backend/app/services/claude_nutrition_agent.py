@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 import time
 from collections import OrderedDict
@@ -33,12 +34,23 @@ from app.db.repositories.nutrition_ingredients_repository import (
 from app.db.repositories.nutrition_intake_repository import NutritionIntakeRepository
 from app.db.repositories.nutrition_suggestions_repository import NutritionSuggestionsRepository
 from app.schemas.llm_outputs import (
+    FuzzyMatchOutput,
     NutritionFoodExtractionOutput,
     NutrientProfileOutput,
     RecipeSuggestionOutput,
 )
 from app.services.nutrition_units import NutritionUnitNormalizer
 from app.utils.timezone import eastern_today
+
+
+_FUZZY_MATCH_PROMPT = (
+    "The user is trying to log a food called: \"{query}\"\n\n"
+    "Here are existing items in their database:\n{candidates}\n\n"
+    "Does one of these match what the user means? Consider that brand names, "
+    "parenthetical qualifiers, and word order differences are superficial — "
+    "\"coffee roll from dunkin\" matches \"Coffee Roll (Dunkin)\".\n\n"
+    "Return the id of the best match, or null if none are a reasonable match."
+)
 
 
 @dataclass
@@ -137,8 +149,8 @@ class NutritionAssistantAgent:
             quantity = raw_quantity if raw_quantity and raw_quantity > 0 else 1.0
             unit = (item.get("unit") or "serving").strip()
 
-            ingredient = await self.ingredients_repo.get_ingredient_by_name(user_id, name)
-            recipe = await self.ingredients_repo.get_recipe_by_name(user_id, name)
+            ingredient = await self._find_matching_ingredient(user_id, name)
+            recipe = await self._find_matching_recipe(user_id, name) if ingredient is None else None
 
             if ingredient:
                 normalized = self.unit_normalizer.normalize(
@@ -266,6 +278,54 @@ class NutritionAssistantAgent:
             return {"foods": [], "summary": None}
         return result.data.model_dump()
 
+    async def _find_matching_ingredient(
+        self, user_id: int, name: str
+    ) -> NutritionIngredient | None:
+        exact = await self.ingredients_repo.get_ingredient_by_name(user_id, name)
+        if exact is not None:
+            return exact
+        candidates = await self.ingredients_repo.search_ingredients_fuzzy(user_id, name, limit=5)
+        if not candidates:
+            return None
+        return await self._llm_rerank_match(
+            name, [(c.id, c.name) for c in candidates], {c.id: c for c in candidates}
+        )
+
+    async def _find_matching_recipe(
+        self, user_id: int, name: str
+    ) -> NutritionRecipe | None:
+        exact = await self.recipes_repo.get_recipe_by_name(user_id, name)
+        if exact is not None:
+            return exact
+        candidates = await self.recipes_repo.search_recipes_fuzzy(user_id, name, limit=5)
+        if not candidates:
+            return None
+        return await self._llm_rerank_match(
+            name, [(c.id, c.name) for c in candidates], {c.id: c for c in candidates}
+        )
+
+    async def _llm_rerank_match(
+        self,
+        query: str,
+        candidate_pairs: list[tuple[int, str]],
+        lookup: dict[int, Any],
+    ) -> Any | None:
+        candidate_text = "\n".join(f"- [id={cid}] {cname}" for cid, cname in candidate_pairs)
+        prompt = _FUZZY_MATCH_PROMPT.format(query=query, candidates=candidate_text)
+        try:
+            result = await self.client.generate_json(prompt, response_model=FuzzyMatchOutput)
+            match_id = result.data.match_id
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[nutrition] fuzzy rerank failed for '{}': {}", query, exc)
+            return None
+        if match_id is None:
+            logger.info("[nutrition] fuzzy rerank: no match for '{}'", query)
+            return None
+        matched = lookup.get(match_id)
+        if matched is not None:
+            logger.info("[nutrition] fuzzy rerank: '{}' → id={} ({})", query, match_id, result.data.reason)
+        return matched
+
     async def _fetch_nutrient_profile(
         self, food_name: str, unit: str
     ) -> dict[str, float | None]:
@@ -357,8 +417,9 @@ class NutritionAssistantAgent:
         default_unit = recipe_data.get("default_unit") or "serving"
         servings = self._safe_float(recipe_data.get("servings")) or 1.0
 
-        components: list[dict[str, Any]] = []
-
+        # Phase 1: resolve existing ingredients and identify missing ones
+        parsed_rows: list[dict[str, Any]] = []
+        missing_indices: list[int] = []
         for raw in ingredient_rows:
             ing_name = (raw.get("name") or "").strip()
             if not ing_name:
@@ -366,30 +427,46 @@ class NutritionAssistantAgent:
             raw_qty = self._safe_float(raw.get("quantity")) or 1.0
             unit = (raw.get("unit") or "100g").strip()
             qty = self._clamp_per_serving_qty(raw_qty, servings, unit)
-            ingredient = await self.ingredients_repo.get_ingredient_by_name(owner_user_id, ing_name)
-            created = False
+            ingredient = await self._find_matching_ingredient(owner_user_id, ing_name)
+            entry = {"name": ing_name, "unit": unit, "qty": qty, "ingredient": ingredient}
+            parsed_rows.append(entry)
             if ingredient is None:
-                nutrients = await self._fetch_nutrient_profile(ing_name, unit)
+                missing_indices.append(len(parsed_rows) - 1)
+
+        # Phase 2: fetch nutrient profiles for missing ingredients in parallel
+        if missing_indices:
+            fetch_tasks = [
+                self._fetch_nutrient_profile(parsed_rows[i]["name"], parsed_rows[i]["unit"])
+                for i in missing_indices
+            ]
+            nutrient_results = await asyncio.gather(*fetch_tasks)
+
+            # Phase 3: create ingredients sequentially (DB writes aren't concurrency-safe)
+            for idx, nutrients in zip(missing_indices, nutrient_results):
+                row = parsed_rows[idx]
                 ingredient = await self.ingredients_repo.create_ingredient(
-                    name=ing_name,
-                    default_unit=unit,
+                    name=row["name"],
+                    default_unit=row["unit"],
                     source="claude",
                     nutrient_values=nutrients,
                     owner_user_id=owner_user_id,
                     status=NutritionIngredientStatus.UNCONFIRMED,
                 )
-                created = True
-                logger.info(f"[nutrition] created ingredient={ing_name} id={ingredient.id}")
-            components.append(
-                {
-                    "ingredient_id": ingredient.id,
-                    "quantity": qty,
-                    "unit": unit,
-                    "created": created,
-                }
-            )
+                row["ingredient"] = ingredient
+                logger.info("[nutrition] created ingredient={} id={}", row["name"], ingredient.id)
 
-        recipe = await self.recipes_repo.get_recipe_by_name(owner_user_id, name)
+        components = [
+            {
+                "ingredient_id": row["ingredient"].id,
+                "quantity": row["qty"],
+                "unit": row["unit"],
+                "created": row["ingredient"] is not None,
+            }
+            for row in parsed_rows
+            if row["ingredient"] is not None
+        ]
+
+        recipe = await self._find_matching_recipe(owner_user_id, name)
         if recipe is None:
             recipe = await self.recipes_repo.create_recipe(
                 name=name,
@@ -400,7 +477,7 @@ class NutritionAssistantAgent:
                 components=components,
                 source="claude",
             )
-            logger.info(f"[nutrition] created recipe name={name} id={recipe.id}")
+            logger.info("[nutrition] created recipe name={} id={}", name, recipe.id)
             recipe = await self.recipes_repo.get_recipe(recipe.id, owner_user_id, load_components=True)
         return recipe
 

@@ -297,3 +297,8 @@ class IMessagePageMergeOutput(LLMOutputModel):
     title: str
     body: str
     reason: str
+
+
+class FuzzyMatchOutput(LLMOutputModel):
+    match_id: int | None = None
+    reason: str
