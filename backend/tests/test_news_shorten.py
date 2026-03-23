@@ -2,27 +2,18 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-# Load env so settings can resolve
-backend_root = Path(__file__).resolve().parent.parent
-load_dotenv(backend_root.parent / ".env", override=True)
-
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///test.db")
-os.environ.setdefault("SESSION_SECRET", "test-secret")
-
-from app.core.config import get_settings  # noqa: E402
+from app.core.config import get_settings
 get_settings.cache_clear()
 
-from app.core.auth import get_current_user  # noqa: E402
-from app.routers import news  # noqa: E402
+from app.core.auth import get_current_user
+from app.routers import news
 
 
 # ── Fixtures ──

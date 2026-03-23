@@ -6,15 +6,7 @@ Run:  python3 -m pytest tests/test_monet_nutrition_live.py -v -s
 """
 from __future__ import annotations
 
-import os
 import traceback
-
-# Env setup must happen before any app imports
-from pathlib import Path
-from dotenv import load_dotenv
-_env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-load_dotenv(_env_path, override=True)
-os.environ.setdefault("SESSION_SECRET", "test-secret")
 
 from app.core.config import get_settings
 get_settings.cache_clear()

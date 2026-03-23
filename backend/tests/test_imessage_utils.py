@@ -6,10 +6,6 @@ from pathlib import Path
 import sqlite3
 import sys
 
-backend_root = Path(__file__).resolve().parents[1]
-if str(backend_root) not in sys.path:
-    sys.path.insert(0, str(backend_root))
-
 from app.services.imessage_utils import (
     ProjectCatalogEntry,
     apple_timestamp_to_datetime,

@@ -2,22 +2,14 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
-from dotenv import load_dotenv
 
-backend_root = Path(__file__).resolve().parent.parent
-load_dotenv(backend_root.parent / ".env", override=True)
-
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///test.db")
-os.environ.setdefault("SESSION_SECRET", "test-secret")
-
-from app.core.config import get_settings  # noqa: E402
+from app.core.config import get_settings
 get_settings.cache_clear()
 
-from app.services.claude_nutrition_agent import NutritionAssistantAgent  # noqa: E402
+from app.services.claude_nutrition_agent import NutritionAssistantAgent
 
 
 # ── Unit Tests: _clamp_per_serving_qty ──
