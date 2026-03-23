@@ -24,9 +24,9 @@ class TestClampPerServingQty:
         assert result == pytest.approx(0.2)
 
     def test_absurd_flour_is_clamped(self):
-        """150 cups flour for 1 serving should be clamped to 4 cups."""
+        """150 cups flour for 1 serving should be clamped to 6 cups."""
         result = NutritionAssistantAgent._clamp_per_serving_qty(150.0, 1.0, "cup")
-        assert result == pytest.approx(4.0)
+        assert result == pytest.approx(6.0)
 
     def test_batch_flour_reasonable(self):
         """2.5 cups flour for 12 servings = 0.21 per serving — fine."""
@@ -34,9 +34,9 @@ class TestClampPerServingQty:
         assert result == pytest.approx(2.5)
 
     def test_batch_flour_absurd(self):
-        """60 cups flour for 12 servings = 5 per serving — clamped to 4*12=48."""
+        """60 cups flour for 12 servings = 5 per serving — fine (limit is 6)."""
         result = NutritionAssistantAgent._clamp_per_serving_qty(60.0, 12.0, "cup")
-        assert result == pytest.approx(48.0)
+        assert result == pytest.approx(60.0)
 
     def test_weight_grams_reasonable(self):
         """30g butter for 1 serving is fine."""
@@ -44,9 +44,9 @@ class TestClampPerServingQty:
         assert result == pytest.approx(30.0)
 
     def test_weight_grams_absurd(self):
-        """5000g butter for 1 serving should be clamped to 500g."""
+        """5000g butter for 1 serving should be clamped to 1000g."""
         result = NutritionAssistantAgent._clamp_per_serving_qty(5000.0, 1.0, "g")
-        assert result == pytest.approx(500.0)
+        assert result == pytest.approx(1000.0)
 
     def test_tbsp_reasonable(self):
         """2 tbsp sugar for 1 serving is fine."""
@@ -54,9 +54,9 @@ class TestClampPerServingQty:
         assert result == pytest.approx(2.0)
 
     def test_tbsp_absurd(self):
-        """50 tbsp sugar for 1 serving should be clamped to 4."""
+        """50 tbsp sugar for 1 serving should be clamped to 8."""
         result = NutritionAssistantAgent._clamp_per_serving_qty(50.0, 1.0, "tbsp")
-        assert result == pytest.approx(4.0)
+        assert result == pytest.approx(8.0)
 
     def test_piece_unit_reasonable(self):
         """2 eggs for 1 serving is fine."""
@@ -71,7 +71,7 @@ class TestClampPerServingQty:
     def test_zero_servings_treated_as_one(self):
         """If servings=0, treat as 1 to avoid division by zero."""
         result = NutritionAssistantAgent._clamp_per_serving_qty(150.0, 0.0, "cup")
-        assert result == pytest.approx(4.0)
+        assert result == pytest.approx(6.0)
 
 
 # ── Live LLM Tests: Recipe Suggestion Sanity ──

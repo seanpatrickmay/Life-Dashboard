@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -227,7 +228,7 @@ class _FakeService:
                         _property_value("project", "relation", 401, property_id=2),
                         _property_value("status", "select", "todo", property_id=3),
                         _property_value(
-                            "due", "date", "2026-03-10T14:00:00Z", property_id=4
+                            "due", "date", (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"), property_id=4
                         ),
                         _property_value("date_only", "checkbox", False, property_id=5),
                         _property_value(
@@ -246,7 +247,7 @@ class _FakeService:
                             "status", "select", "in-progress", property_id=3
                         ),
                         _property_value(
-                            "due", "date", "2026-03-07T09:00:00Z", property_id=4
+                            "due", "date", (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"), property_id=4
                         ),
                         _property_value("date_only", "checkbox", False, property_id=5),
                         _property_value(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock
@@ -29,7 +30,7 @@ from app.services.monet_assistant import (
 
 def _run(coro):
     """Helper to run async code in sync tests."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
@@ -173,7 +174,7 @@ class TestRouteMessage:
                 reply_mode="respond_and_call_tools",
                 narrative_intent="User wants to log food.",
                 tool_calls=[
-                    AssistantToolCallOutput(tool_id="nutrition.log_intake", args={"message": "ate a salad"}),
+                    AssistantToolCallOutput(tool_id="nutrition.log_intake", args_json=json.dumps({"message": "ate a salad"})),
                 ],
             )
         ))
@@ -188,7 +189,7 @@ class TestRouteMessage:
                 reply_mode="respond_and_call_tools",
                 narrative_intent="User wants to create a todo.",
                 tool_calls=[
-                    AssistantToolCallOutput(tool_id="todos.create_items", args={"message": "call dentist"}),
+                    AssistantToolCallOutput(tool_id="todos.create_items", args_json=json.dumps({"message": "call dentist"})),
                 ],
             )
         ))
@@ -202,8 +203,8 @@ class TestRouteMessage:
                 reply_mode="respond_and_call_tools",
                 narrative_intent="Log food and create reminder.",
                 tool_calls=[
-                    AssistantToolCallOutput(tool_id="nutrition.log_intake", args={"message": "banana"}),
-                    AssistantToolCallOutput(tool_id="todos.create_items", args={"message": "call bank"}),
+                    AssistantToolCallOutput(tool_id="nutrition.log_intake", args_json=json.dumps({"message": "banana"})),
+                    AssistantToolCallOutput(tool_id="todos.create_items", args_json=json.dumps({"message": "call bank"})),
                 ],
             )
         ))
@@ -222,8 +223,8 @@ class TestRouteMessage:
                 reply_mode="respond_and_call_tools",
                 narrative_intent="Intent.",
                 tool_calls=[
-                    AssistantToolCallOutput(tool_id="", args={}),
-                    AssistantToolCallOutput(tool_id="nutrition.log_intake", args={"message": "pizza"}),
+                    AssistantToolCallOutput(tool_id="", args_json="{}"),
+                    AssistantToolCallOutput(tool_id="nutrition.log_intake", args_json=json.dumps({"message": "pizza"})),
                 ],
             )
         ))
@@ -331,7 +332,7 @@ class TestRespondFullFlow:
             data=AssistantRouterOutput(
                 reply_mode="respond_and_call_tools",
                 narrative_intent="Log food.",
-                tool_calls=[AssistantToolCallOutput(tool_id="nutrition.log_intake", args={"message": "ate eggs"})],
+                tool_calls=[AssistantToolCallOutput(tool_id="nutrition.log_intake", args_json=json.dumps({"message": "ate eggs"}))],
             )
         ))
         mock_tool = AsyncMock()
@@ -376,7 +377,7 @@ class TestContextualActions:
             data=AssistantActionPlanOutput(actions=[
                 AssistantActionPlanItemOutput(
                     action_type="calendar.create_event",
-                    params={"summary": "Team standup", "start_time": "2026-03-20T10:00:00Z", "end_time": "2026-03-20T10:30:00Z"},
+                    params_json=json.dumps({"summary": "Team standup", "start_time": "2026-03-20T10:00:00Z", "end_time": "2026-03-20T10:30:00Z"}),
                 ),
             ])
         ))
@@ -400,7 +401,7 @@ class TestContextualActions:
     def test_preview_filters_wrong_page_actions(self, agent):
         agent.client.generate_json = AsyncMock(return_value=SimpleNamespace(
             data=AssistantActionPlanOutput(actions=[
-                AssistantActionPlanItemOutput(action_type="projects.create_todo", params={"text": "Buy milk"}),
+                AssistantActionPlanItemOutput(action_type="projects.create_todo", params_json=json.dumps({"text": "Buy milk"})),
             ])
         ))
         page_context = AssistantPageContext(page="calendar")
