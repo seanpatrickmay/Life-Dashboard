@@ -2,16 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from pathlib import Path
-import sys
 from types import MethodType
-
-from dotenv import load_dotenv
-
-backend_root = Path(__file__).resolve().parents[1]
-if str(backend_root) not in sys.path:
-    sys.path.insert(0, str(backend_root))
-load_dotenv(backend_root.parent / ".env")
 
 from app.db.models.todo import TodoItem
 from app.db.repositories.todo_repository import TodoRepository

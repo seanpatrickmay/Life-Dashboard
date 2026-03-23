@@ -3,24 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
-import sys
 from datetime import date, timedelta
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-backend_root = Path(__file__).resolve().parents[1]
-if str(backend_root) not in sys.path:
-    sys.path.insert(0, str(backend_root))
-
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///test.db")
-os.environ.setdefault("ADMIN_EMAIL", "test@example.com")
-os.environ.setdefault("FRONTEND_URL", "http://localhost:4173")
-os.environ.setdefault("GARMIN_PASSWORD_ENCRYPTION_KEY", "test-key")
-os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
-os.environ.setdefault("READINESS_ADMIN_TOKEN", "test-token")
 
 from app.services.insight_service import InsightService
 from app.schemas.llm_outputs import ReadinessInsightOutput
