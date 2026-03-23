@@ -621,6 +621,27 @@ class IMessageProcessingService:
         if used_fallback:
             run.llm_fallback_count += 1
         extraction_method = "heuristic_fallback" if used_fallback else "llm"
+
+        # Consolidate journal entries: merge N>1 into a single entry
+        journal_entries = raw_extracted.get("journal_entries") or []
+        if len(journal_entries) > 1:
+            sorted_entries = sorted(
+                journal_entries,
+                key=lambda e: e.get("source_occurred_at_utc") or e.get("occurred_at_utc") or "",
+            )
+            merged_text = " · ".join(
+                e.get("text", "").strip() for e in sorted_entries if e.get("text", "").strip()
+            )
+            all_msg_ids: list[int] = []
+            for e in sorted_entries:
+                for mid in e.get("source_message_ids") or []:
+                    if mid not in all_msg_ids:
+                        all_msg_ids.append(mid)
+            merged = {**sorted_entries[0], "text": merged_text, "source_message_ids": all_msg_ids}
+            if sorted_entries[0].get("reason"):
+                merged["reason"] = sorted_entries[0]["reason"]
+            raw_extracted["journal_entries"] = [merged]
+
         judged = await self._judge_actions(payload, raw_extracted)
 
         # Phase 1: collect LLM decisions using anonymized data
@@ -682,6 +703,31 @@ class IMessageProcessingService:
                     action=action,
                     project_id=project.id if project else None,
                     duplicate=duplicate,
+                    extraction_method=extraction_method,
+                )
+                continue
+            # Relevancy gate
+            cluster_actions = [
+                (at, (extracted.get(k) or [])[i])
+                for k, at, i, v, _ in decisions
+                if v.approved
+            ]
+            conversation_type = payload.get("conversation", {}).get("type")
+            relevance = self._score_action_relevance(
+                action_type=action_type,
+                action=action,
+                cluster_actions=cluster_actions,
+                conversation_type=conversation_type,
+            )
+            if relevance < 0.45:
+                await self._record_non_applied_action(
+                    run=run,
+                    cluster=cluster,
+                    action_type=action_type,
+                    action=action,
+                    status="rejected_low_relevance",
+                    project_id=project.id if project else None,
+                    judge_reasoning=f"Action relevance score {relevance:.2f} below threshold 0.45",
                     extraction_method=extraction_method,
                 )
                 continue
@@ -772,6 +818,27 @@ class IMessageProcessingService:
             time_zone=time_zone,
         )
         raw_extracted = await self._extract_actions(payload)
+
+        # Consolidate journal entries: merge N>1 into a single entry
+        journal_entries = raw_extracted.get("journal_entries") or []
+        if len(journal_entries) > 1:
+            sorted_entries = sorted(
+                journal_entries,
+                key=lambda e: e.get("source_occurred_at_utc") or e.get("occurred_at_utc") or "",
+            )
+            merged_text = " · ".join(
+                e.get("text", "").strip() for e in sorted_entries if e.get("text", "").strip()
+            )
+            all_msg_ids: list[int] = []
+            for e in sorted_entries:
+                for mid in e.get("source_message_ids") or []:
+                    if mid not in all_msg_ids:
+                        all_msg_ids.append(mid)
+            merged = {**sorted_entries[0], "text": merged_text, "source_message_ids": all_msg_ids}
+            if sorted_entries[0].get("reason"):
+                merged["reason"] = sorted_entries[0]["reason"]
+            raw_extracted["journal_entries"] = [merged]
+
         judged = await self._judge_actions(payload, raw_extracted)
 
         # Phase 1: collect LLM dedup decisions using anonymized data
@@ -810,9 +877,25 @@ class IMessageProcessingService:
 
         # Phase 3: build preview response with real names
         actions: list[dict[str, Any]] = []
+        preview_cluster_actions = [
+            (at, (extracted.get(k) or [])[i])
+            for k, at, i, v, _ in dedup_results
+            if v.approved
+        ]
+        preview_conversation_type = payload.get("conversation", {}).get("type")
         for key, action_type, index, verdict, duplicate in dedup_results:
             action = (extracted.get(key) or [])[index]
             final_approved = verdict.approved and not (duplicate and duplicate.is_duplicate)
+            # Relevancy gate
+            if final_approved:
+                relevance = self._score_action_relevance(
+                    action_type=action_type,
+                    action=action,
+                    cluster_actions=preview_cluster_actions,
+                    conversation_type=preview_conversation_type,
+                )
+                if relevance < 0.45:
+                    final_approved = False
             source_message_ids = self._normalize_action_source_message_ids(
                 cluster.messages,
                 action_type,
@@ -2435,6 +2518,59 @@ class IMessageProcessingService:
             approved=bool(items[index].get("approved")),
             reason=str(items[index].get("reason") or ""),
         )
+
+    def _score_action_relevance(
+        self,
+        *,
+        action_type: str,
+        action: dict[str, Any],
+        cluster_actions: list[tuple[str, dict]],
+        conversation_type: str | None = None,
+    ) -> float:
+        """Score action relevance 0.0-1.0. Deterministic, no LLM calls."""
+        text = str(action.get("text") or action.get("summary") or action.get("title") or "")
+
+        # --- Substance (0.4 weight) ---
+        if any(kw in text.lower() for kw in ("liked", "loved", "emphasized", "reacted", "laughed at")):
+            substance = 0.1
+        elif len(text) < 15 and not any(c.isupper() for c in text[1:]):
+            substance = 0.2
+        elif len(text) > 30:
+            substance = 0.8
+        else:
+            substance = 0.5
+
+        # --- Coherence (0.3 weight) ---
+        conv_type = conversation_type or "personal"
+        if action_type == "calendar.create" and conv_type == "business":
+            coherence = 0.1
+        elif action_type == "todo.create" and conv_type == "group":
+            is_from_me = action.get("is_from_me", True)
+            coherence = 0.7 if is_from_me else 0.2
+        elif action_type == "journal.entry" and len(text) < 40:
+            coherence = 0.3
+        else:
+            coherence = 0.6
+
+        # --- Novelty (0.3 weight) ---
+        same_type_count = sum(1 for at, _ in cluster_actions if at == action_type)
+        novelty = 1.0 / max(same_type_count, 1)
+
+        # Check text overlap with other actions of same type
+        for other_type, other_action in cluster_actions:
+            if other_type != action_type:
+                continue
+            other_text = str(other_action.get("text") or other_action.get("summary") or "")
+            if other_text == text:
+                continue
+            tokens_a = set(text.lower().split())
+            tokens_b = set(other_text.lower().split())
+            if tokens_a and tokens_b:
+                overlap = len(tokens_a & tokens_b) / max(len(tokens_a | tokens_b), 1)
+                if overlap > 0.6:
+                    novelty = min(novelty, 0.2)
+
+        return 0.4 * substance + 0.3 * coherence + 0.3 * novelty
 
     async def _record_non_applied_action(
         self,
