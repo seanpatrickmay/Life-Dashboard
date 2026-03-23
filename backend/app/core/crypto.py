@@ -29,7 +29,7 @@ def _get_calendar_fernet() -> Fernet:
 
 
 def current_garmin_encryption_key_id() -> str | None:
-    return settings.garmin_password_encryption_key_id or None
+    return settings.garmin_password_encryption_key_id
 
 
 def encrypt_secret(value: str) -> str:

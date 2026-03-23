@@ -114,29 +114,33 @@ async def _load_session_from_token(
     return session_obj
 
 
-async def get_current_session(
-    token: str | None = Cookie(None, alias=SESSION_COOKIE),
-) -> UserSession:
-    async with AsyncSessionLocal() as session:
-        session_obj = await _load_session_from_token(session, token, required=True)
-        assert session_obj is not None
-        if session_obj.user is not None:
-            session.expunge(session_obj.user)
-        session.expunge(session_obj)
-        return session_obj
-
-
-async def get_optional_current_session(
-    token: str | None = Cookie(None, alias=SESSION_COOKIE),
+async def _resolve_session(
+    token: str | None,
+    *,
+    required: bool,
 ) -> UserSession | None:
     async with AsyncSessionLocal() as session:
-        session_obj = await _load_session_from_token(session, token, required=False)
+        session_obj = await _load_session_from_token(session, token, required=required)
         if session_obj is None:
             return None
         if session_obj.user is not None:
             session.expunge(session_obj.user)
         session.expunge(session_obj)
         return session_obj
+
+
+async def get_current_session(
+    token: str | None = Cookie(None, alias=SESSION_COOKIE),
+) -> UserSession:
+    session_obj = await _resolve_session(token, required=True)
+    assert session_obj is not None
+    return session_obj
+
+
+async def get_optional_current_session(
+    token: str | None = Cookie(None, alias=SESSION_COOKIE),
+) -> UserSession | None:
+    return await _resolve_session(token, required=False)
 
 
 async def get_current_user(
