@@ -9,11 +9,11 @@ import re
 from typing import Iterable
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.imessage import IMessageContactIdentity
+from app.db.models.imessage import IMessageContactIdentity, IMessageParticipant
 from app.services.imessage_utils import normalize_message_text
 
 
@@ -119,6 +119,52 @@ class IMessageContactResolver:
         resolved_rows = await self._resolve_from_contacts(requested)
         await self._upsert_cache(user_id=user_id, rows=resolved_rows)
         return {row.identifier: row.resolved_name for row in resolved_rows}
+
+    async def refresh_unresolved_contacts(self, *, user_id: int) -> int:
+        """Re-resolve contacts where resolved_name is NULL.
+
+        Returns count of newly resolved contacts.
+        """
+        stmt = select(IMessageContactIdentity).where(
+            IMessageContactIdentity.user_id == user_id,
+            IMessageContactIdentity.resolved_name.is_(None),
+        )
+        result = await self.session.execute(stmt)
+        unresolved = result.scalars().all()
+
+        if not unresolved:
+            return 0
+
+        identifiers = [c.identifier for c in unresolved]
+        resolved_rows = await self._resolve_from_contacts(identifiers)
+        resolved_map = {row.identifier: row for row in resolved_rows if row.resolved_name}
+
+        now_utc = datetime.now(timezone.utc)
+        count = 0
+        for contact in unresolved:
+            match = resolved_map.get(contact.identifier)
+            if not match:
+                continue
+            contact.resolved_name = match.resolved_name
+            contact.last_resolved_at_utc = now_utc
+            count += 1
+
+            participant_stmt = (
+                update(IMessageParticipant)
+                .where(
+                    IMessageParticipant.user_id == user_id,
+                    IMessageParticipant.identifier == contact.identifier,
+                    or_(
+                        IMessageParticipant.display_name.is_(None),
+                        IMessageParticipant.display_name == contact.identifier,
+                    ),
+                )
+                .values(display_name=match.resolved_name)
+            )
+            await self.session.execute(participant_stmt)
+
+        await self.session.flush()
+        return count
 
     def _normalized_identifier_list(self, identifiers: Iterable[str | None]) -> list[str]:
         normalized: list[str] = []
