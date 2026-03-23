@@ -37,7 +37,9 @@ db_data/
 # Misc
 coverage.xml
 output/
+improvements/
 scripts/debug_output/
+.superpowers/
 
 # Playwright artifacts
 .playwright-cli/
