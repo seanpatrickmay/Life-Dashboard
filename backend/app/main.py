@@ -13,7 +13,6 @@ from app.routers import (
   auth,
   calendar,
   garmin,
-  imessage,
   insights,
   journal,
   metrics,
@@ -59,7 +58,6 @@ app.include_router(todos_batch.router, prefix=settings.api_prefix)
 app.include_router(projects.router, prefix=settings.api_prefix)
 app.include_router(workspace.router, prefix=settings.api_prefix)
 app.include_router(calendar.router, prefix=settings.api_prefix)
-app.include_router(imessage.router, prefix=settings.api_prefix)
 app.include_router(assistant.router, prefix=settings.api_prefix)
 app.include_router(journal.router, prefix=settings.api_prefix)
 
