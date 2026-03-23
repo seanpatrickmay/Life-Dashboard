@@ -79,10 +79,6 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(None, env="OPENAI_API_KEY")
     openai_model_name: str = Field("gpt-5-mini", env="OPENAI_MODEL_NAME")
 
-    # Scheduler / Admin
-    readiness_admin_token: str = Field(..., env="READINESS_ADMIN_TOKEN")
-    ingestion_hour_local: int = Field(5, env="INGESTION_HOUR_LOCAL")
-
     def _select_google_value(
         self,
         *,
