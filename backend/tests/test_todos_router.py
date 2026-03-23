@@ -83,14 +83,6 @@ class FakeCalendarLinkService:
         self.upsert_calls.append((todo.id, time_zone))
 
 
-class FakeTodoAccomplishmentAgent:
-    def __init__(self, session) -> None:  # noqa: ANN001
-        self.session = session
-
-    async def rewrite(self, text: str) -> str:
-        return f"Completed {text}"
-
-
 def build_client(session: FakeSession) -> TestClient:
     app = FastAPI()
     app.include_router(todos_router.router, prefix="/api")
@@ -112,7 +104,16 @@ def patch_router_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(todos_router, "ProjectRepository", FakeProjectRepository)
     monkeypatch.setattr(todos_router, "TodoProjectSuggestionRepository", FakeSuggestionRepository)
     monkeypatch.setattr(todos_router, "TodoCalendarLinkService", FakeCalendarLinkService)
-    monkeypatch.setattr(todos_router, "TodoAccomplishmentAgent", FakeTodoAccomplishmentAgent)
+    monkeypatch.setattr(
+        todos_router.AsyncAIService,
+        "get_cached_accomplishment",
+        staticmethod(lambda text: f"Completed {text}"),
+    )
+    monkeypatch.setattr(
+        todos_router.AsyncAIService,
+        "schedule_accomplishment_generation",
+        staticmethod(lambda todo_id, user_id, text: None),
+    )
     FakeCalendarLinkService.unlink_calls.clear()
     FakeCalendarLinkService.upsert_calls.clear()
     FakeTodoRepository.delete_calls.clear()

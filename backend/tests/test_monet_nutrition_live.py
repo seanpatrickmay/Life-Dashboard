@@ -22,6 +22,19 @@ get_settings.cache_clear()
 import pytest
 from loguru import logger
 
+pytestmark = pytest.mark.live_llm
+
+
+def _require_live_llm() -> None:
+    """Skip this test unless RUN_LIVE_LLM_TESTS=1 is set in the environment."""
+    if os.getenv("RUN_LIVE_LLM_TESTS") != "1":
+        pytest.skip("Set RUN_LIVE_LLM_TESTS=1 to run live LLM evaluations.")
+
+
+@pytest.fixture(autouse=True)
+def _gate_live_llm():
+    _require_live_llm()
+
 
 # ── Stage 1: OpenAI client basics ──────────────────────────────────────────
 
