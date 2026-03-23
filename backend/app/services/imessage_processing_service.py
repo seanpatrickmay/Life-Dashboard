@@ -186,6 +186,9 @@ def choose_best_todo_match(
     return best[1] if best[0] >= TODO_MATCH_THRESHOLD else None
 
 
+_CONTACT_LABELS = [f"Contact {chr(65 + i)}" for i in range(26)]
+
+
 class IMessageProcessingService:
     """Turns synced message clusters into durable dashboard artifacts."""
 
@@ -202,6 +205,106 @@ class IMessageProcessingService:
         except Exception as exc:  # noqa: BLE001
             logger.warning("[imessage] failed to initialize genai client: {}", exc)
             self.client = None
+
+    # ------------------------------------------------------------------
+    # Contact anonymization — real names never reach the LLM
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_name_map(payload: dict[str, Any]) -> dict[str, str]:
+        """Build a mapping of real contact names/handles → anonymous labels."""
+        seen: set[str] = set()
+        ordered: list[str] = []
+        conversation = payload.get("conversation") or {}
+
+        def _collect(value: str) -> None:
+            if value and value not in seen:
+                seen.add(value)
+                ordered.append(value)
+
+        _collect(conversation.get("name") or "")
+        for name in conversation.get("participants") or []:
+            _collect(name)
+        for handle in conversation.get("participant_handles") or []:
+            _collect(handle)
+        for msg in payload.get("messages") or []:
+            _collect(msg.get("sender") or "")
+            _collect(msg.get("sender_handle") or "")
+
+        name_map: dict[str, str] = {}
+        for index, real in enumerate(ordered):
+            label = _CONTACT_LABELS[index] if index < len(_CONTACT_LABELS) else f"Contact {index + 1}"
+            name_map[real] = label
+        return name_map
+
+    @staticmethod
+    def _anonymize_payload(payload: dict[str, Any], name_map: dict[str, str]) -> dict[str, Any]:
+        """Return a deep copy of *payload* with all real names replaced by aliases.
+
+        Uses JSON-escaped string replacement so that names containing
+        special characters (quotes, backslashes, unicode) are handled
+        correctly. Replaces longest names first to avoid partial-match
+        corruption.
+        """
+        if not name_map:
+            return payload
+
+        cleaned = {k: v for k, v in payload.items() if k != "_name_map"}
+        serialized = json.dumps(cleaned, ensure_ascii=False)
+        for real in sorted(name_map, key=len, reverse=True):
+            # JSON-escape both sides so we match how the name appears in the serialized string
+            escaped_real = json.dumps(real, ensure_ascii=False)[1:-1]
+            escaped_alias = json.dumps(name_map[real], ensure_ascii=False)[1:-1]
+            serialized = serialized.replace(escaped_real, escaped_alias)
+        result = json.loads(serialized)
+        if "conversation" in result:
+            result["conversation"]["chat_identifier"] = "anonymized"
+        return result
+
+    @staticmethod
+    def _deanonymize_text(text: str, name_map: dict[str, str]) -> str:
+        """Replace anonymous labels back to real names in extracted action text."""
+        alias_to_real = {v: k for k, v in name_map.items()}
+        for alias in sorted(alias_to_real, key=len, reverse=True):
+            text = text.replace(alias, alias_to_real[alias])
+        return text
+
+    @staticmethod
+    def _deanonymize_actions(extracted: dict[str, Any], name_map: dict[str, str]) -> dict[str, Any]:
+        """De-anonymize all string fields in extracted actions.
+
+        Iterates every string-valued field in each action dict rather
+        than maintaining a hardcoded field list, so new fields are
+        automatically covered.
+        """
+        if not name_map:
+            return extracted
+        alias_to_real = {v: k for k, v in name_map.items()}
+        sorted_aliases = sorted(alias_to_real, key=len, reverse=True)
+
+        def _replace_in_text(text: str) -> str:
+            for alias in sorted_aliases:
+                text = text.replace(alias, alias_to_real[alias])
+            return text
+
+        result = dict(extracted)
+        action_keys = [
+            k for k in result
+            if isinstance(result[k], list) and k != "project_inference"
+        ]
+        for key in action_keys:
+            actions = result.get(key)
+            if not actions:
+                continue
+            fixed = []
+            for action in actions:
+                action = dict(action)
+                for field, value in action.items():
+                    if isinstance(value, str):
+                        action[field] = _replace_in_text(value)
+                fixed.append(action)
+            result[key] = fixed
+        return result
 
     async def process_new_messages(
         self,
@@ -513,16 +616,14 @@ class IMessageProcessingService:
             project_catalog=project_catalog,
             time_zone=time_zone,
         )
-        extracted = await self._extract_actions(payload)
-        judged = await self._judge_actions(payload, extracted)
-        project = await self._resolve_project(
-            cluster=cluster,
-            extracted=extracted,
-            judged=judged,
-            user_id=run.user_id,
-        )
+        raw_extracted = await self._extract_actions(payload)
+        used_fallback = bool(raw_extracted.pop("_used_fallback", False))
+        if used_fallback:
+            run.llm_fallback_count += 1
+        extraction_method = "heuristic_fallback" if used_fallback else "llm"
+        judged = await self._judge_actions(payload, raw_extracted)
 
-        counts = {"applied": 0}
+        # Phase 1: collect LLM decisions using anonymized data
         action_specs = [
             ("todo_creates", "todo.create"),
             ("todo_completions", "todo.complete"),
@@ -531,83 +632,109 @@ class IMessageProcessingService:
             ("workspace_updates", "workspace.update"),
             ("nutrition_logs", "nutrition.log"),
         ]
+        decisions: list[tuple[str, str, int, JudgmentOutcome, DuplicateDecision | None]] = []
         for key, action_type in action_specs:
-            actions = extracted.get(key) or []
-            for index, action in enumerate(actions):
+            anon_actions = raw_extracted.get(key) or []
+            for index, anon_action in enumerate(anon_actions):
                 verdict = self._judge_item(judged, key, index)
-                if not verdict.approved:
-                    await self._record_non_applied_action(
-                        run=run,
+                duplicate = None
+                if verdict.approved:
+                    duplicate = await self._deduplicate_action(
+                        user_id=run.user_id,
                         cluster=cluster,
                         action_type=action_type,
-                        action=action,
-                        status="rejected",
-                        project_id=project.id if project else None,
-                        judge_reasoning=verdict.reason,
+                        action=anon_action,
+                        project_id=None,
+                        time_zone=time_zone,
                     )
-                    continue
-                duplicate = await self._deduplicate_action(
-                    user_id=run.user_id,
+                decisions.append((key, action_type, index, verdict, duplicate))
+
+        # Phase 2: de-anonymize + enrich now that all LLM calls are done
+        extracted = self._finalize_extracted_actions(payload, raw_extracted)
+        project = await self._resolve_project(
+            cluster=cluster,
+            extracted=extracted,
+            judged=judged,
+            user_id=run.user_id,
+        )
+
+        # Phase 3: apply with real (de-anonymized) names
+        counts = {"applied": 0}
+        for key, action_type, index, verdict, duplicate in decisions:
+            action = (extracted.get(key) or [])[index]
+            if not verdict.approved:
+                await self._record_non_applied_action(
+                    run=run,
+                    cluster=cluster,
+                    action_type=action_type,
+                    action=action,
+                    status="rejected",
+                    project_id=project.id if project else None,
+                    judge_reasoning=verdict.reason,
+                    extraction_method=extraction_method,
+                )
+                continue
+            if duplicate and duplicate.is_duplicate:
+                await self._record_duplicate_action(
+                    run=run,
                     cluster=cluster,
                     action_type=action_type,
                     action=action,
                     project_id=project.id if project else None,
-                    time_zone=time_zone,
+                    duplicate=duplicate,
+                    extraction_method=extraction_method,
                 )
-                if duplicate.is_duplicate:
-                    await self._record_duplicate_action(
-                        run=run,
-                        cluster=cluster,
-                        action_type=action_type,
-                        action=action,
-                        project_id=project.id if project else None,
-                        duplicate=duplicate,
-                    )
-                    continue
-                if key == "todo_creates":
-                    applied = await self._apply_todo_create(
-                        run=run,
-                        cluster=cluster,
-                        project_id=project.id if project else None,
-                        action=action,
-                        time_zone=time_zone,
-                    )
-                elif key == "todo_completions":
-                    applied = await self._apply_todo_completion(
-                        run=run,
-                        cluster=cluster,
-                        project_id=project.id if project else None,
-                        action=action,
-                        time_zone=time_zone,
-                    )
-                elif key == "calendar_creates":
-                    applied = await self._apply_calendar_create(
-                        run=run,
-                        cluster=cluster,
-                        project_id=project.id if project else None,
-                        action=action,
-                    )
-                elif key == "journal_entries":
-                    applied = await self._apply_journal_entry(
-                        run=run,
-                        cluster=cluster,
-                        action=action,
-                        time_zone=time_zone,
-                    )
-                elif key == "nutrition_logs":
-                    applied = await self._apply_nutrition_log(
-                        run=run,
-                        cluster=cluster,
-                        action=action,
-                    )
-                else:
-                    applied = await self._apply_workspace_update(
-                        run=run,
-                        cluster=cluster,
-                        project_id=project.id if project else None,
-                        action=action,
-                    )
-                counts["applied"] += int(applied)
+                continue
+            if key == "todo_creates":
+                applied = await self._apply_todo_create(
+                    run=run,
+                    cluster=cluster,
+                    project_id=project.id if project else None,
+                    action=action,
+                    time_zone=time_zone,
+                    extraction_method=extraction_method,
+                )
+            elif key == "todo_completions":
+                applied = await self._apply_todo_completion(
+                    run=run,
+                    cluster=cluster,
+                    project_id=project.id if project else None,
+                    action=action,
+                    time_zone=time_zone,
+                    extraction_method=extraction_method,
+                )
+            elif key == "calendar_creates":
+                applied = await self._apply_calendar_create(
+                    run=run,
+                    cluster=cluster,
+                    project_id=project.id if project else None,
+                    action=action,
+                    extraction_method=extraction_method,
+                )
+            elif key == "journal_entries":
+                applied = await self._apply_journal_entry(
+                    run=run,
+                    cluster=cluster,
+                    action=action,
+                    time_zone=time_zone,
+                    extraction_method=extraction_method,
+                )
+            elif key == "nutrition_logs":
+                applied = await self._apply_nutrition_log(
+                    run=run,
+                    cluster=cluster,
+                    action=action,
+                    extraction_method=extraction_method,
+                )
+            else:
+                applied = await self._apply_workspace_update(
+                    run=run,
+                    cluster=cluster,
+                    project_id=project.id if project else None,
+                    action=action,
+                    extraction_method=extraction_method,
+                )
+            counts["applied"] += int(applied)
 
         project_inference = extracted.get("project_inference") or {}
         project_verdict = judged.get("project_inference") or {}
@@ -644,16 +771,10 @@ class IMessageProcessingService:
             project_catalog=project_catalog,
             time_zone=time_zone,
         )
-        extracted = await self._extract_actions(payload)
-        judged = await self._judge_actions(payload, extracted)
-        project = await self._resolve_project(
-            cluster=cluster,
-            extracted=extracted,
-            judged=judged,
-            user_id=user_id,
-        )
+        raw_extracted = await self._extract_actions(payload)
+        judged = await self._judge_actions(payload, raw_extracted)
 
-        actions: list[dict[str, Any]] = []
+        # Phase 1: collect LLM dedup decisions using anonymized data
         action_specs = [
             ("todo_creates", "todo.create"),
             ("todo_completions", "todo.complete"),
@@ -662,51 +783,66 @@ class IMessageProcessingService:
             ("workspace_updates", "workspace.update"),
             ("nutrition_logs", "nutrition.log"),
         ]
+        dedup_results: list[tuple[str, str, int, JudgmentOutcome, DuplicateDecision | None]] = []
         for key, action_type in action_specs:
-            for index, action in enumerate(extracted.get(key) or []):
+            for index, anon_action in enumerate(raw_extracted.get(key) or []):
                 verdict = self._judge_item(judged, key, index)
                 duplicate = None
-                final_approved = verdict.approved
                 if verdict.approved:
                     duplicate = await self._deduplicate_action(
                         user_id=user_id,
                         cluster=cluster,
                         action_type=action_type,
-                        action=action,
-                        project_id=project.id if project else None,
+                        action=anon_action,
+                        project_id=None,
                         time_zone=time_zone,
                     )
-                    final_approved = not duplicate.is_duplicate
-                source_message_ids = self._normalize_action_source_message_ids(
-                    cluster.messages,
-                    action_type,
-                    action,
-                )
-                source_occurred_at_utc = self._action_source_occurred_at_utc(
-                    cluster=cluster,
-                    action_type=action_type,
-                    action=action,
-                    source_message_ids=source_message_ids,
-                )
-                actions.append(
-                    {
-                        "action_type": action_type,
-                        "approved": final_approved,
-                        "judge_approved": verdict.approved,
-                        "judge_reasoning": verdict.reason,
-                        "dedup_duplicate": bool(duplicate and duplicate.is_duplicate),
-                        "dedup_reason": duplicate.reason if duplicate else "",
-                        "matched_candidate_type": duplicate.matched_candidate_type if duplicate else None,
-                        "matched_candidate_id": duplicate.matched_candidate_id if duplicate else None,
-                        "project_id": project.id if project else None,
-                        "project_name": project.name if project else None,
-                        "source_message_ids": source_message_ids,
-                        "source_occurred_at_utc": (
-                            source_occurred_at_utc.isoformat() if source_occurred_at_utc else None
-                        ),
-                        "action": action,
-                    }
-                )
+                dedup_results.append((key, action_type, index, verdict, duplicate))
+
+        # Phase 2: de-anonymize + enrich now that all LLM calls are done
+        extracted = self._finalize_extracted_actions(payload, raw_extracted)
+        project = await self._resolve_project(
+            cluster=cluster,
+            extracted=extracted,
+            judged=judged,
+            user_id=user_id,
+        )
+
+        # Phase 3: build preview response with real names
+        actions: list[dict[str, Any]] = []
+        for key, action_type, index, verdict, duplicate in dedup_results:
+            action = (extracted.get(key) or [])[index]
+            final_approved = verdict.approved and not (duplicate and duplicate.is_duplicate)
+            source_message_ids = self._normalize_action_source_message_ids(
+                cluster.messages,
+                action_type,
+                action,
+            )
+            source_occurred_at_utc = self._action_source_occurred_at_utc(
+                cluster=cluster,
+                action_type=action_type,
+                action=action,
+                source_message_ids=source_message_ids,
+            )
+            actions.append(
+                {
+                    "action_type": action_type,
+                    "approved": final_approved,
+                    "judge_approved": verdict.approved,
+                    "judge_reasoning": verdict.reason,
+                    "dedup_duplicate": bool(duplicate and duplicate.is_duplicate),
+                    "dedup_reason": duplicate.reason if duplicate else "",
+                    "matched_candidate_type": duplicate.matched_candidate_type if duplicate else None,
+                    "matched_candidate_id": duplicate.matched_candidate_id if duplicate else None,
+                    "project_id": project.id if project else None,
+                    "project_name": project.name if project else None,
+                    "source_message_ids": source_message_ids,
+                    "source_occurred_at_utc": (
+                        source_occurred_at_utc.isoformat() if source_occurred_at_utc else None
+                    ),
+                    "action": action,
+                }
+            )
 
         project_inference = extracted.get("project_inference") or {}
         project_source_message_ids = self._normalize_action_source_message_ids(
@@ -796,7 +932,7 @@ class IMessageProcessingService:
             service_name=cluster.conversation.service_name,
             participant_count=len(participant_labels),
         )
-        return {
+        payload = {
             "conversation": {
                 "id": cluster.conversation.id,
                 "name": conversation_name,
@@ -837,6 +973,8 @@ class IMessageProcessingService:
                 for message in cluster.messages
             ],
         }
+        payload["_name_map"] = self._build_name_map(payload)
+        return payload
 
     def _message_id(self, message: Any) -> int | None:
         raw = message.get("id") if isinstance(message, dict) else getattr(message, "id", None)
@@ -1154,6 +1292,27 @@ class IMessageProcessingService:
             return DuplicateDecision(is_duplicate=False, reason="LLM deduplicator unavailable and no hard duplicate matched.")
 
         source_message_ids = self._normalize_action_source_message_ids(cluster.messages, action_type, action)
+        # Build a local name map for dedup anonymization
+        dedup_name_map: dict[str, str] = {}
+        dedup_seen: set[str] = set()
+        dedup_counter = 0
+        for participant in cluster.conversation.participants:
+            name = normalize_message_text(participant.display_name or participant.identifier)
+            if name and name not in dedup_seen:
+                dedup_seen.add(name)
+                label = _CONTACT_LABELS[dedup_counter] if dedup_counter < len(_CONTACT_LABELS) else f"Contact {dedup_counter + 1}"
+                dedup_name_map[name] = label
+                dedup_counter += 1
+            handle = normalize_message_text(participant.identifier)
+            if handle and handle not in dedup_seen:
+                dedup_seen.add(handle)
+                label = _CONTACT_LABELS[dedup_counter] if dedup_counter < len(_CONTACT_LABELS) else f"Contact {dedup_counter + 1}"
+                dedup_name_map[handle] = label
+                dedup_counter += 1
+
+        def _anon_sender(raw: str) -> str:
+            return dedup_name_map.get(raw, raw)
+
         dedup_payload = {
             "action_type": action_type,
             "proposed_action": action,
@@ -1163,8 +1322,8 @@ class IMessageProcessingService:
                     "id": message.id,
                     "sent_at_utc": message.sent_at_utc.isoformat() if message.sent_at_utc else None,
                     "is_from_me": message.is_from_me,
-                    "sender": message.sender_label or message.handle_identifier,
-                    "sender_handle": message.handle_identifier,
+                    "sender": _anon_sender(message.sender_label or message.handle_identifier),
+                    "sender_handle": _anon_sender(message.handle_identifier),
                     "text": message.text or "",
                 }
                 for message in cluster.messages
@@ -1179,7 +1338,7 @@ class IMessageProcessingService:
         try:
             parsed = await self._invoke_model(prompt, IMessageDedupDecisionOutput)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[imessage] dedup model failed: {}", exc)
+            logger.error("[llm-fallback] imessage._deduplicate_action failed: {}", exc)
             return DuplicateDecision(is_duplicate=False, reason="Deduplicator returned invalid JSON.")
         is_duplicate = parsed.is_duplicate
         matched_candidate_id = parsed.matched_candidate_id
@@ -1934,7 +2093,7 @@ class IMessageProcessingService:
         try:
             parsed = await self._invoke_model(prompt, IMessageProjectInferenceOutput)
         except Exception as exc:
-            logger.warning("[imessage] project inference LLM failed: {}", exc)
+            logger.error("[llm-fallback] imessage._extract_project_inference failed: {}", exc)
             return self._normalize_project_inference(payload_messages, {
                 "project_name": heuristic_guess.project_name,
                 "confidence": heuristic_guess.confidence,
@@ -1984,33 +2143,60 @@ class IMessageProcessingService:
         return True
 
     async def _extract_actions(self, payload: dict[str, Any]) -> dict[str, Any]:
-        heuristic = self._heuristic_extract(payload)
-        project_inference = await self._extract_project_inference(payload)
-        enriched_payload = {
-            **payload,
+        """Extract actions from a cluster payload.
+
+        Returns actions that are still *anonymized* — callers must call
+        ``_finalize_extracted_actions`` after all LLM calls (judgment, dedup,
+        page selection) are complete so that real names never reach any model.
+        """
+        name_map = payload.get("_name_map") or {}
+        anon_payload = self._anonymize_payload(payload, name_map)
+
+        heuristic = self._heuristic_extract(anon_payload)
+        project_inference = await self._extract_project_inference(anon_payload)
+        enriched_anon = {
+            **anon_payload,
             "project_inference": project_inference,
         }
         # Calendar and general extraction are independent — run in parallel
         calendar_extract, general_extract = await asyncio.gather(
-            self._extract_calendar_actions(enriched_payload),
-            self._extract_general_actions(enriched_payload, heuristic),
+            self._extract_calendar_actions(enriched_anon),
+            self._extract_general_actions(enriched_anon, heuristic),
         )
+
+        used_fallback = bool(
+            calendar_extract.get("_fallback") or general_extract.get("_fallback")
+        )
+        return {
+            "project_inference": project_inference,
+            "todo_creates": general_extract.get("todo_creates") or [],
+            "todo_completions": general_extract.get("todo_completions") or [],
+            "calendar_creates": calendar_extract.get("calendar_creates") or [],
+            "journal_entries": general_extract.get("journal_entries") or [],
+            "workspace_updates": general_extract.get("workspace_updates") or [],
+            "_used_fallback": used_fallback,
+        }
+
+    def _finalize_extracted_actions(
+        self, payload: dict[str, Any], extracted: dict[str, Any]
+    ) -> dict[str, Any]:
+        """De-anonymize and enrich extracted actions.  Call only after all LLM
+        work (judgment, dedup, page selection) is complete."""
+        name_map = payload.get("_name_map") or {}
+        deanon_extracted = self._deanonymize_actions(extracted, name_map)
+        enriched_payload = {
+            **payload,
+            "project_inference": extracted.get("project_inference") or {},
+        }
         return {
             **self._enrich_extracted_actions(
                 payload=enriched_payload,
-                extracted={
-                    "project_inference": project_inference,
-                    "todo_creates": general_extract.get("todo_creates") or [],
-                    "todo_completions": general_extract.get("todo_completions") or [],
-                    "calendar_creates": calendar_extract.get("calendar_creates") or [],
-                    "journal_entries": general_extract.get("journal_entries") or [],
-                    "workspace_updates": general_extract.get("workspace_updates") or [],
-                },
+                extracted=deanon_extracted,
             ),
         }
 
     async def _extract_calendar_actions(self, payload: dict[str, Any]) -> dict[str, Any]:
-        heuristic = {"calendar_creates": []}
+        heuristic = {"calendar_creates": [], "_fallback": True}
         if self.client is None:
             return heuristic
         payload_messages = list(payload.get("messages") or [])
@@ -2027,14 +2213,15 @@ class IMessageProcessingService:
         try:
             parsed = await self._invoke_model(prompt, IMessageCalendarExtractionOutput)
         except Exception as exc:
-            logger.warning("[imessage] calendar extraction LLM failed: {}", exc)
+            logger.error("[llm-fallback] imessage._extract_calendar_actions failed: {}", exc)
             return heuristic
         return {
             "calendar_creates": self._normalize_action_list(
                 payload_messages,
                 action_type="calendar.create",
                 actions=[item.model_dump() for item in parsed.calendar_creates],
-            )
+            ),
+            "_fallback": False,
         }
 
     async def _extract_general_actions(
@@ -2049,8 +2236,9 @@ class IMessageProcessingService:
             "workspace_updates": list(heuristic.get("workspace_updates") or []),
         }
         payload_messages = list(payload.get("messages") or [])
-        if self.client is None:
-            return {
+
+        def _fallback_result() -> dict[str, Any]:
+            result = {
                 key: self._normalize_action_list(
                     payload_messages,
                     action_type=action_type,
@@ -2063,6 +2251,11 @@ class IMessageProcessingService:
                     ("workspace_updates", "workspace.update"),
                 )
             }
+            result["_fallback"] = True
+            return result
+
+        if self.client is None:
+            return _fallback_result()
         prompt = IMESSAGE_ACTION_EXTRACTION_PROMPT.replace(
             "{payload_json}",
             json.dumps(payload, ensure_ascii=False),
@@ -2070,22 +2263,10 @@ class IMessageProcessingService:
         try:
             parsed = await self._invoke_model(prompt, IMessageActionExtractionOutput)
         except Exception as exc:
-            logger.warning("[imessage] action extraction LLM failed: {}", exc)
-            return {
-                key: self._normalize_action_list(
-                    payload_messages,
-                    action_type=action_type,
-                    actions=heuristic_general[key],
-                )
-                for key, action_type in (
-                    ("todo_creates", "todo.create"),
-                    ("todo_completions", "todo.complete"),
-                    ("journal_entries", "journal.entry"),
-                    ("workspace_updates", "workspace.update"),
-                )
-            }
+            logger.error("[llm-fallback] imessage._extract_general_actions failed: {}", exc)
+            return _fallback_result()
 
-        merged = {}
+        merged: dict[str, Any] = {}
         for key in ("todo_creates", "todo_completions", "journal_entries", "workspace_updates"):
             value = [item.model_dump() for item in getattr(parsed, key)]
             action_type = {
@@ -2099,14 +2280,17 @@ class IMessageProcessingService:
                 action_type=action_type,
                 actions=value if isinstance(value, list) else heuristic_general[key],
             )
+        merged["_fallback"] = False
         return merged
 
     async def _judge_actions(self, payload: dict[str, Any], extracted: dict[str, Any]) -> dict[str, Any]:
         heuristic = self._heuristic_judge(payload, extracted)
         if self.client is None:
             return heuristic
+        name_map = payload.get("_name_map") or {}
+        anon_payload = self._anonymize_payload(payload, name_map)
         judge_payload = {
-            "cluster": payload,
+            "cluster": anon_payload,
             "extracted": extracted,
         }
         prompt = IMESSAGE_ACTION_JUDGE_PROMPT.replace(
@@ -2116,7 +2300,7 @@ class IMessageProcessingService:
         try:
             parsed = await self._invoke_model(prompt, IMessageActionJudgeOutput)
         except Exception as exc:
-            logger.warning("[imessage] action judge LLM failed: {}", exc)
+            logger.error("[llm-fallback] imessage._judge_actions failed: {}", exc)
             return heuristic
         return parsed.model_dump()
 
@@ -2262,6 +2446,7 @@ class IMessageProcessingService:
         status: str,
         project_id: int | None,
         judge_reasoning: str,
+        extraction_method: str | None = None,
     ) -> None:
         fingerprint = stable_fingerprint(
             action_type,
@@ -2293,6 +2478,7 @@ class IMessageProcessingService:
             judge_reasoning=judge_reasoning,
             supporting_message_ids=source_message_ids,
             source_occurred_at_utc=source_occurred_at_utc,
+            extraction_method=extraction_method,
         )
 
     async def _record_duplicate_action(
@@ -2304,6 +2490,7 @@ class IMessageProcessingService:
         action: dict[str, Any],
         project_id: int | None,
         duplicate: DuplicateDecision,
+        extraction_method: str | None = None,
     ) -> None:
         fingerprint = stable_fingerprint(
             action_type,
@@ -2346,6 +2533,7 @@ class IMessageProcessingService:
             judge_reasoning=duplicate.reason,
             supporting_message_ids=source_message_ids,
             source_occurred_at_utc=source_occurred_at_utc,
+            extraction_method=extraction_method,
             applied_payload={
                 "matched_candidate_type": duplicate.matched_candidate_type,
                 "matched_candidate_id": duplicate.matched_candidate_id,
@@ -2361,6 +2549,7 @@ class IMessageProcessingService:
         project_id: int | None,
         action: dict[str, Any],
         time_zone: str,
+        extraction_method: str | None = None,
     ) -> bool:
         text = str(action.get("text") or "").strip()
         if not text:
@@ -2418,6 +2607,7 @@ class IMessageProcessingService:
             supporting_message_ids=source_message_ids,
             source_occurred_at_utc=created_at,
             applied=True,
+            extraction_method=extraction_method,
         )
         return True
 
@@ -2429,6 +2619,7 @@ class IMessageProcessingService:
         project_id: int | None,
         action: dict[str, Any],
         time_zone: str,
+        extraction_method: str | None = None,
     ) -> bool:
         target = await self._find_todo_to_complete(
             user_id=run.user_id,
@@ -2486,6 +2677,7 @@ class IMessageProcessingService:
             supporting_message_ids=source_message_ids,
             source_occurred_at_utc=completed_at_utc,
             applied=True,
+            extraction_method=extraction_method,
         )
         return True
 
@@ -2496,6 +2688,7 @@ class IMessageProcessingService:
         cluster: MessageCluster,
         project_id: int | None,
         action: dict[str, Any],
+        extraction_method: str | None = None,
     ) -> bool:
         summary = str(action.get("summary") or "").strip()
         start = self._parse_dt(action.get("start_time"))
@@ -2537,6 +2730,7 @@ class IMessageProcessingService:
                 judge_reasoning=str(exc),
                 supporting_message_ids=source_message_ids,
                 source_occurred_at_utc=source_occurred_at_utc,
+                extraction_method=extraction_method,
             )
             return False
         await self._record_action_audit(
@@ -2551,6 +2745,7 @@ class IMessageProcessingService:
             supporting_message_ids=source_message_ids,
             source_occurred_at_utc=source_occurred_at_utc,
             applied=True,
+            extraction_method=extraction_method,
         )
         return True
 
@@ -2561,6 +2756,7 @@ class IMessageProcessingService:
         cluster: MessageCluster,
         action: dict[str, Any],
         time_zone: str,
+        extraction_method: str | None = None,
     ) -> bool:
         text = str(action.get("text") or "").strip()
         if not text:
@@ -2598,6 +2794,7 @@ class IMessageProcessingService:
             supporting_message_ids=source_message_ids,
             source_occurred_at_utc=occurred_at_utc,
             applied=True,
+            extraction_method=extraction_method,
         )
         return True
 
@@ -2607,6 +2804,7 @@ class IMessageProcessingService:
         run: IMessageProcessingRun,
         cluster: MessageCluster,
         action: dict[str, Any],
+        extraction_method: str | None = None,
     ) -> bool:
         foods = action.get("foods")
         if not foods or not isinstance(foods, list):
@@ -2656,7 +2854,7 @@ class IMessageProcessingService:
                 cluster.conversation.id,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[imessage] nutrition log failed: {}", exc)
+            logger.error("[llm-fallback] imessage._apply_nutrition_log failed: {}", exc)
             await self._record_non_applied_action(
                 run=run,
                 cluster=cluster,
@@ -2678,6 +2876,7 @@ class IMessageProcessingService:
             supporting_message_ids=source_message_ids,
             source_occurred_at_utc=occurred_at_utc,
             applied=True,
+            extraction_method=extraction_method,
         )
         return True
 
@@ -2688,6 +2887,7 @@ class IMessageProcessingService:
         cluster: MessageCluster,
         project_id: int | None,
         action: dict[str, Any],
+        extraction_method: str | None = None,
     ) -> bool:
         if project_id is None:
             await self._record_non_applied_action(
@@ -2754,6 +2954,7 @@ class IMessageProcessingService:
                 judge_reasoning=str(selection.get("reason") or "Selection policy skipped the update."),
                 supporting_message_ids=source_message_ids,
                 source_occurred_at_utc=source_occurred_at_utc,
+                extraction_method=extraction_method,
             )
             return False
 
@@ -2797,6 +2998,7 @@ class IMessageProcessingService:
                     judge_reasoning="Selected page was not found in the project subtree.",
                     supporting_message_ids=source_message_ids,
                     source_occurred_at_utc=source_occurred_at_utc,
+                    extraction_method=extraction_method,
                 )
                 return False
             if self._is_engine_managed_page(target_page):
@@ -2831,6 +3033,7 @@ class IMessageProcessingService:
                         judge_reasoning="The target page already contains the proposed update text.",
                         supporting_message_ids=source_message_ids,
                         source_occurred_at_utc=source_occurred_at_utc,
+                        extraction_method=extraction_method,
                     )
                     return False
                 applied_payload = {
@@ -2853,6 +3056,7 @@ class IMessageProcessingService:
             supporting_message_ids=source_message_ids,
             source_occurred_at_utc=source_occurred_at_utc,
             applied=True,
+            extraction_method=extraction_method,
         )
         return True
 
@@ -2893,7 +3097,7 @@ class IMessageProcessingService:
         try:
             parsed = await self._invoke_model(prompt, IMessagePageSelectionOutput)
         except Exception as exc:
-            logger.warning("[imessage] page selection LLM failed: {}", exc)
+            logger.error("[llm-fallback] imessage._select_page_destination failed: {}", exc)
             return heuristic_match
         parsed_payload = parsed.model_dump()
         if parsed.mode in {"update_existing", "create_new", "skip"}:
@@ -2966,7 +3170,7 @@ class IMessageProcessingService:
         try:
             parsed = await self._invoke_model(prompt, IMessagePageMergeOutput)
         except Exception as exc:
-            logger.warning("[imessage] page merge LLM failed: {}", exc)
+            logger.error("[llm-fallback] imessage._merge_page_body failed: {}", exc)
             return heuristic
         if parsed.body:
             return {
@@ -3089,6 +3293,7 @@ class IMessageProcessingService:
         supporting_message_ids: list[int] | None = None,
         source_occurred_at_utc: datetime | None = None,
         applied: bool = False,
+        extraction_method: str | None = None,
     ) -> None:
         self.session.add(
             IMessageActionAudit(
@@ -3098,6 +3303,7 @@ class IMessageProcessingService:
                 action_type=action_type,
                 action_fingerprint=fingerprint,
                 status=status,
+                extraction_method=extraction_method,
                 project_id=project_id,
                 target_page_id=target_page_id,
                 target_todo_id=target_todo_id,

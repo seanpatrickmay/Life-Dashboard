@@ -274,7 +274,7 @@ class NutritionAssistantAgent:
                 response_model=NutritionFoodExtractionOutput,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[nutrition] food extraction failed: {}", exc)
+            logger.error("[llm-fallback] nutrition_agent._extract_food_mentions failed: {}", exc)
             return {"foods": [], "summary": None}
         return result.data.model_dump()
 
@@ -316,7 +316,7 @@ class NutritionAssistantAgent:
             result = await self.client.generate_json(prompt, response_model=FuzzyMatchOutput)
             match_id = result.data.match_id
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[nutrition] fuzzy rerank failed for '{}': {}", query, exc)
+            logger.error("[llm-fallback] nutrition_agent._llm_rerank_match failed for '{}': {}", query, exc)
             return None
         if match_id is None:
             logger.info("[nutrition] fuzzy rerank: no match for '{}'", query)
@@ -345,7 +345,7 @@ class NutritionAssistantAgent:
             )
             data = result.data.model_dump()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[nutrition] nutrient lookup failed for {}: {}", food_name, exc)
+            logger.error("[llm-fallback] nutrition_agent._fetch_nutrient_profile failed for {}: {}", food_name, exc)
             data = {}
         nutrients: dict[str, float | None] = {}
         for slug in NUTRIENT_COLUMN_BY_SLUG:
@@ -362,7 +362,7 @@ class NutritionAssistantAgent:
                 response_model=RecipeSuggestionOutput,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[nutrition] recipe suggestion failed for {}: {}", description, exc)
+            logger.error("[llm-fallback] nutrition_agent._suggest_recipe failed for {}: {}", description, exc)
             return None
         return {
             "recipe": result.data.recipe.model_dump(),
@@ -511,6 +511,7 @@ class NutritionAssistantAgent:
                         day=eastern_today(),
                         source=NutritionIntakeSource.CLAUDE,
                         claude_request_id=request_id,
+                        recipe_id=recipe.id,
                     )
                 elif comp.child_recipe:
                     await _expand(comp.child_recipe, effective_qty)

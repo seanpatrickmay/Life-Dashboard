@@ -138,7 +138,7 @@ class NutritionSuggestionAgent:
                 response_model=NutritionSuggestionOutput,
             )
         except Exception as exc:
-            logger.warning("[nutrition-suggestions] LLM failed: {}", exc)
+            logger.error("[llm-fallback] nutrition_suggestion_agent._generate failed: {}", exc)
             return []
 
         return [item.model_dump() for item in result.data.suggestions[:10]]

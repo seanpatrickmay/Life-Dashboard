@@ -147,6 +147,8 @@ class NutritionIntakeEntry(BaseModel):
     id: int
     ingredient_id: int
     ingredient_name: str | None = None
+    recipe_id: int | None = None
+    recipe_name: str | None = None
     quantity: float
     unit: str
     source: str

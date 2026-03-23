@@ -28,7 +28,7 @@ class RecipeSuggestionAgent:
                 response_model=RecipeSuggestionOutput,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[nutrition] recipe suggestion failed: {}", exc)
+            logger.error("[llm-fallback] claude_recipe_agent.suggest failed: {}", exc)
             return None
         text = result.text
         logger.info("[nutrition] recipe suggestion chars=%s", len(text))

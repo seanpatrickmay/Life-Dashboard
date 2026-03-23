@@ -2322,6 +2322,165 @@ def test_heuristic_extract_does_not_create_todo_for_other_persons_obligation() -
 # ---------------------------------------------------------------------------
 
 
+def test_heuristic_extract_flags_conversational_advice_but_pipeline_rejects_it() -> None:
+    """Rambling conversational text with 'need to' (e.g., 'you need to be
+    selfish sometimes') should NOT produce approved todos.  The heuristic may
+    fire on the 'need to' keyword, but the LLM pipeline must reject it because
+    the text is advice/venting, not an actionable obligation for the user.
+
+    Regression: the word 'predict' in a transcribed conversation triggered a
+    false-positive todo.
+    """
+    service = make_service(client=object())
+    conversational_text = (
+        "redict that i was going to I would feel bad doing it while you were "
+        "grieving And then i would feel bad doing it like right after you were "
+        "grieving thats ridiculous you need to be selfish sometimes can't waste "
+        "6 months of your life too short ur too short to do that 6 months "
+        "really doesn't feel that long to me"
+    )
+    payload = build_payload(
+        conversation_name="Aidan",
+        messages=(
+            MessageExample(conversational_text, is_from_me=False, sender="Aidan"),
+        ),
+        participants=("Aidan",),
+    )
+
+    # Stage 1: heuristic extraction picks up "need to be selfish" — expected
+    heuristic = service._heuristic_extract(payload)
+    assert len(heuristic["todo_creates"]) >= 1, (
+        "Heuristic should catch 'need to' pattern as a candidate"
+    )
+
+    # Stage 2+3: LLM extraction and judgment should both return empty todos.
+    # Mock the LLM to return empty (the correct behavior for this text).
+    extraction_response = json.dumps({
+        "todo_creates": [],
+        "todo_completions": [],
+        "journal_entries": [],
+        "workspace_updates": [],
+    })
+    judgment_response = json.dumps({
+        **empty_judgment(),
+    })
+    responses = [extraction_response, judgment_response]
+
+    async def fake_call_model(self, prompt: str) -> str:
+        return responses.pop(0)
+
+    service._call_model = MethodType(fake_call_model, service)
+    extracted = run(
+        service._extract_general_actions(
+            {**payload, "project_inference": payload["heuristic_project_guess"]},
+            heuristic,
+        )
+    )
+    assert extracted["todo_creates"] == [], (
+        "LLM extraction must return zero todos for conversational advice/venting"
+    )
+
+    full_extracted = {**empty_extracted(), **extracted}
+    judged = run(service._judge_actions(payload, full_extracted))
+    assert judged["todo_creates"] == [], (
+        "Judgment must not approve any todos from conversational text"
+    )
+
+
+def test_crisis_message_does_not_produce_any_actions() -> None:
+    """A message expressing suicidal ideation must NEVER produce todos,
+    calendar events, or any other extracted action.  The phrase
+    'I am going to kill myself tomorrow at midnight' contains patterns
+    that could naively match todo ('I am going to') or calendar
+    ('tomorrow at midnight') extraction.  The system must recognize this
+    as a crisis, not an obligation or appointment.
+    """
+    service = make_service(client=object())
+    payload = build_payload(
+        conversation_name="Close Friend",
+        messages=(
+            MessageExample(
+                "I am going to kill myself tomorrow at midnight",
+                is_from_me=False,
+                sender="Friend",
+            ),
+        ),
+        participants=("Friend",),
+    )
+
+    # Heuristic extraction — verify it does NOT produce todos or calendar
+    heuristic = service._heuristic_extract(payload)
+    # The heuristic regex should NOT match "going to kill myself" as a todo
+    for todo in heuristic.get("todo_creates") or []:
+        assert "kill" not in todo.get("text", "").lower(), (
+            f"Heuristic must not extract crisis language as a todo: {todo['text']}"
+        )
+
+    # LLM extraction — mock returning empty (correct behavior)
+    extraction_response = json.dumps({
+        "todo_creates": [],
+        "todo_completions": [],
+        "journal_entries": [],
+        "workspace_updates": [],
+    })
+    calendar_response = json.dumps({"calendar_creates": []})
+    # Judgment — mock returning empty
+    judgment_response = json.dumps({**empty_judgment()})
+    responses = [calendar_response, extraction_response, judgment_response]
+
+    async def fake_call_model(self, prompt: str) -> str:
+        return responses.pop(0)
+
+    service._call_model = MethodType(fake_call_model, service)
+    payload["_name_map"] = service._build_name_map(payload)
+    extracted = run(service._extract_actions(payload))
+
+    assert extracted["todo_creates"] == [], (
+        "Crisis message must not produce any todos"
+    )
+    assert extracted["calendar_creates"] == [], (
+        "Crisis message must not produce any calendar events"
+    )
+    assert extracted["journal_entries"] == [], (
+        "Crisis message must not produce any journal entries"
+    )
+
+    # Also verify judgment rejects if extraction somehow leaked through
+    # Simulate a hypothetical extraction that incorrectly created actions
+    leaked_extracted = {
+        **empty_extracted(),
+        "todo_creates": [
+            {"text": "Kill myself tomorrow at midnight", "reason": "Detected obligation."}
+        ],
+        "calendar_creates": [
+            {
+                "summary": "Kill myself",
+                "start_time": "2026-03-12T05:00:00Z",
+                "end_time": "2026-03-12T05:30:00Z",
+                "is_all_day": False,
+                "reason": "Detected time-specific event.",
+            }
+        ],
+    }
+    judgment_for_leak = json.dumps({
+        **empty_judgment(),
+        "todo_creates": [{"approved": False, "reason": "Crisis language, not an actionable obligation."}],
+        "calendar_creates": [{"approved": False, "reason": "Crisis language, not a real appointment."}],
+    })
+    responses.clear()
+    responses.append(judgment_for_leak)
+    judged = run(service._judge_actions(payload, leaked_extracted))
+
+    for todo in judged.get("todo_creates") or []:
+        assert not todo.get("approved"), (
+            "Judgment must reject todos derived from crisis messages"
+        )
+    for cal in judged.get("calendar_creates") or []:
+        assert not cal.get("approved"), (
+            "Judgment must reject calendar events derived from crisis messages"
+        )
+
+
 def test_heuristic_judge_rejects_completion_from_non_user() -> None:
     service = make_service()
     payload = build_payload(
@@ -2364,3 +2523,113 @@ def test_enrich_todo_text_replaces_handle_with_display_name() -> None:
     )
     assert "Owen" in result
     assert "+14155551234" not in result
+
+
+# ---------------------------------------------------------------------------
+# Contact anonymization: real names never reach the LLM
+# ---------------------------------------------------------------------------
+
+
+def test_anonymize_payload_replaces_names_and_handles() -> None:
+    """Verify that _anonymize_payload masks sender names, participants,
+    conversation names, and handles — but leaves message text intact."""
+    service = make_service()
+    payload = build_payload(
+        conversation_name="Aidan",
+        messages=(
+            MessageExample(
+                "Hey, can you pick up groceries tonight?",
+                is_from_me=False,
+                sender="Aidan",
+            ),
+            MessageExample("Sure thing", is_from_me=True, sender="Sean"),
+        ),
+        participants=("Aidan", "Sean"),
+    )
+    name_map = service._build_name_map(payload)
+    anon = service._anonymize_payload(payload, name_map)
+
+    # Real names must NOT appear in anonymized structured fields
+    conv = anon["conversation"]
+    assert "Aidan" not in conv["name"]
+    assert "Sean" not in str(conv["participants"])
+    for msg in anon["messages"]:
+        assert "Aidan" not in msg["sender"]
+        assert "Sean" not in msg["sender"]
+
+    # Message text must be preserved verbatim
+    assert anon["messages"][0]["text"] == "Hey, can you pick up groceries tonight?"
+    assert anon["messages"][1]["text"] == "Sure thing"
+
+    # Contact labels should follow the Contact A/B pattern
+    assert any("Contact" in p for p in conv["participants"])
+
+
+def test_deanonymize_actions_restores_real_names() -> None:
+    """Verify that aliases in LLM-returned action text are replaced with
+    real names before enrichment runs."""
+    service = make_service()
+    name_map = {"Aidan": "Contact A", "Sean": "Contact B"}
+    extracted = {
+        "project_inference": {"project_name": None, "confidence": 0.0, "reason": ""},
+        "todo_creates": [
+            {"text": "Send Contact A the permit packet", "reason": "Obligation."}
+        ],
+        "todo_completions": [],
+        "journal_entries": [
+            {"text": "Talked with Contact A about philosophy", "reason": "Discussion."}
+        ],
+        "calendar_creates": [
+            {"summary": "Meeting with Contact A", "reason": "Scheduled."}
+        ],
+        "workspace_updates": [],
+    }
+    result = service._deanonymize_actions(extracted, name_map)
+
+    assert "Aidan" in result["todo_creates"][0]["text"]
+    assert "Contact A" not in result["todo_creates"][0]["text"]
+    assert "Aidan" in result["journal_entries"][0]["text"]
+    assert "Aidan" in result["calendar_creates"][0]["summary"]
+
+
+def test_extract_actions_sends_anonymized_payload_to_llm() -> None:
+    """End-to-end: verify the serialized payload inside the LLM prompt uses
+    anonymized names, not real ones.  (The prompt *template* may contain
+    example names like 'Aidan' in static few-shot examples — we only check
+    the dynamic payload portion.)
+    """
+    service = make_service(client=object())
+    payload = build_payload(
+        conversation_name="Bartholomew",
+        messages=(
+            MessageExample(
+                "I need to send the signed permit packet tonight.",
+                is_from_me=True,
+                sender="Fitzwilliam",
+            ),
+        ),
+        participants=("Bartholomew", "Fitzwilliam"),
+    )
+    # Add _name_map as _build_cluster_payload would
+    payload["_name_map"] = service._build_name_map(payload)
+
+    captured_prompts: list[str] = []
+
+    async def fake_call_model(self, prompt: str) -> str:
+        captured_prompts.append(prompt)
+        return json.dumps({
+            "todo_creates": [],
+            "todo_completions": [],
+            "journal_entries": [],
+            "workspace_updates": [],
+        })
+
+    service._call_model = MethodType(fake_call_model, service)
+    run(service._extract_actions(payload))
+
+    # These unique names don't appear in any prompt template example,
+    # so finding them would prove a real leak.
+    for prompt in captured_prompts:
+        assert "Bartholomew" not in prompt, "Real name 'Bartholomew' leaked to LLM prompt"
+        assert "Fitzwilliam" not in prompt, "Real name 'Fitzwilliam' leaked to LLM prompt"
+        assert "Contact" in prompt, "Expected anonymized Contact labels in LLM prompt"

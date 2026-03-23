@@ -11,6 +11,7 @@ from app.db.models.nutrition import (
     NutritionIngredient,
     NutritionIntake,
     NutritionIntakeSource,
+    NutritionRecipe,
 )
 
 
@@ -28,10 +29,12 @@ class NutritionIntakeRepository:
         day: date,
         source: NutritionIntakeSource,
         claude_request_id: str | None = None,
+        recipe_id: int | None = None,
     ) -> NutritionIntake:
         intake = NutritionIntake(
             user_id=user_id,
             ingredient_id=food_id,
+            recipe_id=recipe_id,
             quantity=quantity,
             unit=unit,
             day_date=day,
@@ -74,7 +77,8 @@ class NutritionIntakeRepository:
             .options(
                 selectinload(NutritionIntake.ingredient).selectinload(
                     NutritionIngredient.profile
-                )
+                ),
+                selectinload(NutritionIntake.recipe),
             )
             .order_by(NutritionIntake.created_at.asc())
         )

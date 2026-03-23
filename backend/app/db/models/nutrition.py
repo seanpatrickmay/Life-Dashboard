@@ -401,6 +401,7 @@ class NutritionIntake(Base):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
     ingredient_id: Mapped[int] = mapped_column("food_id", ForeignKey("nutrition_foods.id"))
+    recipe_id: Mapped[int | None] = mapped_column(ForeignKey("nutrition_recipes.id"), nullable=True)
     quantity: Mapped[float]
     unit: Mapped[str] = mapped_column(String(64))
     day_date: Mapped[date] = mapped_column(Date)
@@ -414,6 +415,7 @@ class NutritionIntake(Base):
     claude_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     ingredient: Mapped[NutritionIngredient] = relationship(back_populates="intakes")
+    recipe: Mapped[NutritionRecipe | None] = relationship(foreign_keys=[recipe_id])
     user: Mapped["User"] = relationship(back_populates="nutrition_intakes")
 
 

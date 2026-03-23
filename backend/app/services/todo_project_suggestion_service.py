@@ -141,7 +141,7 @@ class TodoProjectSuggestionService:
         )
       return parsed
     except Exception as exc:  # noqa: BLE001
-      logger.warning("[todo-project] model suggestion failed: {}", exc)
+      logger.error("[llm-fallback] todo_project_suggestion_service._suggest_with_llm failed: {}", exc)
       return []
 
   def _heuristic_assignment(self, todo: TodoItem, project_names: list[str]) -> ProjectAssignment:

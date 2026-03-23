@@ -67,7 +67,7 @@ class TodoCalendarTitleAgent:
                 temperature=0.2,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[todos] calendar title fallback: {}", exc)
+            logger.error("[llm-fallback] todo_calendar_title_agent.build_title failed: {}", exc)
             return _fallback_title(normalized, self.max_length, self.max_details_length)
         title = _sanitize_title(result.data.title, self.max_length)
         details = _sanitize_details(

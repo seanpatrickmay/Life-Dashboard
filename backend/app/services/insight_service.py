@@ -56,7 +56,7 @@ class InsightService:
                 max_output_tokens=30000,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Readiness insight generation failed: {}. Storing placeholder.", exc)
+            logger.error("[llm-fallback] insight_service.refresh_daily_insight failed: {}", exc)
             narrative = fallback_narrative or (
                 "Insight generation is temporarily unavailable. "
                 "Your readiness score will return once connectivity is restored."

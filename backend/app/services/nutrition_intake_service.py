@@ -202,6 +202,8 @@ class NutritionIntakeService:
             "id": intake.id,
             "ingredient_id": intake.ingredient_id,
             "ingredient_name": intake.ingredient.name if intake.ingredient else None,
+            "recipe_id": intake.recipe_id,
+            "recipe_name": intake.recipe.name if intake.recipe else None,
             "quantity": intake.quantity,
             "unit": intake.unit,
             "source": intake.source.value,
@@ -230,6 +232,7 @@ class NutritionIntakeService:
                         unit=comp.unit,
                         day=day,
                         source=source,
+                        recipe_id=recipe.id,
                     )
                     created_entries.append(
                         {

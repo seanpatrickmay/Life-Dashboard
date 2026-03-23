@@ -331,11 +331,15 @@ class MonetAssistantAgent:
             {json.dumps(payload, ensure_ascii=False, default=_json_fallback)}
             """
         )
-        result = await self.client.generate_json(
-            prompt,
-            response_model=AssistantActionPlanOutput,
-            temperature=0.2,
-        )
+        try:
+            result = await self.client.generate_json(
+                prompt,
+                response_model=AssistantActionPlanOutput,
+                temperature=0.2,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("[llm-fallback] monet _plan_contextual_actions failed: {}", exc)
+            return []
         raw_actions = [
             {"action_type": item.action_type, "params": item.params}
             for item in result.data.actions
@@ -659,7 +663,7 @@ class MonetAssistantAgent:
                 temperature=0.2,
             )
         except Exception as exc:
-            logger.warning("[assistant] router failed ({}), defaulting to respond_only", exc)
+            logger.error("[llm-fallback] monet_assistant._route_message failed: {}", exc)
             return RouterDecision("respond_only", "Reply to the user directly.", [])
 
         reply_mode = result.data.reply_mode or "respond_only"
@@ -779,7 +783,11 @@ class MonetAssistantAgent:
             {json.dumps(summary, ensure_ascii=False, default=_json_fallback)}
             """
         )
-        result = await self.client.generate_text(prompt, temperature=0.2)
+        try:
+            result = await self.client.generate_text(prompt, temperature=0.2)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("[llm-fallback] monet _compose_reply failed: {}", exc)
+            return "Something went wrong generating my reply — give it another try in a moment."
         reply = result.text.strip()
         if not reply:
             reply = "I'm here whenever you're ready to continue."

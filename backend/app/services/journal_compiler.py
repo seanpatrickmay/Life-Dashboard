@@ -114,11 +114,26 @@ class JournalCompiler:
       time_zone=time_zone,
       entries_json=json.dumps(prompt_entries, ensure_ascii=False),
     )
-    result = await self.client.generate_json(
-      prompt,
-      response_model=JournalSourceTextItemsOutput,
-      temperature=0.2,
-    )
+    try:
+      result = await self.client.generate_json(
+        prompt,
+        response_model=JournalSourceTextItemsOutput,
+        temperature=0.2,
+      )
+    except Exception as exc:  # noqa: BLE001
+      logger.error("[llm-fallback] journal _extract_entries failed: {}", exc)
+      return [
+        JournalSourceItem(
+          source_id=f"{item['source_id']}::1",
+          text=str(item.get("text") or ""),
+          occurred_at_local=_parse_datetime(item.get("occurred_at_local")),
+          time_label=_clean_label(item.get("time_label")),
+          time_precision=_coerce_time_precision(item.get("time_precision")),
+          source_rank=3,
+        )
+        for item in entries
+        if item.get("source_id") and item.get("text")
+      ]
     extracted = [
       {"source_id": item.source_id, "text": item.text}
       for item in result.data.items
@@ -164,7 +179,7 @@ class JournalCompiler:
       if bound:
         return bound
     except Exception as exc:  # noqa: BLE001
-      logger.warning("[journal] calendar event extraction failed: {}", exc)
+      logger.error("[llm-fallback] journal _extract_calendar_events failed: {}", exc)
 
     fallback: list[JournalSourceItem] = []
     for event in events:
@@ -228,11 +243,15 @@ class JournalCompiler:
       todo_items_json=json.dumps(self._serialize_sources(todo_items), ensure_ascii=False),
       journal_items_json=json.dumps(self._serialize_sources(journal_items), ensure_ascii=False),
     )
-    result = await self.client.generate_json(
-      prompt,
-      response_model=JournalDedupedItemsOutput,
-      temperature=0.2,
-    )
+    try:
+      result = await self.client.generate_json(
+        prompt,
+        response_model=JournalDedupedItemsOutput,
+        temperature=0.2,
+      )
+    except Exception as exc:  # noqa: BLE001
+      logger.error("[llm-fallback] journal _dedupe_items failed: {}", exc)
+      return self._fallback_group_items(all_items)
     deduped = [
       {"source_ids": item.source_ids, "text": item.text}
       for item in result.data.items
@@ -251,11 +270,22 @@ class JournalCompiler:
         ensure_ascii=False,
       )
     )
-    result = await self.client.generate_json(
-      prompt,
-      response_model=JournalGroupingOutput,
-      temperature=0.2,
-    )
+    try:
+      result = await self.client.generate_json(
+        prompt,
+        response_model=JournalGroupingOutput,
+        temperature=0.2,
+      )
+    except Exception as exc:  # noqa: BLE001
+      logger.error("[llm-fallback] journal _group_items failed: {}", exc)
+      return {
+        "groups": [
+          {
+            "title": "Highlights",
+            "items": [self._serialize_group_item(item) for item in self._sort_group_items(items)],
+          }
+        ]
+      }
     groups = [
       {"title": group.title, "item_ids": group.item_ids}
       for group in result.data.groups

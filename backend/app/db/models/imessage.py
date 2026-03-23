@@ -143,6 +143,7 @@ class IMessageProcessingRun(Base):
     messages_considered: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     clusters_processed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     actions_applied: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    llm_fallback_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="imessage_processing_runs")
@@ -176,6 +177,7 @@ class IMessageActionAudit(Base):
     target_journal_entry_id: Mapped[int | None] = mapped_column(
         ForeignKey("journal_entry.id"), nullable=True
     )
+    extraction_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     supporting_message_ids_json: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
     extracted_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     applied_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)

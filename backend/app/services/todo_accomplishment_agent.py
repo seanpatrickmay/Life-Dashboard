@@ -25,7 +25,7 @@ class TodoAccomplishmentAgent:
         temperature=0.2,
       )
     except Exception as exc:  # noqa: BLE001
-      logger.warning("[journal] fallback accomplishment text for todo: {}", exc)
+      logger.error("[llm-fallback] todo_accomplishment_agent.rewrite failed: {}", exc)
       return self._fallback(todo_text)
     text = result.data.text.strip()
     return text or self._fallback(todo_text)

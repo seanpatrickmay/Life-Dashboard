@@ -116,7 +116,7 @@ class TodoAssistantAgent:
         response_model=TodoExtractionOutput,
       )
     except Exception as exc:  # noqa: BLE001
-      logger.warning("[todo-assistant] extraction failed: {}", exc)
+      logger.error("[llm-fallback] claude_todo_agent._extract_todos failed: {}", exc)
       return {"items": [], "summary": None}
     return result.data.model_dump()
 

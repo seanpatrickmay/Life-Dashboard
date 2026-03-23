@@ -394,6 +394,8 @@ export type NutritionMenuResponse = {
     id: number;
     ingredient_id: number;
     ingredient_name?: string | null;
+    recipe_id?: number | null;
+    recipe_name?: string | null;
     quantity: number;
     unit: string;
     source: string;

@@ -60,6 +60,7 @@ class IMessageActionAuditResponse(BaseModel):
     action_type: str
     action_fingerprint: str
     status: str
+    extraction_method: str | None = None
     project_id: int | None = None
     target_page_id: int | None = None
     target_todo_id: int | None = None
@@ -99,6 +100,7 @@ class IMessageProcessingRunResponse(BaseModel):
     messages_considered: int
     clusters_processed: int
     actions_applied: int
+    llm_fallback_count: int = 0
     error_message: str | None = None
 
     class Config:
