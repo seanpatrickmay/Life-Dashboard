@@ -36,6 +36,7 @@ _ENV_DEFAULTS: dict[str, str] = {
     "GARMIN_PASSWORD_ENCRYPTION_KEY": "test-key",
     "OPENAI_API_KEY": "test-openai-key",
     "READINESS_ADMIN_TOKEN": "test-token",
+    "SESSION_SECRET": "test-secret",
 }
 
 for key, value in _ENV_DEFAULTS.items():

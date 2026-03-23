@@ -5,20 +5,11 @@ import os
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-import sys
 from types import MethodType, SimpleNamespace
 from typing import Any, Callable
 
 import pytest
-from dotenv import load_dotenv
 
-backend_root = Path(__file__).resolve().parents[1]
-if str(backend_root) not in sys.path:
-    sys.path.insert(0, str(backend_root))
-load_dotenv(backend_root.parent / ".env", override=True)
-
-# Bust the lru_cache so Settings picks up the freshly loaded env vars.
 from app.core.config import get_settings
 get_settings.cache_clear()
 

@@ -3,24 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
-
-backend_root = Path(__file__).resolve().parents[1]
-if str(backend_root) not in sys.path:
-    sys.path.insert(0, str(backend_root))
-
-os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost/life_dashboard_test")
-os.environ.setdefault("ADMIN_EMAIL", "admin@example.com")
-os.environ.setdefault("FRONTEND_URL", "http://localhost:4173")
-os.environ.setdefault("GARMIN_PASSWORD_ENCRYPTION_KEY", "test-key")
-os.environ.setdefault("READINESS_ADMIN_TOKEN", "test-token")
 
 from app.schemas.assistant import AssistantAction, AssistantPageContext, AssistantSelectedEntity
 from app.schemas.llm_outputs import (

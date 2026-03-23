@@ -1,20 +1,11 @@
 """Tests for Garmin fetch optimizations: range building, change detection, concurrency."""
 from __future__ import annotations
 
-import os
 import threading
 import time
 from datetime import date, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///")
-os.environ.setdefault("SESSION_SECRET", "test")
-os.environ.setdefault("ADMIN_EMAIL", "test@test.com")
-os.environ.setdefault("FRONTEND_URL", "http://localhost")
-os.environ.setdefault("GARMIN_PASSWORD_ENCRYPTION_KEY", "dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXQ=")
-os.environ.setdefault("READINESS_ADMIN_TOKEN", "test-token")
-
-from pydantic import ConfigDict
 from app.core.config import get_settings
 get_settings.cache_clear()
 

@@ -3,17 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 import importlib.util
-import sys
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-backend_root = Path(__file__).resolve().parents[1]
-if str(backend_root) not in sys.path:
-    sys.path.insert(0, str(backend_root))
-
-time_module_path = backend_root / "app" / "routers" / "time.py"
+time_module_path = Path(__file__).resolve().parents[1] / "app" / "routers" / "time.py"
 spec = importlib.util.spec_from_file_location("time_router", time_module_path)
 assert spec and spec.loader
 time_router = importlib.util.module_from_spec(spec)
