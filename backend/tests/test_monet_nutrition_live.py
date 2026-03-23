@@ -6,6 +6,7 @@ Run:  python3 -m pytest tests/test_monet_nutrition_live.py -v -s
 """
 from __future__ import annotations
 
+import os
 import traceback
 
 from app.core.config import get_settings
