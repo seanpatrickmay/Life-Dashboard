@@ -142,6 +142,15 @@ _ARCHIVE_STRING_TOKENS = {
 }
 _REACTION_ASSOCIATED_TYPES = {2000, 2001, 2002, 2003, 2004, 2005, 3000}
 
+_TOPIC_KEYWORDS: dict[str, list[str]] = {
+    "travel": ["flight", "airport", "boarding", "travel", "hotel", "airbnb", "uber", "lyft", "luggage", "passport", "visa", "hike", "hiking", "trail"],
+    "work": ["meeting", "standup", "sprint", "deploy", "pr", "merge", "deadline", "presentation", "slides"],
+    "social": ["dinner", "game night", "party", "drinks", "bar", "restaurant", "hangout", "brunch"],
+    "finance": ["venmo", "splitwise", "rent", "invoice", "payment", "budget", "401k", "prenup"],
+    "health": ["gym", "workout", "doctor", "appointment", "prescription", "therapy"],
+    "academic": ["class", "lecture", "professor", "homework", "exam", "assignment", "thesis", "lab"],
+}
+
 
 @dataclass
 class ProjectGuess:
@@ -356,6 +365,34 @@ def classify_conversation_type(
         return "group"
 
     return "personal"
+
+
+def infer_topic_hints(messages: Sequence[Any]) -> list[str]:
+    """Infer conversation topic hints from message texts.
+
+    Returns up to 3 topic tags ordered by frequency. These are advisory
+    context for the LLM, not hard classifications.
+    """
+    combined = " ".join(
+        str(getattr(m, "text", None) or getattr(m, "normalized_text", None) or "").lower()
+        for m in messages
+    )
+    # Also handle dict messages (from payloads)
+    if not combined.strip():
+        combined = " ".join(
+            str(m.get("text", "")).lower()
+            for m in messages
+            if isinstance(m, dict)
+        )
+
+    scores: dict[str, int] = {}
+    for topic, keywords in _TOPIC_KEYWORDS.items():
+        count = sum(1 for kw in keywords if kw in combined)
+        if count > 0:
+            scores[topic] = count
+
+    # Return top 3 by count
+    return [t for t, _ in sorted(scores.items(), key=lambda x: -x[1])[:3]]
 
 
 def should_split_message_cluster(
