@@ -38,8 +38,11 @@ ruff = "^0.4.0"
 pytest = "^8.3"
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
 markers = [
-  "live_llm: runs real LLM evaluations against the iMessage extractor and judge prompts",
+  "live_llm: requires OpenAI API key and runs real LLM calls",
+  "slow: slow running tests",
 ]
 
 [build-system]

@@ -4,19 +4,11 @@ import asyncio
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-import sys
 from types import MethodType, SimpleNamespace
 from typing import Any
 
 import pytest
-from dotenv import load_dotenv
 from pydantic import BaseModel
-
-backend_root = Path(__file__).resolve().parents[1]
-if str(backend_root) not in sys.path:
-    sys.path.insert(0, str(backend_root))
-load_dotenv(backend_root.parent / ".env")
 
 from app.services.imessage_processing_service import (
     DuplicateDecision,

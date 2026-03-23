@@ -3,13 +3,8 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from pathlib import Path
-import sys
 
 import pytest
-
-backend_root = Path(__file__).resolve().parents[1]
-if str(backend_root) not in sys.path:
-    sys.path.insert(0, str(backend_root))
 
 from app.services.imessage_contact_service import (
     IMessageContactResolver,

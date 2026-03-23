@@ -1,19 +1,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from pathlib import Path
-import sys
 from types import SimpleNamespace
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
-
-backend_root = Path(__file__).resolve().parents[1]
-if str(backend_root) not in sys.path:
-    sys.path.insert(0, str(backend_root))
-load_dotenv(backend_root.parent / ".env")
 
 from app.core.auth import get_current_user
 from app.db.models.todo import TodoItem
