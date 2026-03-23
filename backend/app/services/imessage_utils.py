@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from difflib import SequenceMatcher
 import hashlib
 import json
 import re
@@ -31,6 +32,8 @@ _LOW_SIGNAL_TEXT_RE = re.compile(
     re.IGNORECASE,
 )
 _SHORT_CODE_RE = re.compile(r"^\d{4,6}$")
+_EMOJI_RE = re.compile(r"[\U0001F300-\U0001FAFF\U00002702-\U000027B0]+")
+_CHAT_FILLER_WORDS = {"project", "group", "chat", "team"}
 _STOPWORDS = {
     "a",
     "an",
@@ -406,6 +409,13 @@ def should_split_message_cluster(
     return False, "same_topic"
 
 
+def _normalize_for_fuzzy_match(text: str) -> str:
+    """Strip emoji, common filler words, and normalize for fuzzy comparison."""
+    cleaned = _EMOJI_RE.sub(" ", text)
+    tokens = _TOKEN_RE.findall(cleaned.lower())
+    return " ".join(t for t in tokens if t not in _CHAT_FILLER_WORDS)
+
+
 def infer_project_candidates(
     *,
     project_catalog: Sequence[ProjectCatalogEntry],
@@ -429,6 +439,18 @@ def infer_project_candidates(
 
         score = 0.0
         reasons: list[str] = []
+
+        if conversation_name:
+            norm_conv = _normalize_for_fuzzy_match(conversation_name)
+            norm_proj = _normalize_for_fuzzy_match(entry.name)
+            if norm_conv and norm_proj:
+                ratio = SequenceMatcher(None, norm_conv, norm_proj).ratio()
+                if ratio > 0.55:
+                    score = max(score, 0.90)
+                    reasons.append(
+                        f"conversation display name fuzzy-matches project '{entry.name}' (ratio={ratio:.2f})"
+                    )
+
         normalized_affinity = max(0.0, min(1.0, entry.conversation_affinity))
         if normalized_affinity > 0:
             score += 0.46 * normalized_affinity
