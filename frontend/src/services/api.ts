@@ -315,21 +315,6 @@ export type NutritionRecipe = {
   derived_nutrients: Record<string, number | null>;
 };
 
-export type RecipeSuggestion = {
-  recipe: {
-    name: string;
-    default_unit: string;
-    servings: number;
-    status?: IngredientStatus;
-    components?: RecipeComponent[];
-  };
-  ingredients: Array<{
-    name: string;
-    quantity: number;
-    unit: string;
-  }>;
-};
-
 export type NutritionGoal = {
   slug: string;
   display_name: string;
@@ -478,11 +463,6 @@ export const updateNutritionRecipe = async (id: number, payload: Partial<Nutriti
   return data as NutritionRecipe;
 };
 
-export const suggestNutritionRecipe = async (description: string): Promise<RecipeSuggestion> => {
-  const { data } = await api.post('/api/nutrition/recipes/suggest', null, { params: { description } });
-  return data as RecipeSuggestion;
-};
-
 export const fetchNutritionGoals = async (): Promise<NutritionGoal[]> => {
   if (isGuestMode()) {
     return getGuestNutritionGoals();
@@ -497,11 +477,6 @@ export const updateNutritionGoal = async (slug: string, goal: number) => {
   }
   const { data } = await api.put(`/api/nutrition/goals/${slug}`, { goal });
   return data as NutritionGoal;
-};
-
-export const logManualIntake = async (payload: { ingredient_id?: number; recipe_id?: number; quantity: number; unit: string; day?: string }) => {
-  const { data } = await api.post('/api/nutrition/intake/manual', payload);
-  return data as { id?: number } & typeof payload;
 };
 
 export const fetchNutritionDailySummary = async (day?: string): Promise<NutritionSummary> => {
@@ -683,53 +658,6 @@ export const fetchProjectBoard = async (): Promise<ProjectBoardResponse> => {
   }
   const { data } = await api.get('/api/projects/board');
   return data as ProjectBoardResponse;
-};
-
-export const fetchProjectNotes = async (
-  project_id: number,
-  options?: { include_archived?: boolean }
-): Promise<ProjectNote[]> => {
-  if (isGuestMode()) {
-    return [];
-  }
-  const { data } = await api.get(`/api/projects/${project_id}/notes`, {
-    params: { include_archived: options?.include_archived ?? false }
-  });
-  return data as ProjectNote[];
-};
-
-export const createProjectNote = async (
-  project_id: number,
-  payload: {
-    title: string;
-    body_markdown?: string;
-    tags?: string[];
-    pinned?: boolean;
-  }
-): Promise<ProjectNote> => {
-  if (isGuestMode()) {
-    throw new Error('Project notes are unavailable in guest mode.');
-  }
-  const { data } = await api.post(`/api/projects/${project_id}/notes`, payload);
-  return data as ProjectNote;
-};
-
-export const updateProjectNote = async (
-  project_id: number,
-  note_id: number,
-  payload: {
-    title?: string;
-    body_markdown?: string;
-    tags?: string[];
-    archived?: boolean;
-    pinned?: boolean;
-  }
-): Promise<ProjectNote> => {
-  if (isGuestMode()) {
-    throw new Error('Project notes are unavailable in guest mode.');
-  }
-  const { data } = await api.patch(`/api/projects/${project_id}/notes/${note_id}`, payload);
-  return data as ProjectNote;
 };
 
 export const createProject = async (payload: {
@@ -962,19 +890,6 @@ export const fetchCalendarEvents = async (start: string, end: string): Promise<C
   return data;
 };
 
-export const createCalendarEvent = async (payload: {
-  summary: string;
-  start_time: string;
-  end_time: string;
-  is_all_day?: boolean;
-}): Promise<CalendarEvent> => {
-  if (isGuestMode()) {
-    throw new Error('Calendar editing is unavailable in guest mode.');
-  }
-  const { data } = await api.post('/api/calendar/events', payload);
-  return data as CalendarEvent;
-};
-
 export const updateCalendarEvent = async (
   id: number,
   payload: { summary?: string; start_time?: string; end_time?: string; scope?: string; is_all_day?: boolean }
@@ -1147,19 +1062,6 @@ export type ScalingRule = {
 export type ScalingRuleList = {
   rules: ScalingRule[];
   manual_rule_slug?: string | null;
-};
-
-export const fetchScalingRules = async (): Promise<ScalingRuleList> => {
-  const { data } = await api.get('/api/user/scaling-rules');
-  return data;
-};
-
-export const enableScalingRule = async (slug: string) => {
-  await api.post(`/api/user/scaling-rules/${slug}`);
-};
-
-export const disableScalingRule = async (slug: string) => {
-  await api.delete(`/api/user/scaling-rules/${slug}`);
 };
 
 export type UserProfileData = {
