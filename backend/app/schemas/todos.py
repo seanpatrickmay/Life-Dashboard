@@ -53,7 +53,3 @@ class TodoAssistantMessageResponse(BaseModel):
   reply: str
   created_items: list[TodoItemResponse]
   raw_payload: dict[str, Any] | None = None
-
-
-ClaudeTodoMessageRequest = TodoAssistantMessageRequest
-ClaudeTodoMessageResponse = TodoAssistantMessageResponse

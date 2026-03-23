@@ -4,7 +4,6 @@ from . import (
   auth,
   calendar,
   garmin,
-  imessage,
   insights,
   journal,
   metrics,

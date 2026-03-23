@@ -236,11 +236,3 @@ async def todo_assistant_message(
   return await _assistant_todo_message(payload, background_tasks, current_user, session)
 
 
-@router.post("/claude/message", response_model=TodoAssistantMessageResponse, deprecated=True)
-async def claude_todo_message(
-  payload: TodoAssistantMessageRequest,
-  background_tasks: BackgroundTasks,
-  current_user: User = Depends(enforce_chat_quota),
-  session: AsyncSession = Depends(get_session),
-) -> TodoAssistantMessageResponse:
-  return await _assistant_todo_message(payload, background_tasks, current_user, session)

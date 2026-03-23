@@ -29,13 +29,11 @@ from app.schemas.nutrition import (
     NutritionHistoryResponse,
     NutrientGoalItem,
     NutrientGoalUpdateRequest,
-    ScalingRuleListResponse,
     QuickLogRequest,
     SuggestionsResponse,
 )
 from app.services.claude_nutrition_agent import NutritionAssistantAgent
 from app.services.nutrition_suggestion_agent import NutritionSuggestionAgent
-from app.db.repositories.nutrition_suggestions_repository import NutritionSuggestionsRepository
 from app.services.nutrition_ingredients_service import NutritionIngredientsService
 from app.services.nutrition_recipes_service import NutritionRecipesService
 from app.services.nutrition_goals_service import NutritionGoalsService
@@ -256,46 +254,6 @@ async def update_goal(
     return NutrientGoalItem(**result)
 
 
-@router.get("/scaling-rules", response_model=ScalingRuleListResponse)
-async def get_scaling_rules(
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> ScalingRuleListResponse:
-    service = NutritionGoalsService(session)
-    data = await service.list_scaling_rules(current_user.id)
-    return ScalingRuleListResponse(**data)
-
-
-@router.post("/scaling-rules/{slug}", status_code=204)
-async def enable_scaling_rule(
-    slug: str,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> Response:
-    service = NutritionGoalsService(session)
-    try:
-        await service.set_rule_state(current_user.id, slug, True)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    await session.commit()
-    return Response(status_code=204)
-
-
-@router.delete("/scaling-rules/{slug}", status_code=204)
-async def disable_scaling_rule(
-    slug: str,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-) -> Response:
-    service = NutritionGoalsService(session)
-    try:
-        await service.set_rule_state(current_user.id, slug, False)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    await session.commit()
-    return Response(status_code=204)
-
-
 @router.post("/intake/manual", response_model=dict)
 async def log_manual_intake(
     request: LogIntakeRequest,
@@ -438,10 +396,3 @@ async def nutrition_assistant_message(
     return await _assistant_message(payload, current_user, session)
 
 
-@router.post("/claude/message", response_model=NutritionAssistantMessageResponse, deprecated=True)
-async def claude_message(
-    payload: NutritionAssistantMessageRequest,
-    current_user: User = Depends(enforce_chat_quota),
-    session: AsyncSession = Depends(get_session),
-) -> NutritionAssistantMessageResponse:
-    return await _assistant_message(payload, current_user, session)

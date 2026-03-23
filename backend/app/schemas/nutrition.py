@@ -139,10 +139,6 @@ class NutritionAssistantMessageResponse(BaseModel):
     logged_entries: list[dict[str, Any]]
 
 
-ClaudeMessageRequest = NutritionAssistantMessageRequest
-ClaudeMessageResponse = NutritionAssistantMessageResponse
-
-
 class NutritionIntakeEntry(BaseModel):
     id: int
     ingredient_id: int
