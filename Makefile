@@ -13,4 +13,8 @@ compose-down:
 	docker compose -f docker/docker-compose.yml down
 
 ingest:
-	curl -X POST http://localhost:8000/api/admin/ingest -H "X-Admin-Token: $${READINESS_ADMIN_TOKEN}"
+	# Requires a valid session cookie from an admin user.
+	# Log in via the UI, copy the session cookie, then run:
+	#   make ingest SESSION_COOKIE=<value>
+	curl -X POST http://localhost:8000/api/admin/ingest \
+		-H "Cookie: session=$${SESSION_COOKIE}"
