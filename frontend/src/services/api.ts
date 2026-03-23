@@ -633,19 +633,6 @@ export type ProjectSuggestion = {
   reason: string | null;
 };
 
-export type ProjectNote = {
-  id: number;
-  user_id: number;
-  project_id: number;
-  title: string;
-  body_markdown: string;
-  tags: string[];
-  archived: boolean;
-  pinned: boolean;
-  created_at: string;
-  updated_at: string;
-};
-
 export type ProjectBoardResponse = {
   projects: ProjectItem[];
   todos: TodoItem[];

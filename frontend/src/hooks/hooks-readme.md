@@ -15,10 +15,8 @@ Stores reusable React hooks for data fetching and derived state used across page
 | `useNutritionRecipes.ts` | CRUD helpers + cache for recipes and components. |
 | `useNutritionGoals.ts` | Loads nutrient defaults and user overrides, handles updates. |
 | `useNutritionIntake.ts` | Provides daily summaries and 14-day averages. |
-| `useNutritionChat.ts` | Manages nutrition chat sessions and logged entries. |
 | `useCalendar.ts` | Fetches calendar status, calendars, and event mutations. |
 | `useJournal.ts` | Fetches journal day/week data and submits new journal entries. |
 | `useTodos.ts` | Fetches and mutates per-user to-do items. |
-| `useTodoChat.ts` | Manages Monet assistant sessions for creating to-do items. |
 | `useUserProfile.ts` | Fetches and updates the personalized user profile + scaling rules. |
 | `useVisitRefresh.ts` | Triggers background refreshes on visits and invalidates caches after completion. |
