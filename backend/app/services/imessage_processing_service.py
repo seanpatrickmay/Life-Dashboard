@@ -3561,7 +3561,7 @@ class IMessageProcessingService:
                 applied_at_utc=datetime.now(timezone.utc) if applied else None,
             )
         )
-        await self.session.commit()
+        await self.session.flush()
 
     async def _call_model(self, prompt: str, response_model):
         if self.client is None:
