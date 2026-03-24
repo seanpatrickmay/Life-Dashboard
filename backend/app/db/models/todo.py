@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -16,6 +16,12 @@ class TodoItem(Base):
   """Per-user to-do item with optional UTC deadline."""
 
   __tablename__ = "todo_item"
+  __table_args__ = (
+    CheckConstraint(
+      "time_horizon IN ('this_week', 'this_month', 'this_year')",
+      name="ck_todo_item_time_horizon",
+    ),
+  )
 
   user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
   project_id: Mapped[int] = mapped_column(ForeignKey("project.id"), nullable=False, index=True)

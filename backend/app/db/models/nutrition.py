@@ -445,7 +445,7 @@ class NutrientScalingRule(Base):
     for definition in NUTRIENT_DEFINITIONS:
         locals()[multiplier_column(definition.slug)] = mapped_column(Float, default=1.0)
 
-    owner: Mapped["User"] = relationship(lazy="joined")
+    owner: Mapped["User"] = relationship(lazy="select")
     assignments: Mapped[list["UserNutrientScalingRule"]] = relationship(back_populates="rule")
 
 
@@ -473,4 +473,4 @@ class NutritionGoal(Base):
     for definition in NUTRIENT_DEFINITIONS:
         locals()[goal_column(definition.slug)] = mapped_column(Float, nullable=True)
 
-    user: Mapped["User"] = relationship(lazy="joined")
+    user: Mapped["User"] = relationship(lazy="select")
