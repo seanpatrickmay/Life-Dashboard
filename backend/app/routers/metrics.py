@@ -30,7 +30,7 @@ CACHE_TTL = 300  # 5 minutes
 
 @router.get("/overview", response_model=MetricsOverviewResponse)
 async def metrics_overview(
-    range_days: int = 14,
+    range_days: int = Query(default=14, ge=1, le=365),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> MetricsOverviewResponse:
@@ -94,7 +94,7 @@ async def metrics_overview(
 
 @router.get("/daily", response_model=list[DailyMetricResponse])
 async def daily_metrics(
-    range_days: int = 30,
+    range_days: int = Query(default=30, ge=1, le=365),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[DailyMetricResponse]:
