@@ -140,7 +140,11 @@ class DailyMetric(Base):
 
 
 class SleepSession(Base):
-    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"))
+    __table_args__ = (
+        UniqueConstraint("user_id", "metric_date", name="uq_sleepsession_user_date"),
+    )
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
     metric_date: Mapped[date]
     duration_seconds: Mapped[int]
     quality_score: Mapped[int | None]
@@ -189,7 +193,7 @@ class UserProfile(Base):
     )
     daily_energy_delta_kcal: Mapped[int] = mapped_column(default=0)
 
-    user: Mapped[User] = relationship(back_populates="profile", lazy="joined")
+    user: Mapped[User] = relationship(back_populates="profile", lazy="select")
 
 
 class UserMeasurement(Base):
