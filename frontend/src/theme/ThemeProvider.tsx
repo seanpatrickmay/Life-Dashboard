@@ -46,11 +46,9 @@ function useSystemListener(onChange: (v: 'light' | 'dark') => void) {
   React.useEffect(() => {
     const mql = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = (e: MediaQueryListEvent) => onChange(e.matches ? 'dark' : 'light');
-    if ((mql as any).addEventListener) mql.addEventListener('change', handler);
-    else (mql as any).addListener?.(handler);
+    mql.addEventListener('change', handler);
     return () => {
-      if ((mql as any).removeEventListener) mql.removeEventListener('change', handler);
-      else (mql as any).removeListener?.(handler);
+      mql.removeEventListener('change', handler);
     };
   }, [onChange]);
 }
