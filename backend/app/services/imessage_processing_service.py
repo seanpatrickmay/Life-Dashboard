@@ -378,6 +378,12 @@ class IMessageProcessingService:
                 return run
 
             clusters = cluster_messages(pending_messages)
+            # NOTE: Clusters are processed sequentially on purpose. Although
+            # they are logically independent, they share the same SQLAlchemy
+            # async session and are wrapped in a single transaction that is
+            # committed once at the end (line below).  Concurrent processing
+            # would cause interleaved session operations and violate the
+            # transaction boundary guarantees we rely on for atomicity.
             for cluster in clusters:
                 applied = await self._process_cluster(
                     run=run,
