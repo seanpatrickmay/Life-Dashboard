@@ -39,6 +39,8 @@ from app.schemas.llm_outputs import (
     NutrientProfileOutput,
     RecipeSuggestionOutput,
 )
+from app.core.exceptions import NotFoundException
+from app.services.nutrition_recipe_expander import expand_recipe_components
 from app.services.nutrition_units import NutritionUnitNormalizer
 from app.utils.timezone import eastern_today
 
@@ -354,6 +356,10 @@ class NutritionAssistantAgent:
         logger.info(f"[nutrition] nutrient profile resolved for {food_name}")
         return nutrients
 
+    async def suggest_recipe(self, description: str) -> dict[str, Any] | None:
+        """Public entry point for recipe suggestion from a text description."""
+        return await self._suggest_recipe(description)
+
     async def _suggest_recipe(self, description: str) -> dict[str, Any] | None:
         prompt = RECIPE_SUGGESTION_PROMPT.format(description=description)
         try:
@@ -491,32 +497,25 @@ class NutritionAssistantAgent:
     ) -> None:
         recipe = await self.recipes_repo.get_recipe(recipe_id, user_id, load_components=True)
         if recipe is None:
-            raise ValueError("Recipe not found")
+            raise NotFoundException("Recipe not found")
 
-        async def _expand(target_recipe, multiplier: float) -> None:
-            for comp in target_recipe.components:
-                per_serving = comp.quantity / target_recipe.servings if target_recipe.servings else comp.quantity
-                effective_qty = multiplier * per_serving
-                if comp.ingredient:
-                    normalized = self.unit_normalizer.normalize(
-                        quantity=effective_qty,
-                        unit=comp.unit,
-                        target_unit=comp.ingredient.default_unit,
-                    )
-                    await self.intake_repo.log_intake(
-                        user_id=user_id,
-                        food_id=comp.ingredient.id,
-                        quantity=normalized.quantity,
-                        unit=normalized.unit,
-                        day=eastern_today(),
-                        source=NutritionIntakeSource.CLAUDE,
-                        claude_request_id=request_id,
-                        recipe_id=recipe.id,
-                    )
-                elif comp.child_recipe:
-                    await _expand(comp.child_recipe, effective_qty)
-
-        await _expand(recipe, servings)
+        expanded = expand_recipe_components(recipe, servings)
+        for comp in expanded:
+            normalized = self.unit_normalizer.normalize(
+                quantity=comp.quantity,
+                unit=comp.unit,
+                target_unit=comp.default_unit,
+            )
+            await self.intake_repo.log_intake(
+                user_id=user_id,
+                food_id=comp.ingredient_id,
+                quantity=normalized.quantity,
+                unit=normalized.unit,
+                day=eastern_today(),
+                source=NutritionIntakeSource.CLAUDE,
+                claude_request_id=request_id,
+                recipe_id=recipe.id,
+            )
 
     def _build_summary(self, entries: list[dict[str, Any]]) -> str:
         if not entries:

@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundException
 from app.db.models.nutrition import (
     NUTRIENT_DEFINITIONS,
     NutritionIngredientStatus,
@@ -15,6 +16,7 @@ from app.db.repositories.nutrition_ingredients_repository import (
     NutritionIngredientsRepository,
     NutritionRecipesRepository,
 )
+from app.services.nutrition_recipe_expander import derive_recipe_nutrients
 
 
 class NutritionRecipesService:
@@ -30,7 +32,7 @@ class NutritionRecipesService:
     async def get_recipe(self, recipe_id: int, *, owner_user_id: int) -> dict[str, Any]:
         recipe = await self.recipes_repo.get_recipe(recipe_id, owner_user_id, load_components=True)
         if recipe is None:
-            raise ValueError("Recipe not found")
+            raise NotFoundException("Recipe not found")
         return self._serialize_recipe(recipe, include_components=True)
 
     async def create_recipe(
@@ -71,7 +73,7 @@ class NutritionRecipesService:
     ) -> dict[str, Any]:
         recipe = await self.recipes_repo.get_recipe(recipe_id, owner_user_id, load_components=True)
         if recipe is None:
-            raise ValueError("Recipe not found")
+            raise NotFoundException("Recipe not found")
         if components is not None:
             await self._assert_no_cycles(recipe_id, components, owner_user_id=owner_user_id)
         await self.recipes_repo.update_recipe(
@@ -145,7 +147,7 @@ class NutritionRecipesService:
                         "position": comp.position,
                     }
                 )
-        derived = self._derive_nutrients(recipe) if include_components else {}
+        derived = derive_recipe_nutrients(recipe) if include_components else {}
         return {
             "id": recipe.id,
             "owner_user_id": recipe.owner_user_id,
@@ -156,26 +158,3 @@ class NutritionRecipesService:
             "components": components,
             "derived_nutrients": derived,
         }
-
-    def _derive_nutrients(self, recipe: NutritionRecipe) -> dict[str, float | None]:
-        if not recipe.components:
-            return {definition.slug: None for definition in NUTRIENT_DEFINITIONS}
-
-        totals: dict[str, float] = {definition.slug: 0.0 for definition in NUTRIENT_DEFINITIONS}
-
-        def accumulate_from_recipe(target_recipe: NutritionRecipe, multiplier: float) -> None:
-            for comp in target_recipe.components:
-                per_serving_quantity = comp.quantity / target_recipe.servings if target_recipe.servings else comp.quantity
-                effective_qty = multiplier * per_serving_quantity
-                if comp.ingredient:
-                    profile = comp.ingredient.profile
-                    for definition in NUTRIENT_DEFINITIONS:
-                        value = getattr(profile, definition.column_name)
-                        if value is None:
-                            continue
-                        totals[definition.slug] += value * effective_qty
-                elif comp.child_recipe:
-                    accumulate_from_recipe(comp.child_recipe, effective_qty)
-
-        accumulate_from_recipe(recipe, 1.0)
-        return {slug: round(value, 4) for slug, value in totals.items()}

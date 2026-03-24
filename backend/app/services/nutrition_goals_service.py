@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundException
 from app.db.models.nutrition import (
     DEFAULT_GOAL_BY_SLUG,
     NUTRIENT_DEFINITIONS,
@@ -82,7 +83,7 @@ class NutritionGoalsService:
         for goal in goals:
             if goal["slug"] == slug:
                 return goal
-        raise ValueError("Goal not found")
+        raise NotFoundException("Goal not found")
 
     async def list_scaling_rules(self, user_id: int) -> dict:
         assignments = await self.repo.list_user_rules(user_id)
@@ -115,7 +116,7 @@ class NutritionGoalsService:
     async def set_rule_state(self, user_id: int, slug: str, enabled: bool) -> None:
         rule = await self.repo.get_rule_by_slug(slug)
         if rule is None:
-            raise ValueError("Unknown rule")
+            raise NotFoundException("Unknown rule")
         if rule.type == ScalingRuleType.MANUAL:
             raise ValueError("Manual rule state is managed via goal updates")
 

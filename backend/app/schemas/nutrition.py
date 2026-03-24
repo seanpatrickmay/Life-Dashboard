@@ -67,6 +67,7 @@ class NutritionDailySummaryResponse(BaseModel):
 
 class NutritionHistoryResponse(BaseModel):
     window_days: int
+    days_with_data: int
     nutrients: list[NutrientProgress]
 
 
