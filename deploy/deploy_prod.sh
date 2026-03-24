@@ -56,4 +56,15 @@ if [ "${DEPLOY_PRUNE_IMAGES:-1}" = "1" ]; then
   "${docker_cmd[@]}" image prune -f
 fi
 
-echo "Deploy complete."
+echo "Waiting for health check..."
+for i in $(seq 1 10); do
+  if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+    echo "Health check passed!"
+    echo "Deploy complete."
+    exit 0
+  fi
+  echo "  Attempt $i/10 failed, retrying in 3s..."
+  sleep 3
+done
+echo "Health check failed after 10 attempts!"
+exit 1
