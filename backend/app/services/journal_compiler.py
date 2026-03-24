@@ -1,6 +1,7 @@
 """Compile journal entries and completed todos into grouped day summaries."""
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -72,8 +73,10 @@ class JournalCompiler:
       return {"groups": []}
 
     todo_candidates = self._build_todo_items(todo_items)
-    journal_items = await self._extract_entries(local_date, time_zone, entries)
-    calendar_items = await self._extract_calendar_events(local_date, time_zone, calendar_events)
+    journal_items, calendar_items = await asyncio.gather(
+      self._extract_entries(local_date, time_zone, entries),
+      self._extract_calendar_events(local_date, time_zone, calendar_events),
+    )
     merged_items = await self._dedupe_items(todo_candidates, [*journal_items, *calendar_items])
     grouped = await self._group_items(merged_items)
     return grouped
