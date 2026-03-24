@@ -36,7 +36,7 @@ async def metrics_overview(
     cache_key = f"metrics_overview:{current_user.id}:{range_days}"
     if cache_key in _cache:
         cached_data, cached_time = _cache[cache_key]
-        if (datetime.now() - cached_time).seconds < CACHE_TTL:
+        if (datetime.now() - cached_time).total_seconds() < CACHE_TTL:
             return cached_data
 
     cutoff = eastern_today() - timedelta(days=range_days - 1)
