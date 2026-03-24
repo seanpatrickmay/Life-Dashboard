@@ -143,7 +143,9 @@ class GarminClient:
             if hasattr(self.client, "get_hrv_data"):
                 try:
                     raw = self._throttled_call(self.client.get_hrv_data, current.isoformat())
-                except (GarminConnectTooManyRequestsError, Exception) as exc:
+                except GarminConnectTooManyRequestsError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
                     logger.warning("Garmin HRV fetch failed for {}: {}", current, exc)
                     raw = None
             daily_entries = self._normalize_hrv_payload(raw, current)
@@ -168,7 +170,9 @@ class GarminClient:
                 try:
                     payload = self._throttled_call(self.client.get_rhr_day, iso)
                     resting_value = self._extract_resting_hr(payload)
-                except (GarminConnectTooManyRequestsError, Exception) as exc:
+                except GarminConnectTooManyRequestsError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
                     logger.debug("Failed to fetch resting HR for {}: {}", iso, exc)
 
             if resting_value is not None:
@@ -188,7 +192,9 @@ class GarminClient:
             iso = current.isoformat()
             try:
                 payload = self._throttled_call(self.client.get_training_status, iso)
-            except (GarminConnectTooManyRequestsError, Exception) as exc:
+            except GarminConnectTooManyRequestsError:
+                raise
+            except Exception as exc:  # noqa: BLE001
                 logger.debug("Failed to fetch training status for {}: {}", iso, exc)
                 current += timedelta(days=1)
                 continue
