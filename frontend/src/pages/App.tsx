@@ -17,6 +17,7 @@ import { PageBackground } from '../components/layout/PageBackground';
 import { useVisitRefresh } from '../hooks/useVisitRefresh';
 import { useLocalMidnightInvalidation } from '../hooks/useLocalMidnightInvalidation';
 import { RequireAuth } from '../components/auth/RequireAuth';
+import { ErrorBoundary } from '../components/common/ErrorBoundary';
 
 // Simple loading component
 const PageLoader = () => (
@@ -47,9 +48,11 @@ function ShellLayout() {
   useLocalMidnightInvalidation();
   return (
     <PageShell>
-      <Suspense fallback={<PageLoader />}>
-        <Outlet />
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={<PageLoader />}>
+          <Outlet />
+        </Suspense>
+      </ErrorBoundary>
     </PageShell>
   );
 }
