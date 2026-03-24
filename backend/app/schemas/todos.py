@@ -3,7 +3,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.db.models.todo import VALID_TIME_HORIZONS
+
+
+def _validate_time_horizon(value: str | None) -> str | None:
+    if value is not None and value not in VALID_TIME_HORIZONS:
+        raise ValueError(f"time_horizon must be one of {VALID_TIME_HORIZONS}")
+    return value
 
 
 class TodoItemResponse(BaseModel):
@@ -31,6 +39,11 @@ class TodoCreateRequest(BaseModel):
   time_horizon: str = "this_week"
   time_zone: str | None = Field(default=None, max_length=64)
 
+  @field_validator("time_horizon")
+  @classmethod
+  def check_time_horizon(cls, v: str) -> str:
+    return _validate_time_horizon(v)
+
 
 class TodoUpdateRequest(BaseModel):
   text: str | None = Field(default=None, min_length=1, max_length=512)
@@ -41,6 +54,11 @@ class TodoUpdateRequest(BaseModel):
   completed: bool | None = None
   completed_at_utc: datetime | None = None
   time_zone: str | None = Field(default=None, max_length=64)
+
+  @field_validator("time_horizon")
+  @classmethod
+  def check_time_horizon(cls, v: str | None) -> str | None:
+    return _validate_time_horizon(v)
 
 
 class TodoAssistantMessageRequest(BaseModel):

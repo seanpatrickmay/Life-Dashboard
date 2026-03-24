@@ -6,9 +6,10 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import get_current_user
+from app.db.models.todo import VALID_TIME_HORIZONS
 from app.db.repositories.todo_repository import TodoRepository
 from app.db.session import get_session
 from app.db.models.entities import User
@@ -28,6 +29,13 @@ class BatchUpdateItem(BaseModel):
     deadline_utc: datetime | None = None
     deadline_is_date_only: bool | None = None
     time_horizon: str | None = None
+
+    @field_validator("time_horizon")
+    @classmethod
+    def check_time_horizon(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_TIME_HORIZONS:
+            raise ValueError(f"time_horizon must be one of {VALID_TIME_HORIZONS}")
+        return v
 
 
 class BatchUpdateRequest(BaseModel):
