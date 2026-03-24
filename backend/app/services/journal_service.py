@@ -147,10 +147,9 @@ class JournalService:
     ):
       return summary
 
-    # Release the DB connection before the LLM compile step so concurrent
-    # journal requests don't monopolize the pool while waiting on OpenAI.
-    if self.session is not None:
-      await self.session.close()
+    # Expire cached ORM state before the LLM compile step so the session
+    # can be reused afterwards without stale data.
+    self.session.expire_all()
 
     now_utc = datetime.now(timezone.utc)
     summary_payload = {"groups": []}
