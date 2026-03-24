@@ -134,7 +134,7 @@ export function DynamicCloudField({ moment }: Props) {
         <CloudSprite
           key={cloud.id}
           src={cloud.img}
-          alt="cloud"
+          alt=""
           $top={cloud.top}
           $width={cloud.width}
           $duration={cloud.duration}
