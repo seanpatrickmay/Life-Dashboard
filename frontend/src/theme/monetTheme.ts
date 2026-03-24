@@ -700,25 +700,25 @@ export const darkTheme = {
 };
 
 export type MonetTheme = typeof lightTheme & {
-  intensity?: ArtIntensity;
-  motion?: boolean;
-  moment?: Moment;
-  featureScene?: FeatureSceneSetting;
-  willowEnabled?: boolean;
-  sceneDensity?: SceneDensity;
-  sceneHorizon?: number;
-  horizonMode?: HorizonSetting;
-  // Scene testing controls (for sun/moon orbit overrides)
-  timeTestEnabled?: boolean;
-  sceneHour?: number; // 0–24 float
-  scene?: {
+  intensity: ArtIntensity;
+  motion: boolean;
+  moment: Moment;
+  featureScene: FeatureSceneSetting;
+  willowEnabled: boolean;
+  sceneDensity: SceneDensity;
+  sceneHorizon: number;
+  horizonMode: HorizonSetting;
+  scene: {
     palette: ScenePalette;
     horizonByMoment: Record<Moment, number>;
   };
-  tokens?: {
+  tokens: {
     halo: {
       heading: string;
       body: string;
     };
   };
+  // Scene testing controls (for sun/moon orbit overrides)
+  timeTestEnabled?: boolean;
+  sceneHour?: number; // 0–24 float
 };
