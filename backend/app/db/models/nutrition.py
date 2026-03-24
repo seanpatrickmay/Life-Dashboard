@@ -6,6 +6,7 @@ from enum import Enum
 from typing import ClassVar, TYPE_CHECKING
 
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     Enum as SAEnum,
@@ -370,6 +371,12 @@ class NutritionRecipe(Base):
 
 class NutritionRecipeComponent(Base):
     __tablename__ = "nutrition_recipe_components"
+    __table_args__ = (
+        CheckConstraint(
+            "(ingredient_id IS NOT NULL) != (child_recipe_id IS NOT NULL)",
+            name="ck_recipe_component_exactly_one_ref",
+        ),
+    )
 
     recipe_id: Mapped[int] = mapped_column(ForeignKey("nutrition_recipes.id"), nullable=False)
     ingredient_id: Mapped[int | None] = mapped_column(ForeignKey("nutrition_foods.id"), nullable=True)
