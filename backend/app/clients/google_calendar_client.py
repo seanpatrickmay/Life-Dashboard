@@ -28,6 +28,19 @@ class GoogleCalendarClient:
 
     def __init__(self, access_token: str) -> None:
         self.access_token = access_token
+        self._client: httpx.AsyncClient | None = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return a reusable httpx client, creating one if needed."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=20)
+        return self._client
+
+    async def aclose(self) -> None:
+        """Close the underlying httpx client."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     async def list_calendars(self) -> list[dict[str, Any]]:
         """Return the authenticated user's calendar list."""
@@ -152,8 +165,8 @@ class GoogleCalendarClient:
     ) -> dict[str, Any]:
         url = f"{GOOGLE_CALENDAR_BASE_URL}{path}"
         headers = {"Authorization": f"Bearer {self.access_token}"}
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.request(method, url, params=params, json=json, headers=headers)
+        client = self._get_client()
+        response = await client.request(method, url, params=params, json=json, headers=headers)
         if response.status_code >= 400:
             payload = None
             try:
