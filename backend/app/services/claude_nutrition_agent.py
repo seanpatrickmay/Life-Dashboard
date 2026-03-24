@@ -39,6 +39,7 @@ from app.schemas.llm_outputs import (
     NutrientProfileOutput,
     RecipeSuggestionOutput,
 )
+from app.core.exceptions import NotFoundException
 from app.services.nutrition_recipe_expander import expand_recipe_components
 from app.services.nutrition_units import NutritionUnitNormalizer
 from app.utils.timezone import eastern_today
@@ -496,7 +497,7 @@ class NutritionAssistantAgent:
     ) -> None:
         recipe = await self.recipes_repo.get_recipe(recipe_id, user_id, load_components=True)
         if recipe is None:
-            raise ValueError("Recipe not found")
+            raise NotFoundException("Recipe not found")
 
         expanded = expand_recipe_components(recipe, servings)
         for comp in expanded:

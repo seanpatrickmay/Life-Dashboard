@@ -12,8 +12,8 @@ from app.db.models.nutrition import (
     NutritionIntake,
     NutritionIntakeSource,
     NutritionRecipe,
-    NutritionRecipeComponent,
 )
+from app.core.exceptions import NotFoundException
 from app.services.nutrition_recipe_expander import expand_recipe_components
 from app.db.repositories.nutrition_intake_repository import NutritionIntakeRepository
 from app.db.repositories.nutrition_ingredients_repository import (
@@ -49,7 +49,7 @@ class NutritionIntakeService:
         if ingredient_id:
             ingredient = await self.ingredients_repo.get_ingredient(ingredient_id, user_id)
             if ingredient is None:
-                raise ValueError("Ingredient not found")
+                raise NotFoundException("Ingredient not found")
             intake = await self.repo.log_intake(
                 user_id=user_id,
                 food_id=ingredient_id,
@@ -71,7 +71,7 @@ class NutritionIntakeService:
 
         recipe = await self.recipes_repo.get_recipe(recipe_id, user_id, load_components=True)
         if recipe is None:
-            raise ValueError("Recipe not found")
+            raise NotFoundException("Recipe not found")
         created = await self._expand_and_log_recipe(
             user_id=user_id,
             recipe=recipe,
@@ -97,7 +97,7 @@ class NutritionIntakeService:
             unit=unit,
         )
         if intake is None:
-            raise ValueError("Intake not found")
+            raise NotFoundException("Intake not found")
         await self.session.flush()
         await self._mark_suggestions_stale(owner_user_id)
         await self.session.commit()

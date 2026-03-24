@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundException
 from app.db.models.nutrition import (
     NUTRIENT_DEFINITIONS,
     NutritionIngredientStatus,
@@ -31,7 +32,7 @@ class NutritionRecipesService:
     async def get_recipe(self, recipe_id: int, *, owner_user_id: int) -> dict[str, Any]:
         recipe = await self.recipes_repo.get_recipe(recipe_id, owner_user_id, load_components=True)
         if recipe is None:
-            raise ValueError("Recipe not found")
+            raise NotFoundException("Recipe not found")
         return self._serialize_recipe(recipe, include_components=True)
 
     async def create_recipe(
@@ -72,7 +73,7 @@ class NutritionRecipesService:
     ) -> dict[str, Any]:
         recipe = await self.recipes_repo.get_recipe(recipe_id, owner_user_id, load_components=True)
         if recipe is None:
-            raise ValueError("Recipe not found")
+            raise NotFoundException("Recipe not found")
         if components is not None:
             await self._assert_no_cycles(recipe_id, components, owner_user_id=owner_user_id)
         await self.recipes_repo.update_recipe(

@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundException
 from app.db.models.nutrition import (
     NUTRIENT_DEFINITIONS,
     NutritionIngredient,
@@ -49,7 +50,7 @@ class NutritionIngredientsService:
     ) -> dict[str, Any]:
         ingredient = await self.repo.get_ingredient(ingredient_id, owner_user_id)
         if ingredient is None:
-            raise ValueError("Ingredient not found")
+            raise NotFoundException("Ingredient not found")
         await self.repo.update_ingredient(
             ingredient,
             name=name,
