@@ -24,11 +24,23 @@ class GoogleCalendarError(Exception):
 
 
 class GoogleCalendarClient:
-    """Lightweight async client for Google Calendar API calls."""
+    """Lightweight async client for Google Calendar API calls.
+
+    Use as an async context manager to ensure the httpx connection is closed::
+
+        async with GoogleCalendarClient(token) as client:
+            calendars = await client.list_calendars()
+    """
 
     def __init__(self, access_token: str) -> None:
         self.access_token = access_token
         self._client: httpx.AsyncClient | None = None
+
+    async def __aenter__(self) -> "GoogleCalendarClient":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.aclose()
 
     def _get_client(self) -> httpx.AsyncClient:
         """Return a reusable httpx client, creating one if needed."""
