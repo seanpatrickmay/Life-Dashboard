@@ -643,6 +643,11 @@ class IMessageProcessingService:
                 merged["reason"] = sorted_entries[0]["reason"]
             raw_extracted["journal_entries"] = [merged]
 
+        # Filter out "reply to X" todos when the user already responded in the cluster
+        raw_extracted["todo_creates"] = self._filter_already_responded_todos(
+            cluster, raw_extracted.get("todo_creates") or []
+        )
+
         judged = await self._judge_actions(payload, raw_extracted)
 
         # Phase 1: collect LLM decisions using anonymized data
@@ -1244,6 +1249,64 @@ class IMessageProcessingService:
         )
         return normalized
 
+    @staticmethod
+    def _filter_already_responded_todos(
+        cluster: MessageCluster,
+        todos: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Drop 'reply to X' todos when the user already responded in the cluster.
+
+        If a todo's source_message_ids reference only non-user messages (a question
+        from the other party) and the user sent a message within 30 minutes after
+        the latest source message, the reply obligation is already fulfilled.
+        """
+        if not todos:
+            return todos
+
+        # Only match patterns where a text reply IS the action — not action-oriented
+        # phrases like "tell Mom" or "let the landlord know" where the user might
+        # acknowledge the request but still need to complete a real-world action.
+        _REPLY_KEYWORDS = ("reply to", "respond to", "get back to")
+        user_sent_times = [
+            m.sent_at_utc
+            for m in cluster.messages
+            if m.is_from_me and m.sent_at_utc
+        ]
+        if not user_sent_times:
+            return todos
+
+        msg_map: dict[int, IMessageMessage] = {m.id: m for m in cluster.messages}
+        kept: list[dict[str, Any]] = []
+        for todo in todos:
+            text = str(todo.get("text") or "").lower()
+            if not any(kw in text for kw in _REPLY_KEYWORDS):
+                kept.append(todo)
+                continue
+            source_ids = todo.get("source_message_ids") or []
+            source_msgs = [msg_map[mid] for mid in source_ids if mid in msg_map]
+            # Only filter if the triggering messages are from the OTHER party
+            if not source_msgs or any(m.is_from_me for m in source_msgs):
+                kept.append(todo)
+                continue
+            latest_source = max(
+                (m.sent_at_utc for m in source_msgs if m.sent_at_utc),
+                default=None,
+            )
+            if latest_source is None:
+                kept.append(todo)
+                continue
+            # Check if user already sent a reply within 30 minutes
+            reply_window = latest_source + timedelta(minutes=30)
+            already_replied = any(t > latest_source and t <= reply_window for t in user_sent_times)
+            if already_replied:
+                logger.debug(
+                    "[imessage] Filtered already-responded todo: {}",
+                    todo.get("text", ""),
+                )
+                continue
+            kept.append(todo)
+        return kept
+
     def _normalize_action_list(
         self,
         messages: list[Any],
@@ -1334,6 +1397,7 @@ class IMessageProcessingService:
             ("calendar_creates", "calendar.create"),
             ("journal_entries", "journal.entry"),
             ("workspace_updates", "workspace.update"),
+            ("nutrition_logs", "nutrition.log"),
         ):
             enriched[key] = [
                 self.enrich_action_text(
@@ -2263,6 +2327,7 @@ class IMessageProcessingService:
             "calendar_creates": calendar_extract.get("calendar_creates") or [],
             "journal_entries": general_extract.get("journal_entries") or [],
             "workspace_updates": general_extract.get("workspace_updates") or [],
+            "nutrition_logs": general_extract.get("nutrition_logs") or [],
             "_used_fallback": used_fallback,
         }
 
@@ -2323,6 +2388,7 @@ class IMessageProcessingService:
             "todo_completions": list(heuristic.get("todo_completions") or []),
             "journal_entries": list(heuristic.get("journal_entries") or []),
             "workspace_updates": list(heuristic.get("workspace_updates") or []),
+            "nutrition_logs": list(heuristic.get("nutrition_logs") or []),
         }
         payload_messages = list(payload.get("messages") or [])
 
@@ -2338,6 +2404,7 @@ class IMessageProcessingService:
                     ("todo_completions", "todo.complete"),
                     ("journal_entries", "journal.entry"),
                     ("workspace_updates", "workspace.update"),
+                    ("nutrition_logs", "nutrition.log"),
                 )
             }
             result["_fallback"] = True
@@ -2356,13 +2423,14 @@ class IMessageProcessingService:
             return _fallback_result()
 
         merged: dict[str, Any] = {}
-        for key in ("todo_creates", "todo_completions", "journal_entries", "workspace_updates"):
+        for key in ("todo_creates", "todo_completions", "journal_entries", "workspace_updates", "nutrition_logs"):
             value = [item.model_dump() for item in getattr(parsed, key)]
             action_type = {
                 "todo_creates": "todo.create",
                 "todo_completions": "todo.complete",
                 "journal_entries": "journal.entry",
                 "workspace_updates": "workspace.update",
+                "nutrition_logs": "nutrition.log",
             }[key]
             merged[key] = self._normalize_action_list(
                 payload_messages,
@@ -2468,6 +2536,7 @@ class IMessageProcessingService:
             "calendar_creates": [],
             "journal_entries": journal_entries,
             "workspace_updates": workspace_updates,
+            "nutrition_logs": [],
         }
 
     def _heuristic_judge(self, payload: dict[str, Any], extracted: dict[str, Any]) -> dict[str, Any]:
@@ -2514,6 +2583,13 @@ class IMessageProcessingService:
                 }
                 for item in extracted.get("workspace_updates") or []
             ],
+            "nutrition_logs": [
+                {
+                    "approved": bool(item.get("foods")),
+                    "reason": "Approved when the nutrition log includes food items.",
+                }
+                for item in extracted.get("nutrition_logs") or []
+            ],
         }
 
     def _judge_item(self, judged: dict[str, Any], key: str, index: int) -> JudgmentOutcome:
@@ -2525,6 +2601,14 @@ class IMessageProcessingService:
             reason=str(items[index].get("reason") or ""),
         )
 
+    _JOURNAL_LOGISTICS_KEYWORDS = frozenset({
+        "omw", " eta ", "here!", "here!!", "arrived at", "on my way", "en route",
+        "leaving now", "on the tram", "took the tram", "uber ride", "lyft ride",
+        "meetup spot", "meet at the", "meet outside", "outside now",
+        "be there in", "forwarded the", "confirmed meeting time",
+        "added to the group", "confirmed attendance",
+    })
+
     def _score_action_relevance(
         self,
         *,
@@ -2535,16 +2619,21 @@ class IMessageProcessingService:
     ) -> float:
         """Score action relevance 0.0-1.0. Deterministic, no LLM calls."""
         text = str(action.get("text") or action.get("summary") or action.get("title") or "")
+        text_lower = text.lower()
 
         # --- Substance (0.4 weight) ---
-        if any(kw in text.lower() for kw in ("liked", "loved", "emphasized", "reacted", "laughed at")):
+        if any(kw in text_lower for kw in ("liked", "loved", "emphasized", "reacted", "laughed at")):
             substance = 0.1
         elif len(text) < 15 and not any(c.isupper() for c in text[1:]):
             substance = 0.2
-        elif len(text) > 30:
-            substance = 0.8
+        elif len(text) > 120:
+            substance = 0.85
+        elif len(text) > 80:
+            substance = 0.75
+        elif len(text) > 40:
+            substance = 0.6
         else:
-            substance = 0.5
+            substance = 0.4
 
         # --- Coherence (0.3 weight) ---
         conv_type = conversation_type or "personal"
@@ -2553,8 +2642,18 @@ class IMessageProcessingService:
         elif action_type == "todo.create" and conv_type == "group":
             is_from_me = action.get("is_from_me", True)
             coherence = 0.7 if is_from_me else 0.2
+        elif action_type == "todo.create" and "reply to" in text_lower:
+            # "Reply to X about Y" todos are often ephemeral question-responses
+            coherence = 0.25
         elif action_type == "journal.entry" and len(text) < 40:
             coherence = 0.3
+        elif action_type == "journal.entry" and len(text) < 80:
+            coherence = 0.4
+        elif action_type == "journal.entry" and any(
+            kw in text_lower for kw in self._JOURNAL_LOGISTICS_KEYWORDS
+        ):
+            # Logistics/coordination entries are low-value
+            coherence = 0.2
         else:
             coherence = 0.6
 
@@ -2569,7 +2668,7 @@ class IMessageProcessingService:
             other_text = str(other_action.get("text") or other_action.get("summary") or "")
             if other_text == text:
                 continue
-            tokens_a = set(text.lower().split())
+            tokens_a = set(text_lower.split())
             tokens_b = set(other_text.lower().split())
             if tokens_a and tokens_b:
                 overlap = len(tokens_a & tokens_b) / max(len(tokens_a | tokens_b), 1)

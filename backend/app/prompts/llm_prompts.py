@@ -184,8 +184,9 @@ Return ONLY valid JSON with this shape:
 
 === OWNERSHIP RULES (CRITICAL) ===
 - Every todo MUST be an obligation that belongs to the user — something the user personally needs to do.
-- When `is_from_me` is true and the message says "I need to...", "I have to...", "I should..." — this is the user's own obligation. Create a todo.
-- When `is_from_me` is false and another participant says "Can you..." or directly asks the user to do something — create a todo for the user.
+- When `is_from_me` is true and the message says "I need to...", "I have to..." — this is the user's own obligation. Create a todo.
+- When `is_from_me` is true and the message says "I should..." — only create a todo if it describes a CONCRETE action with a clear next step. "I should call the dentist" → todo. "I should add a feature to my app" or "I should start running again" → too vague/aspirational, skip.
+- When `is_from_me` is false and another participant asks the user to do something that requires REAL-WORLD ACTION (send a document, look something up, buy something, go somewhere) — create a todo for the user.
 - When `is_from_me` is false and another participant says "I need to...", "I have to...", "I'll..." — this is THEIR obligation, NOT the user's. Do NOT create a todo.
 - In GROUP CHATS (`conversation_type` is "group"), be extra strict:
   - Only create a todo when the user (is_from_me=true) personally commits to something, OR when another participant explicitly addresses the user by name or with "you".
@@ -221,6 +222,9 @@ Return ONLY valid JSON with this shape:
   - Brainstorming or hypothetical discussion: "what if we...", "I've been thinking about..."
   - Inferred sub-tasks that the user never explicitly stated: if the user says "my internship is in Richmond", do NOT create "move to Richmond" or "bring bike to Richmond" — those are your inferences, not the user's stated obligations.
   - Background context or facts about the user's life: "I have a road bike", "my internship starts in June"
+  - CONVERSATIONAL QUESTIONS that expect a text reply, NOT real-world action. When another participant asks "How was X?", "Did you do X?", "What do you think?", "Do you use X?" — these are conversation prompts, NOT tracked obligations. Only create a todo when a question requires the user to take a REAL-WORLD ACTION beyond replying in the chat (e.g., "Can you send me your passport number?" requires looking it up; "How was skiing?" just needs a chat reply).
+  - REAL-TIME COORDINATION that will be completed within minutes. If the user is actively en route, at a meetup, or coordinating arrival ("omw", "I'll be there in 5", "play one more orbit then leave", "let me know when you're outside"), these are happening RIGHT NOW and do not need persistent tracking.
+  - Actions the user has ALREADY COMPLETED within the same message cluster. If the user already replied to a question or already did the thing within the conversation, no todo is needed.
 - A valid todo requires the user to have explicitly stated or clearly agreed to a specific action they will take.
 - When in doubt, do NOT create a todo. Prefer false negatives over false positives.
 
@@ -254,11 +258,18 @@ Return ONLY valid JSON with this shape:
 - Use todo_completions only when user-authored messages strongly indicate an existing todo is done.
 - Ignore calendar events in this prompt. They are handled separately.
 - Task-like obligations such as "I need to send...", "I have to submit...", or "remind me to..." belong in todos even when they mention time words like "tonight", "tomorrow", or "before Friday". Do not convert those into calendar items here.
-- journal_entries can describe concrete actions, accomplishments, meaningful conversations, learning moments, decisions the user participated in, or planning discussions worth remembering.
-- If a chunk contains both a completed action and a meaningful conversation, you may emit multiple journal_entries.
+- journal_entries should capture experiences, accomplishments, meaningful conversations, learning moments, and decisions the user would want to remember weeks or months later. The bar is HIGH — a journal entry should be genuinely memorable or significant.
+- Do NOT create journal entries for:
+  - Ephemeral logistics and coordination: meetup spots, ETAs, arrival/departure messages ("omw", "here!", "on the tram"), transit updates, scheduling confirmations.
+  - Simple confirmations or administrative actions: "confirmed meeting time", "added someone to the group chat", "forwarded the email".
+  - Other people's accomplishments or status updates that don't directly involve the user's own experience: "Owen won big at poker", "Filip said the test was hard", "Aidan made the slides". Only journal events the user personally experienced or participated in.
+  - Trivial social reactions: "liked a message", "agreed that X is fine".
+  - Sensitive PII: NEVER include SSNs, account numbers, SSH keys, passwords, IP addresses, or verbatim slurs in journal entry text. If the conversation contains PII, omit it or describe the action generically ("Shared financial account details with Dad" instead of the actual numbers).
+- If a chunk contains both a completed action and a meaningful conversation, you may emit multiple journal_entries, but prefer quality over quantity. One well-written entry capturing the essence of a conversation is better than three fragments.
 - workspace_updates should be factual project knowledge updates, not message digests.
 - Only create workspace_updates when `project_inference.project_name` is non-null and the messages contain a durable project fact, constraint, decision, or agreed strategy.
 - A single chunk can produce multiple workspace_updates if it contains multiple distinct durable facts or decisions.
+- Do NOT create workspace_updates for ephemeral coordination or status snapshots: "Filip will work at 8pm tonight", "Reserved a room for tomorrow at 12:15", "Someone pulled the latest code." These are transient and will be stale by tomorrow. Workspace updates must be things that are still useful weeks later: architectural decisions, role assignments, deadlines, budget constraints, technical choices, agreed strategies.
 - If a chunk contains both a durable project fact and an agreed follow-up task, emit both the workspace_update and the todo_create.
 
 Examples:
@@ -361,6 +372,26 @@ Examples:
    {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[],"nutrition_logs":[]}
    Reason: Hypothetical, not consumed yet.
 
+23. NEGATIVE — Conversational question (chat with Dad): Dad (is_from_me=false) asks "How was skiing?" User (is_from_me=true) replies "It was great, the snow was perfect"
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[],"nutrition_logs":[]}
+   Reason: Dad's question is a conversational prompt, not a request for real-world action. The user already replied, so no todo is needed.
+
+24. NEGATIVE — Conversational question (chat with friend): Friend asks "Do you use Claude code?" or "Have you ever done hookah?"
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[],"nutrition_logs":[]}
+   Reason: These are yes/no conversation questions, not obligations requiring tracked action.
+
+25. NEGATIVE — Real-time coordination: "Play one more orbit of poker then stop", "omw", "I'll be there in 5 min", "let me know when you're outside"
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[],"nutrition_logs":[]}
+   Reason: Real-time coordination that will be completed within minutes. Does not need persistent tracking.
+
+26. NEGATIVE — Aspirational "I should": "I should add a safety concerns agent to my suite" or "I should start running again" or "I should learn piano"
+   Output idea:
+   {"todo_creates":[],"todo_completions":[],"journal_entries":[],"workspace_updates":[],"nutrition_logs":[]}
+   Reason: "I should" with a vague or aspirational action is not a concrete commitment. Compare to: "I should call the dentist tomorrow" which IS a concrete actionable obligation.
+
 DATA:
 {payload_json}
 """
@@ -402,9 +433,12 @@ Return ONLY valid JSON with this shape:
 === OWNERSHIP VERIFICATION (CRITICAL) ===
 - Every todo MUST be something the user personally needs to do.
 - Check `is_from_me` on the source messages:
-  - If is_from_me=true and the user says "I need to..." / "I have to..." / "I should..." → APPROVE (user's own obligation).
-  - If is_from_me=false and the other participant says "Can you..." / directly asks the user → APPROVE (request directed at user).
+  - If is_from_me=true and the user says "I need to..." / "I have to..." → APPROVE (user's own obligation).
+  - If is_from_me=true and the user says "I should..." → only APPROVE if the action is concrete and specific (not aspirational or vague).
+  - If is_from_me=false and the other participant asks the user to do something requiring REAL-WORLD ACTION → APPROVE.
+  - If is_from_me=false and the other participant asks a conversational question ("How was X?", "Did you do X?", "What do you think?") → REJECT (a chat reply is not a tracked obligation).
   - If is_from_me=false and the other participant says "I need to..." / "I have to..." / "I'll..." → REJECT (that is THEIR task, not the user's).
+- In PERSONAL (1-on-1) conversations, the counterparty's identity is IMPLICIT. Do NOT reject a todo just because the extracted participant name does not literally appear in the source message text. If the conversation is between the user and Person X, and the todo references Person X, that is sufficiently supported by the conversation context.
 - In GROUP CHATS, apply stricter ownership checks:
   - Reject when participant A tells participant B to do something — that is not the user's todo.
   - Reject generic group plans ("we should hang out", "someone needs to grab ice") unless the user explicitly volunteers.
@@ -427,7 +461,11 @@ Return ONLY valid JSON with this shape:
 
 === TIMING VERIFICATION ===
 - When checking deadlines derived from words like today, tomorrow, tonight, or Friday, verify the extracted time is anchored to the source message `sent_at_utc`, not the current runtime date.
-- Reject a time-bearing action if its resolved date appears to be based on processing time rather than the message timestamp.
+- If the todo text and ownership are valid but the deadline_utc appears incorrectly anchored, APPROVE the todo and note in your reason that the deadline should be removed. Do NOT reject an otherwise valid action solely because of a date-resolution error.
+
+=== EPHEMERAL ACTION FILTER ===
+- Reject todos for real-time coordination that will be completed within minutes: "omw", "be there in 5", "play one more orbit", "leaving now". These are happening in the moment and do not need persistent tracking.
+- Reject "reply to X about Y" todos when the user (is_from_me=true) already sent a reply within the same conversation cluster. Check the messages: if the user already responded to the question, the obligation is already fulfilled.
 
 === GENERAL RULES ===
 - Evaluate each proposed action independently. A single chunk may validly support multiple approved actions of the same type.
@@ -437,8 +475,12 @@ Return ONLY valid JSON with this shape:
 - Project approval requires strong evidence that the conversation belongs to that project.
 - Use `is_from_me` as the primary ownership signal for first-person todos, completions, and journal entries, but not an absolute veto when the message is clearly a retrospective summary of the user's own experience.
 - It is acceptable to approve personal todos/journal entries while rejecting project updates.
-- Meaningful conversation summaries can be valid journal entries even when no concrete accomplishment happened.
-- Approve a journal entry when the message is a clear first-person recap of the user's conversation or experience.
+- Meaningful conversation summaries can be valid journal entries, but apply a HIGH bar: would the user want to remember this weeks later?
+- Reject journal entries that log ephemeral logistics: meetup spots, ETAs, arrival/departure messages, transit updates, scheduling confirmations. These belong in conversation history, not the journal.
+- Reject journal entries about other people's accomplishments or status updates unless the user is directly involved in or meaningfully affected by the event. "Owen won at poker" is Owen's story. "Had a poker session with Owen and came out ahead" is the user's experience.
+- Reject journal entries that contain sensitive PII (SSN digits, financial account numbers, passwords, SSH keys). These should never be persisted in the journal.
+- Reject trivial social micro-events: liking a message, confirming a time, adding someone to a chat, forwarding an email.
+- Approve journal entries that capture: genuine personal experiences, meaningful conversations with substance, accomplishments, important decisions, emotional moments, or learning experiences.
 - Inferred calendar durations or time windows are acceptable when the wording strongly supports them.
 - Explicit hard deadlines (filing, renewal, submission) are valid calendar items as all-day events when the date is correct.
 - Prefer false negatives over false positives for knowledge-page edits.
@@ -458,6 +500,10 @@ Examples:
 - Approve a calendar create when the chunk gives a concrete start time and duration.
 - Reject a calendar create for vague scheduling like "we should find time next week."
 - Reject a calendar create when it's really a personal obligation, not a scheduled event.
+- Reject a calendar create when the start_time is at or before the message's sent_at_utc + 15 minutes — the event is already happening.
+- Approve calendar events from automated booking confirmations (restaurant reservations, TSA appointments, hotel bookings) when they confirm something the user initiated. These are real commitments.
+- Reject calendar events from marketing, delivery notifications, ride-share driver arrivals, and unsolicited business messages.
+- Recognize casual/slang confirmations as valid: "word", "bet", "say less", "down", "i'm down", "perfect" all signal agreement to a plan.
 - Approve a workspace update for an agreed project strategy or durable decision.
 - Reject a workspace update from a single speculative message with no confirmation.
 
@@ -575,6 +621,9 @@ Rules:
 - If multiple messages contribute to one event, use the latest relevant confirming message as the anchor. Use `time_context.cluster_end_time_local` only as a fallback when a relevant message timestamp is missing.
 - Do not convert task-like obligations into calendar items just because they contain time words like "tonight", "tomorrow", or "before Friday". If the text is about the user needing to do something, it belongs in todos unless it is an explicit event or explicit deadline.
 - A concrete start time plus strong contextual cues is enough. Explicit end times are helpful but not required if a reasonable duration can be inferred from the wording.
+- Do NOT create events for things happening RIGHT NOW or within 15 minutes of the message timestamp. If the start_time would be at or before the message's sent_at_utc plus 15 minutes, the event is already in progress and provides no calendar value. Examples to skip: "omw", "I'll be there in 5", real-time meetup coordination.
+- Recognize casual/slang confirmations as valid commitment signals: "word", "bet", "say less", "less", "perfect", "down", "i'm down" all mean the user or participant confirmed the plan.
+- For automated booking confirmations (restaurant reservations, TSA/PreCheck appointments, hotel bookings) that confirm something the user initiated, DO extract the event. These are the user's real commitments even though the message is automated. However, do NOT extract from marketing/promotional messages, delivery notifications, or unsolicited reminders.
 - Convert local times using the supplied time zone and respect daylight saving time when mapping them into UTC.
 - Use nearby confirmations in the same chunk to upgrade a tentative suggestion into a concrete event.
 - If the duration is missing, infer a reasonable window only when the text supports it.
