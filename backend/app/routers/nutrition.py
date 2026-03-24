@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
+from app.core.exceptions import NotFoundException
 from app.core.quotas import enforce_chat_quota
 from app.db.models.nutrition import NUTRIENT_DEFINITIONS, NutritionIngredientStatus
 from app.db.models.entities import User
@@ -119,7 +120,7 @@ async def update_ingredient(
             status=status,
             nutrient_values=payload.nutrients,
         )
-    except ValueError as exc:
+    except NotFoundException as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return NutritionIngredientResponse(**record)
 
@@ -143,7 +144,7 @@ async def get_recipe(
     service = NutritionRecipesService(session)
     try:
         recipe = await service.get_recipe(recipe_id, owner_user_id=current_user.id)
-    except ValueError as exc:
+    except NotFoundException as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return NutritionRecipeResponse(**recipe)
 
@@ -210,8 +211,10 @@ async def update_recipe(
                 for comp in payload.components
             ],
         )
-    except ValueError as exc:
+    except NotFoundException as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return NutritionRecipeResponse(**record)
 
 
@@ -248,8 +251,10 @@ async def update_goal(
     service = NutritionGoalsService(session)
     try:
         result = await service.update_goal(current_user.id, slug, body.goal)
-    except ValueError as exc:
+    except NotFoundException as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     await session.commit()
     return NutrientGoalItem(**result)
 
@@ -271,8 +276,10 @@ async def log_manual_intake(
             unit=request.unit,
             day=day,
         )
-    except ValueError as exc:
+    except NotFoundException as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return record
 
 @router.get("/intake/menu", response_model=NutritionIntakeMenuResponse)
@@ -302,7 +309,7 @@ async def update_intake_entry(
             quantity=payload.quantity,
             unit=payload.unit,
         )
-    except ValueError as exc:
+    except NotFoundException as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return NutritionIntakeEntry(**updated)
 
@@ -367,8 +374,10 @@ async def quick_log(
             unit=request.unit,
             day=day,
         )
-    except ValueError as exc:
+    except NotFoundException as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return record
 
 
