@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import date, datetime
 from dataclasses import dataclass, field
@@ -16,7 +17,7 @@ from app.db.models.calendar import CalendarEvent, GoogleCalendar
 from app.db.repositories.project_note_repository import ProjectNoteRepository
 from app.db.repositories.project_repository import ProjectRepository
 from app.db.repositories.todo_repository import TodoRepository
-from app.clients.openai_client import OpenAIResponsesClient
+from app.clients.openai_client import OpenAIResponsesClient, get_shared_openai_client
 from app.schemas.assistant import AssistantAction, AssistantPageContext
 from app.schemas.llm_outputs import AssistantActionPlanOutput, AssistantRouterOutput
 from app.schemas.todos import TodoItemResponse
@@ -172,12 +173,41 @@ class MonetToolRegistry:
         return self._tools.get(tool_id)
 
 
+def _resolve_entity_id(
+    action: AssistantAction,
+    page_context: AssistantPageContext,
+    param_name: str,
+    entity_attr: str,
+    *extra_fallbacks: Any,
+) -> int:
+    """Resolve an integer entity ID from action params, extra fallbacks, then page context.
+
+    Resolution order:
+    1. ``action.params[param_name]``
+    2. Each value in ``extra_fallbacks`` (e.g. ``note.project_id``)
+    3. ``page_context.selected_entity.<entity_attr>``
+
+    Returns 0 when no candidate is truthy.
+    """
+    candidates = [
+        action.params.get(param_name),
+        *extra_fallbacks,
+        getattr(page_context.selected_entity, entity_attr, None)
+        if page_context.selected_entity
+        else None,
+    ]
+    for value in candidates:
+        if value:
+            return int(value)
+    return 0
+
+
 class MonetAssistantAgent:
     """High-level orchestrator that routes Monet chat messages to tools and composes replies."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
-        self.client = OpenAIResponsesClient()
+        self.client = OpenAIResponsesClient(client=get_shared_openai_client())
         self.context_builder = MonetContextBuilder(session)
         self.tool_registry = MonetToolRegistry(session)
 
@@ -370,11 +400,9 @@ class MonetAssistantAgent:
         for action in actions:
             try:
                 if action.action_type == "projects.create_todo":
-                    project_id = int(
-                        action.params.get("project_id")
-                        or (page_context.selected_entity.project_id if page_context.selected_entity else 0)
-                        or (await project_repo.ensure_inbox_project(user_id)).id
-                    )
+                    project_id = _resolve_entity_id(
+                        action, page_context, "project_id", "project_id",
+                    ) or int((await project_repo.ensure_inbox_project(user_id)).id)
                     project = await project_repo.get_for_user(user_id, project_id)
                     if project is None:
                         raise ValueError("Project not found for todo creation.")
@@ -391,9 +419,8 @@ class MonetAssistantAgent:
                     result.tools_used.append(action.action_type)
 
                 elif action.action_type == "projects.create_note":
-                    project_id = int(
-                        action.params.get("project_id")
-                        or (page_context.selected_entity.project_id if page_context.selected_entity else 0)
+                    project_id = _resolve_entity_id(
+                        action, page_context, "project_id", "project_id",
                     )
                     if not project_id:
                         raise ValueError("Select a project before creating a note.")
@@ -416,19 +443,17 @@ class MonetAssistantAgent:
                     result.tools_used.append(action.action_type)
 
                 elif action.action_type == "projects.update_note":
-                    note_id = int(
-                        action.params.get("note_id")
-                        or (page_context.selected_entity.note_id if page_context.selected_entity else 0)
+                    note_id = _resolve_entity_id(
+                        action, page_context, "note_id", "note_id",
                     )
                     if not note_id:
                         raise ValueError("Note id is required to update a note.")
                     note = await note_repo.get_for_user(user_id=user_id, note_id=note_id)
                     if note is None:
                         raise ValueError("Project note not found.")
-                    project_id = int(
-                        action.params.get("project_id")
-                        or note.project_id
-                        or (page_context.selected_entity.project_id if page_context.selected_entity else 0)
+                    project_id = _resolve_entity_id(
+                        action, page_context, "project_id", "project_id",
+                        note.project_id,
                     )
                     project = await project_repo.get_for_user(user_id, project_id)
                     if project is None or note.project_id != project.id:
@@ -470,9 +495,8 @@ class MonetAssistantAgent:
                     result.tools_used.append(action.action_type)
 
                 elif action.action_type == "calendar.update_event":
-                    event_id = int(
-                        action.params.get("event_id")
-                        or (page_context.selected_entity.calendar_event_id if page_context.selected_entity else 0)
+                    event_id = _resolve_entity_id(
+                        action, page_context, "event_id", "calendar_event_id",
                     )
                     if not event_id:
                         raise ValueError("Select an event before editing it.")
@@ -637,8 +661,8 @@ class MonetAssistantAgent:
             "available_tools": tools,
             "context": slim_context,
         }
-        prompt = dedent(
-            f"""
+        system_instructions = dedent(
+            """\
             You are Monet, an AI coach who can answer questions directly or call specialized tools.
             Decide whether the user message requires logging nutrition, creating to-dos, both, or neither.
 
@@ -650,17 +674,16 @@ class MonetAssistantAgent:
               the user can delete than to silently ignore their request.
 
             Respond strictly with JSON in the shape:
-            {{"reply_mode":"respond_only|respond_and_call_tools","narrative_intent":"...", "tool_calls":[{{"tool_id":"...", "args_json":"{{...}}"}}]}}
-            IMPORTANT: args_json must be a JSON-encoded STRING (not a nested object), e.g. "{{\\"message\\":\\"I ate a banana\\"}}"
-            DATA:
-            {json.dumps(payload, ensure_ascii=False, default=_json_fallback)}
-            """
+            {"reply_mode":"respond_only|respond_and_call_tools","narrative_intent":"...", "tool_calls":[{"tool_id":"...", "args_json":"{...}"}]}
+            IMPORTANT: args_json must be a JSON-encoded STRING (not a nested object), e.g. "{\\"message\\":\\"I ate a banana\\"}" """
         )
+        user_prompt = json.dumps(payload, ensure_ascii=False, default=_json_fallback)
         try:
             result = await self.client.generate_json(
-                prompt,
+                user_prompt,
                 response_model=AssistantRouterOutput,
                 temperature=0.2,
+                instructions=system_instructions,
             )
         except Exception as exc:
             logger.error("[llm-fallback] monet_assistant._route_message failed: {}", exc)
@@ -679,23 +702,30 @@ class MonetAssistantAgent:
 
     async def _execute_tools(self, user_id: int, calls: list[ToolCall]) -> ToolExecutionResult:
         results = ToolExecutionResult()
-        for call in calls:
+
+        async def _run_one(call: ToolCall) -> tuple[str, dict[str, Any]]:
             tool = self.tool_registry.get(call.tool_id)
             if not tool:
                 logger.warning("[assistant] unknown tool requested: %s", call.tool_id)
-                continue
+                return call.tool_id, {"skipped": True}
             try:
-                tool_output = await tool.run(user_id, call.args)
+                output = await tool.run(user_id, call.args)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("[assistant] tool %s failed: %s", call.tool_id, exc)
-                tool_output = {"error": str(exc)}
-            results.tools_used.append(call.tool_id)
-            results.raw_results[call.tool_id] = tool_output
-            if call.tool_id == NutritionLogTool.spec.id:
+                output = {"error": str(exc)}
+            return call.tool_id, output
+
+        outcomes = await asyncio.gather(*[_run_one(c) for c in calls])
+        for tool_id, tool_output in outcomes:
+            if tool_output.get("skipped"):
+                continue
+            results.tools_used.append(tool_id)
+            results.raw_results[tool_id] = tool_output
+            if tool_id == NutritionLogTool.spec.id:
                 entries = tool_output.get("logged_entries") or []
                 if isinstance(entries, list):
                     results.nutrition_entries.extend(entries)
-            elif call.tool_id == TodoCreateTool.spec.id:
+            elif tool_id == TodoCreateTool.spec.id:
                 items = tool_output.get("items") or []
                 if isinstance(items, list):
                     results.todo_items.extend(
