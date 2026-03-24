@@ -23,7 +23,13 @@ async def enforce_chat_quota(
         return user
 
     today = eastern_today()
-    stmt = select(ChatUsage).where(ChatUsage.user_id == user.id, ChatUsage.usage_date == today)
+    # Use FOR UPDATE to acquire a row lock, preventing concurrent requests
+    # from both passing the quota check before either increments the counter.
+    stmt = (
+        select(ChatUsage)
+        .where(ChatUsage.user_id == user.id, ChatUsage.usage_date == today)
+        .with_for_update()
+    )
     result = await session.execute(stmt)
     usage = result.scalar_one_or_none()
     if usage and usage.count >= CHAT_DAILY_LIMIT:
