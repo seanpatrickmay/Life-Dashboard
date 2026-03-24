@@ -414,7 +414,6 @@ class MonetAssistantAgent:
                         deadline_is_date_only=bool(action.params.get("deadline_is_date_only", False)),
                     )
                     await self.session.flush()
-                    await self.session.commit()
                     result.todo_items.append(self._serialize_todo(todo))
                     result.tools_used.append(action.action_type)
 
@@ -438,7 +437,7 @@ class MonetAssistantAgent:
                         tags=self._parse_tags(action.params.get("tags")),
                         pinned=bool(action.params.get("pinned", False)),
                     )
-                    await self.session.commit()
+                    await self.session.flush()
                     result.created_notes += 1
                     result.tools_used.append(action.action_type)
 
@@ -472,7 +471,6 @@ class MonetAssistantAgent:
                     if "archived" in action.params:
                         note.archived = bool(action.params.get("archived"))
                     await self.session.flush()
-                    await self.session.commit()
                     result.updated_notes += 1
                     result.tools_used.append(action.action_type)
 
@@ -535,6 +533,7 @@ class MonetAssistantAgent:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[assistant] contextual action failed type={} err={}", action.action_type, exc)
                 result.errors.append(f"{action.action_type}: {exc}")
+        await self.session.commit()
         return result
 
     def _normalize_action(
