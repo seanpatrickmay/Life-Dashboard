@@ -37,6 +37,17 @@ def build_openai_client() -> AsyncOpenAI:
     return AsyncOpenAI(api_key=settings.openai_api_key, timeout=_REQUEST_TIMEOUT)
 
 
+_shared_client: AsyncOpenAI | None = None
+
+
+def get_shared_openai_client() -> AsyncOpenAI:
+    """Return a module-level singleton AsyncOpenAI client for connection pooling."""
+    global _shared_client  # noqa: PLW0603
+    if _shared_client is None:
+        _shared_client = build_openai_client()
+    return _shared_client
+
+
 @dataclass(slots=True)
 class TextGenerationResult:
     text: str
@@ -72,11 +83,14 @@ class OpenAIResponsesClient:
         prompt: str,
         temperature: float | None,
         max_output_tokens: int | None,
+        instructions: str | None = None,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {
             "model": self.model_name,
             "input": prompt,
         }
+        if instructions is not None:
+            kwargs["instructions"] = instructions
         if max_output_tokens is not None:
             kwargs["max_output_tokens"] = max_output_tokens
         if temperature is not None and self._supports_temperature():
@@ -89,12 +103,14 @@ class OpenAIResponsesClient:
         *,
         temperature: float = 0.2,
         max_output_tokens: int | None = None,
+        instructions: str | None = None,
     ) -> TextGenerationResult:
         logger.debug("[openai] text response request model={} chars={}", self.model_name, len(prompt))
         kwargs = self._base_request_kwargs(
             prompt=prompt,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            instructions=instructions,
         )
         response = await self._call_with_retry(self.client.responses.create, **kwargs)
         return TextGenerationResult(
@@ -109,6 +125,7 @@ class OpenAIResponsesClient:
         response_model: type[StructuredT],
         temperature: float = 0.2,
         max_output_tokens: int | None = None,
+        instructions: str | None = None,
     ) -> StructuredGenerationResult[StructuredT]:
         return await self._generate_structured(
             prompt,
@@ -116,6 +133,7 @@ class OpenAIResponsesClient:
             temperature=temperature,
             max_output_tokens=max_output_tokens,
             tools=None,
+            instructions=instructions,
         )
 
     async def generate_json_with_web_search(
@@ -142,6 +160,7 @@ class OpenAIResponsesClient:
         temperature: float,
         max_output_tokens: int | None,
         tools: list[dict[str, Any]] | None,
+        instructions: str | None = None,
     ) -> StructuredGenerationResult[StructuredT]:
         logger.debug(
             "[openai] structured response request model={} schema={} chars={} tools={}",
@@ -154,6 +173,7 @@ class OpenAIResponsesClient:
             prompt=prompt,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            instructions=instructions,
         )
         response = await self._call_with_retry(
             self.client.responses.parse,
