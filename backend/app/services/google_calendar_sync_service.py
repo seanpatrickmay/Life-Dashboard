@@ -106,12 +106,17 @@ class GoogleCalendarSyncService:
         sync_token = None if force_full else calendar.sync_token
 
         try:
-            payload = await client.list_events(
-                calendar.google_id,
-                time_min=window_start.isoformat(),
-                time_max=window_end.isoformat(),
-                sync_token=sync_token,
-            )
+            if sync_token:
+                payload = await client.list_events(
+                    calendar.google_id,
+                    sync_token=sync_token,
+                )
+            else:
+                payload = await client.list_events(
+                    calendar.google_id,
+                    time_min=window_start.isoformat(),
+                    time_max=window_end.isoformat(),
+                )
         except GoogleCalendarError as exc:
             if exc.status_code == 410:
                 logger.info("Google Calendar sync token invalid; full resync for {}", calendar.google_id)

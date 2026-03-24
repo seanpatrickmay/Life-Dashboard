@@ -60,7 +60,7 @@ class GoogleCalendarClient:
         time_max: str | None = None,
         sync_token: str | None = None,
     ) -> dict[str, Any]:
-        """Return events for the specified calendar within a window or sync token."""
+        """Return all events for the specified calendar, handling pagination."""
         params: dict[str, Any] = {
             "singleEvents": True,
             "showDeleted": True,
@@ -75,9 +75,22 @@ class GoogleCalendarClient:
             if time_max:
                 params["timeMax"] = time_max
         calendar_path = _encode_path_segment(calendar_id)
-        return await self._request(
-            "GET", f"/calendars/{calendar_path}/events", params=params
-        )
+        all_items: list[dict[str, Any]] = []
+        page_token: str | None = None
+        result: dict[str, Any] = {}
+        while True:
+            page_params = {**params}
+            if page_token:
+                page_params["pageToken"] = page_token
+            result = await self._request(
+                "GET", f"/calendars/{calendar_path}/events", params=page_params
+            )
+            all_items.extend(result.get("items", []))
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                break
+        result["items"] = all_items
+        return result
 
     async def insert_event(self, calendar_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Insert a new event into the specified calendar."""
