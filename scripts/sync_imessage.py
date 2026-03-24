@@ -510,7 +510,7 @@ async def main() -> None:
         if not args.skip_processing:
             async with AsyncSessionLocal() as session:
                 processor = IMessageProcessingService(session)
-                await processor.process_new_messages(args.user_id, time_zone=args.time_zone)
+                await processor.process_pending_messages(user_id=args.user_id, time_zone=args.time_zone)
     finally:
         conn.close()
 
