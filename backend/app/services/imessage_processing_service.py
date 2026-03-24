@@ -363,19 +363,6 @@ class IMessageProcessingService:
             result[key] = fixed
         return result
 
-    async def process_new_messages(
-        self,
-        user_id: int,
-        *,
-        time_zone: str = "America/New_York",
-        max_messages: int = MAX_PENDING_MESSAGES,
-    ) -> IMessageProcessingRun:
-        return await self.process_pending_messages(
-            user_id=user_id,
-            time_zone=time_zone,
-            max_messages=max_messages,
-        )
-
     async def process_pending_messages(
         self,
         *,
