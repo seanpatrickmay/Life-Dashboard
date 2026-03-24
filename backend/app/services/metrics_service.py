@@ -122,6 +122,9 @@ class MetricsService:
                 exc,
             )
             raise
+        except Exception:
+            logger.exception("Unexpected error during Garmin ingest for user {}", user_id)
+            raise
 
         if self.garmin is None:
             stmt = select(GarminConnection).where(GarminConnection.user_id == user_id)
