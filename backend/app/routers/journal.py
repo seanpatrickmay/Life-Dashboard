@@ -17,6 +17,7 @@ from app.schemas.journal import (
   JournalWeekResponse,
 )
 from app.services.journal_service import JournalService
+from app.utils.timezone import local_today
 
 router = APIRouter(prefix="/journal", tags=["journal"])
 
@@ -66,7 +67,6 @@ async def get_day(
   await session.commit()
 
   if data["status"] == "open":
-    from app.utils.timezone import local_today
     yesterday = local_today(time_zone) - timedelta(days=1)
     background_tasks.add_task(_background_ensure_summary, current_user.id, yesterday, time_zone)
 
