@@ -37,14 +37,15 @@ async def list_todos(
   offset: int = Query(default=0, ge=0, description="Number of items to skip"),
 ) -> list[TodoItemResponse]:
   repo = TodoRepository(session)
-  # Get all todos for the date (we'll paginate in memory for simplicity)
-  all_items = await repo.list_for_user(current_user.id, local_date=local_today(time_zone))
-
-  # Apply pagination
-  paginated_items = all_items[offset:offset + limit]
+  items = await repo.list_for_user(
+    current_user.id,
+    local_date=local_today(time_zone),
+    limit=limit,
+    offset=offset,
+  )
 
   now_utc = datetime.now(timezone.utc)
-  return [build_todo_response(item, now_utc) for item in paginated_items]
+  return [build_todo_response(item, now_utc) for item in items]
 
 
 @router.post("", response_model=TodoItemResponse)
