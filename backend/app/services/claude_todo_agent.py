@@ -82,11 +82,11 @@ class TodoAssistantAgent:
     inbox = await project_repo.ensure_inbox_project(user_id)
     created = await self.repo.create_many(user_id=user_id, project_id=inbox.id, items=todo_specs)
     await self.session.flush()
-    await self.session.commit()
     link_service = TodoCalendarLinkService(self.session)
     for todo in created:
       if todo.deadline_utc is not None and not todo.completed:
         await link_service.upsert_event_for_todo(todo)
+    await self.session.commit()
 
     reply = parsed.get("summary") if isinstance(parsed, dict) else None
     if not reply:

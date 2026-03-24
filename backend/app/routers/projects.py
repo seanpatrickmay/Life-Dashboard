@@ -15,7 +15,8 @@ from app.db.repositories.project_repository import (
   TodoProjectSuggestionRepository,
 )
 from app.db.repositories.todo_repository import TodoRepository
-from app.db.session import AsyncSessionLocal, get_session
+from app.db.session import get_session
+from app.routers._shared import build_todo_response, run_project_suggestions
 from app.schemas.projects import (
   ProjectBoardResponse,
   ProjectCreateRequest,
@@ -24,33 +25,9 @@ from app.schemas.projects import (
   ProjectUpdateRequest,
   SuggestionRecomputeRequest,
 )
-from app.schemas.todos import TodoItemResponse
-from app.services.todo_project_suggestion_service import TodoProjectSuggestionService
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
-
-
-def _to_todo_response(item: TodoItem, now_utc: datetime) -> TodoItemResponse:
-  return TodoItemResponse(
-    id=item.id,
-    project_id=item.project_id,
-    text=item.text,
-    completed=item.completed,
-    deadline_utc=item.deadline_utc,
-    deadline_is_date_only=item.deadline_is_date_only,
-    is_overdue=bool(
-      not item.completed and item.deadline_utc is not None and item.deadline_utc < now_utc
-    ),
-    created_at=item.created_at,
-    updated_at=item.updated_at,
-  )
-
-
-async def _run_project_suggestions(user_id: int, todo_ids: list[int]) -> None:
-  async with AsyncSessionLocal() as session:
-    service = TodoProjectSuggestionService(session)
-    await service.process_todo_ids(user_id=user_id, todo_ids=todo_ids)
 
 
 @router.get("/board", response_model=ProjectBoardResponse)
@@ -97,7 +74,7 @@ async def get_project_board(
 
   return ProjectBoardResponse(
     projects=project_payload,
-    todos=[_to_todo_response(todo, now_utc) for todo in todos],
+    todos=[build_todo_response(todo, now_utc) for todo in todos],
     suggestions=[
       ProjectSuggestionResponse(
         todo_id=suggestion.todo_id,
@@ -212,7 +189,7 @@ async def recompute_suggestions(
     todo_ids = [row[0] for row in result.all()]
 
   if todo_ids:
-    background_tasks.add_task(_run_project_suggestions, current_user.id, todo_ids)
+    background_tasks.add_task(run_project_suggestions, current_user.id, todo_ids)
   return {"scheduled_count": len(todo_ids)}
 
 

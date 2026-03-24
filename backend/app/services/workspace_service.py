@@ -646,12 +646,13 @@ class WorkspaceService:
         term = query.strip()
         if not term:
             return WorkspaceSearchResponse(results=[])
+        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         stmt = (
             select(WorkspacePage)
             .where(
                 WorkspacePage.user_id == user_id,
                 WorkspacePage.trashed_at.is_(None),
-                WorkspacePage.title.ilike(f"%{term}%"),
+                WorkspacePage.title.ilike(f"%{escaped}%", escape="\\"),
             )
             .order_by(WorkspacePage.updated_at.desc())
             .limit(20)
@@ -663,7 +664,7 @@ class WorkspaceService:
             .options(selectinload(WorkspaceBlock.page))
             .where(
                 WorkspaceBlock.user_id == user_id,
-                WorkspaceBlock.text_content.ilike(f"%{term}%"),
+                WorkspaceBlock.text_content.ilike(f"%{escaped}%", escape="\\"),
             )
             .limit(20)
         )
@@ -1156,7 +1157,7 @@ class WorkspaceService:
                     zone = resolve_time_zone(tz_name)
                     todo.completed_local_date = todo.completed_at_utc.astimezone(zone).date()
                 if not todo.accomplishment_text:
-                    agent = TodoAccomplishmentAgent(self.session)
+                    agent = TodoAccomplishmentAgent()
                     try:
                         todo.accomplishment_text = await agent.rewrite(todo.text)
                     except Exception:  # noqa: BLE001

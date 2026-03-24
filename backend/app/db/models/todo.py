@@ -54,3 +54,5 @@ class TodoItem(Base):
       self.completed_at_utc = completed_at_utc or datetime.now(timezone.utc)
     else:
       self.completed_at_utc = None
+      self.completed_local_date = None
+      self.completed_time_zone = None

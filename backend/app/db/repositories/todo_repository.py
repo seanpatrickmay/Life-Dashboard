@@ -19,7 +19,14 @@ class TodoRepository:
   def __init__(self, session: AsyncSession) -> None:
     self.session = session
 
-  async def list_for_user(self, user_id: int, local_date: date | None = None) -> list[TodoItem]:
+  async def list_for_user(
+    self,
+    user_id: int,
+    local_date: date | None = None,
+    *,
+    limit: int | None = None,
+    offset: int | None = None,
+  ) -> list[TodoItem]:
     """Return todos ordered with uncompleted + overdue items first."""
     now_utc = datetime.now(timezone.utc)
     overdue_bucket = case(
@@ -52,6 +59,10 @@ class TodoRepository:
       TodoItem.deadline_utc.asc().nullslast(),
       TodoItem.created_at.asc(),
     )
+    if offset is not None:
+      stmt = stmt.offset(offset)
+    if limit is not None:
+      stmt = stmt.limit(limit)
     result = await self.session.execute(stmt)
     return list(result.scalars().all())
 
