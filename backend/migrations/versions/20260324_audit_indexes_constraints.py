@@ -55,7 +55,6 @@ def upgrade() -> None:
     table_names = set(inspector.get_table_names())
     if "project_note_todo_ref" in table_names:
         fks = inspector.get_foreign_keys("project_note_todo_ref")
-        fk_names = {fk["name"] for fk in fks if fk.get("name")}
 
         # Replace note_id FK
         for fk in fks:
@@ -86,17 +85,17 @@ def upgrade() -> None:
                 break
 
     # --- SleepSession indexes (Issue #6) ---
-    ss_indexes = {idx["name"] for idx in inspector.get_indexes("sleep_session")}
-    if "ix_sleep_session_user_id" not in ss_indexes:
-        op.create_index("ix_sleep_session_user_id", "sleep_session", ["user_id"])
+    ss_indexes = {idx["name"] for idx in inspector.get_indexes("sleepsession")}
+    if "ix_sleepsession_user_id" not in ss_indexes:
+        op.create_index("ix_sleepsession_user_id", "sleepsession", ["user_id"])
 
     ss_constraints = {
-        c["name"] for c in inspector.get_unique_constraints("sleep_session")
+        c["name"] for c in inspector.get_unique_constraints("sleepsession")
     }
-    if "uq_sleep_session_user_date" not in ss_constraints:
+    if "uq_sleepsession_user_date" not in ss_constraints:
         op.create_unique_constraint(
-            "uq_sleep_session_user_date",
-            "sleep_session",
+            "uq_sleepsession_user_date",
+            "sleepsession",
             ["user_id", "metric_date"],
         )
 
@@ -134,14 +133,14 @@ def downgrade() -> None:
     inspector = sa.inspect(bind)
 
     ss_constraints = {
-        c["name"] for c in inspector.get_unique_constraints("sleep_session")
+        c["name"] for c in inspector.get_unique_constraints("sleepsession")
     }
-    if "uq_sleep_session_user_date" in ss_constraints:
-        op.drop_constraint("uq_sleep_session_user_date", "sleep_session", type_="unique")
+    if "uq_sleepsession_user_date" in ss_constraints:
+        op.drop_constraint("uq_sleepsession_user_date", "sleepsession", type_="unique")
 
-    ss_indexes = {idx["name"] for idx in inspector.get_indexes("sleep_session")}
-    if "ix_sleep_session_user_id" in ss_indexes:
-        op.drop_index("ix_sleep_session_user_id", table_name="sleep_session")
+    ss_indexes = {idx["name"] for idx in inspector.get_indexes("sleepsession")}
+    if "ix_sleepsession_user_id" in ss_indexes:
+        op.drop_index("ix_sleepsession_user_id", table_name="sleepsession")
 
     # --- CASCADE FKs -> revert to plain FKs ---
     table_names = set(inspector.get_table_names())

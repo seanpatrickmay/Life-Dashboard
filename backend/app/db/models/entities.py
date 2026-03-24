@@ -136,12 +136,12 @@ class DailyMetric(Base):
     readiness_insight_id: Mapped[int | None] = mapped_column(ForeignKey("readiness_insight.id"))
 
     user: Mapped[User] = relationship(back_populates="daily_metrics")
-    readiness_insight: Mapped["ReadinessInsight"] = relationship(back_populates="daily_metric", lazy="select")
+    readiness_insight: Mapped["ReadinessInsight"] = relationship(back_populates="daily_metric", lazy="joined")
 
 
 class SleepSession(Base):
     __table_args__ = (
-        UniqueConstraint("user_id", "metric_date", name="uq_sleep_session_user_date"),
+        UniqueConstraint("user_id", "metric_date", name="uq_sleepsession_user_date"),
     )
 
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), index=True)
