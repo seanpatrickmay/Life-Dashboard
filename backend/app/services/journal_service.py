@@ -14,6 +14,7 @@ from app.db.models.calendar import CalendarEvent, GoogleCalendar, TodoEventLink
 from app.db.repositories.journal_repository import JournalRepository
 from app.db.repositories.todo_repository import TodoRepository
 from app.services.journal_compiler import JournalCompiler
+from app.utils.calendar_helpers import is_declined_attendee
 from app.utils.timezone import local_today, resolve_time_zone
 
 
@@ -281,7 +282,7 @@ class JournalService:
     for event, calendar, link in rows:
       if link and link.todo_id:
         continue
-      if _is_declined_attendee(event.attendees):
+      if is_declined_attendee(event.attendees):
         continue
       summary = (event.summary or "").strip()
       if not summary:
@@ -311,15 +312,6 @@ class JournalService:
         }
       )
     return events
-
-
-def _is_declined_attendee(attendees: list[dict[str, object]] | None) -> bool:
-  if not attendees:
-    return False
-  for attendee in attendees:
-    if attendee.get("self") and attendee.get("responseStatus") == "declined":
-      return True
-  return False
 
 
 def _format_local_time(value: datetime | None) -> str:
