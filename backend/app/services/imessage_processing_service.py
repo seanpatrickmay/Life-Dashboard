@@ -200,7 +200,7 @@ class IMessageProcessingService:
         self.journal_service = JournalService(session)
         self.calendar_service = GoogleCalendarEventService(session)
         self.workspace_service = WorkspaceService(session)
-        self.todo_accomplishment_agent = TodoAccomplishmentAgent(session)
+        self.todo_accomplishment_agent = TodoAccomplishmentAgent()
         try:
             self.client = OpenAIResponsesClient()
         except Exception as exc:  # noqa: BLE001

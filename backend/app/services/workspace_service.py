@@ -1157,7 +1157,7 @@ class WorkspaceService:
                     zone = resolve_time_zone(tz_name)
                     todo.completed_local_date = todo.completed_at_utc.astimezone(zone).date()
                 if not todo.accomplishment_text:
-                    agent = TodoAccomplishmentAgent(self.session)
+                    agent = TodoAccomplishmentAgent()
                     try:
                         todo.accomplishment_text = await agent.rewrite(todo.text)
                     except Exception:  # noqa: BLE001

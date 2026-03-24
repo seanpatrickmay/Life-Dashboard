@@ -56,7 +56,7 @@ class AsyncAIService:
                     logger.debug(f"[async_ai] Used cached accomplishment for todo {todo_id}")
                 else:
                     # Generate new accomplishment
-                    agent = TodoAccomplishmentAgent(session)
+                    agent = TodoAccomplishmentAgent()
                     accomplishment = await agent.rewrite(todo_text)
 
                     # Cache it
