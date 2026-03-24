@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from collections import OrderedDict
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -21,8 +22,9 @@ from app.utils.timezone import eastern_midnight, eastern_now, eastern_today
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
-# Simple in-memory cache for personal use
-_cache: Dict[str, tuple[Any, datetime]] = {}
+# Simple bounded in-memory cache for personal use (LRU eviction at _CACHE_MAX_SIZE)
+_CACHE_MAX_SIZE = 64
+_cache: OrderedDict[str, tuple[Any, datetime]] = OrderedDict()
 CACHE_TTL = 300  # 5 minutes
 
 
@@ -36,8 +38,11 @@ async def metrics_overview(
     cache_key = f"metrics_overview:{current_user.id}:{range_days}"
     if cache_key in _cache:
         cached_data, cached_time = _cache[cache_key]
-        if (datetime.now() - cached_time).total_seconds() < CACHE_TTL:
+        if (datetime.now(timezone.utc) - cached_time).total_seconds() < CACHE_TTL:
+            _cache.move_to_end(cache_key)
             return cached_data
+        else:
+            del _cache[cache_key]
 
     cutoff = eastern_today() - timedelta(days=range_days - 1)
     repo = MetricsRepository(session)
@@ -79,8 +84,11 @@ async def metrics_overview(
         sleep_trend_hours=sleep_series,
     )
 
-    # Cache the response
-    _cache[cache_key] = (response, datetime.now())
+    # Cache the response (bounded LRU)
+    _cache[cache_key] = (response, datetime.now(timezone.utc))
+    _cache.move_to_end(cache_key)
+    while len(_cache) > _CACHE_MAX_SIZE:
+        _cache.popitem(last=False)
     return response
 
 
