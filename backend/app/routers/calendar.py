@@ -423,6 +423,7 @@ async def google_calendar_webhook(
     session: AsyncSession = Depends(get_session),
     resource_state: str | None = Header(None, alias="X-Goog-Resource-State"),
     channel_id: str | None = Header(None, alias="X-Goog-Channel-Id"),
+    channel_token: str | None = Header(None, alias="X-Goog-Channel-Token"),
 ) -> Response:
     """Receive Google Calendar webhook notifications and resync."""
     if resource_state == "sync":
@@ -435,6 +436,9 @@ async def google_calendar_webhook(
     result = await session.execute(stmt)
     calendar = result.scalar_one_or_none()
     if not calendar:
+        response.status_code = status.HTTP_200_OK
+        return response
+    if not calendar.channel_token or calendar.channel_token != channel_token:
         response.status_code = status.HTTP_200_OK
         return response
     sync_service = GoogleCalendarSyncService(session)

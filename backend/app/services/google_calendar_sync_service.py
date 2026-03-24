@@ -1,6 +1,7 @@
 """Google Calendar sync orchestration."""
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -172,11 +173,13 @@ class GoogleCalendarSyncService:
             raise RuntimeError("Google Calendar connection missing or expired.")
         client = GoogleCalendarClient(token)
         channel_id = f"ld-{calendar.user_id}-{uuid4()}"
+        channel_token = secrets.token_urlsafe(32)
         try:
             response = await client.watch_events(
                 calendar.google_id,
                 channel_id=channel_id,
                 address=settings.google_calendar_webhook_url,
+                token=channel_token,
             )
         except GoogleCalendarError as exc:
             logger.warning(
@@ -185,6 +188,7 @@ class GoogleCalendarSyncService:
             return
         calendar.channel_id = response.get("id")
         calendar.channel_resource_id = response.get("resourceId")
+        calendar.channel_token = channel_token
         expiration = response.get("expiration")
         if expiration:
             try:
