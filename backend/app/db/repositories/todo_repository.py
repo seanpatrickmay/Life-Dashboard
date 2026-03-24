@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Iterable
 
-from sqlalchemy import and_, case, delete, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -175,7 +175,6 @@ class TodoRepository:
     self, user_id: int, start: date, end: date
   ) -> dict[date, int]:
     """Return completed todo counts grouped by local date for a date range."""
-    from sqlalchemy import func
     stmt = (
       select(TodoItem.completed_local_date, func.count(TodoItem.id))
       .where(
