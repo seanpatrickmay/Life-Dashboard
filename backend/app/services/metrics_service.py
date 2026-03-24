@@ -361,12 +361,9 @@ class MetricsService:
         with_timestamps = [(payload, ts) for payload, ts in entries if ts is not None]
         without_timestamps = [payload for payload, ts in entries if ts is None]
         with_timestamps.sort(key=lambda item: item[1], reverse=True)
-        limited: list[dict[str, Any]] = [payload for payload, _ in with_timestamps[:6]]
-        if len(with_timestamps) > 6:
-            logger.debug("Truncated {} activities to keep the latest 6 entries", len(with_timestamps) - 6)
-        remaining_slots = max(0, 6 - len(limited))
-        limited.extend(without_timestamps[:remaining_slots])
-        return limited
+        result: list[dict[str, Any]] = [payload for payload, _ in with_timestamps]
+        result.extend(without_timestamps)
+        return result
 
     def _map_hrv(self, payload: list[dict]) -> dict[date, float]:
         result: dict[date, float] = {}
