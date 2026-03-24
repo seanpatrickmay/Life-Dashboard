@@ -10,6 +10,8 @@ from typing import Any
 from garminconnect import Garmin, GarminConnectTooManyRequestsError
 from loguru import logger
 
+from app.utils.date_parsing import parse_iso_date
+
 from app.core.config import settings
 
 # Rate limiting: delay between individual Garmin API calls (seconds)
@@ -143,7 +145,9 @@ class GarminClient:
             if hasattr(self.client, "get_hrv_data"):
                 try:
                     raw = self._throttled_call(self.client.get_hrv_data, current.isoformat())
-                except (GarminConnectTooManyRequestsError, Exception) as exc:
+                except GarminConnectTooManyRequestsError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
                     logger.warning("Garmin HRV fetch failed for {}: {}", current, exc)
                     raw = None
             daily_entries = self._normalize_hrv_payload(raw, current)
@@ -168,7 +172,9 @@ class GarminClient:
                 try:
                     payload = self._throttled_call(self.client.get_rhr_day, iso)
                     resting_value = self._extract_resting_hr(payload)
-                except (GarminConnectTooManyRequestsError, Exception) as exc:
+                except GarminConnectTooManyRequestsError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
                     logger.debug("Failed to fetch resting HR for {}: {}", iso, exc)
 
             if resting_value is not None:
@@ -188,7 +194,9 @@ class GarminClient:
             iso = current.isoformat()
             try:
                 payload = self._throttled_call(self.client.get_training_status, iso)
-            except (GarminConnectTooManyRequestsError, Exception) as exc:
+            except GarminConnectTooManyRequestsError:
+                raise
+            except Exception as exc:  # noqa: BLE001
                 logger.debug("Failed to fetch training status for {}: {}", iso, exc)
                 current += timedelta(days=1)
                 continue
@@ -369,12 +377,4 @@ class GarminClient:
 
     @staticmethod
     def _parse_iso_date(value: str | None) -> date | None:
-        if not value:
-            return None
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
-        except ValueError:
-            try:
-                return datetime.strptime(value, "%Y-%m-%d").date()
-            except ValueError:
-                return None
+        return parse_iso_date(value)
