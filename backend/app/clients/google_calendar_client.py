@@ -24,10 +24,35 @@ class GoogleCalendarError(Exception):
 
 
 class GoogleCalendarClient:
-    """Lightweight async client for Google Calendar API calls."""
+    """Lightweight async client for Google Calendar API calls.
+
+    Use as an async context manager to ensure the httpx connection is closed::
+
+        async with GoogleCalendarClient(token) as client:
+            calendars = await client.list_calendars()
+    """
 
     def __init__(self, access_token: str) -> None:
         self.access_token = access_token
+        self._client: httpx.AsyncClient | None = None
+
+    async def __aenter__(self) -> "GoogleCalendarClient":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.aclose()
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return a reusable httpx client, creating one if needed."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=20)
+        return self._client
+
+    async def aclose(self) -> None:
+        """Close the underlying httpx client."""
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     async def list_calendars(self) -> list[dict[str, Any]]:
         """Return the authenticated user's calendar list."""
@@ -60,7 +85,7 @@ class GoogleCalendarClient:
         time_max: str | None = None,
         sync_token: str | None = None,
     ) -> dict[str, Any]:
-        """Return events for the specified calendar within a window or sync token."""
+        """Return all events for the specified calendar, handling pagination."""
         params: dict[str, Any] = {
             "singleEvents": True,
             "showDeleted": True,
@@ -75,9 +100,22 @@ class GoogleCalendarClient:
             if time_max:
                 params["timeMax"] = time_max
         calendar_path = _encode_path_segment(calendar_id)
-        return await self._request(
-            "GET", f"/calendars/{calendar_path}/events", params=params
-        )
+        all_items: list[dict[str, Any]] = []
+        page_token: str | None = None
+        result: dict[str, Any] = {}
+        while True:
+            page_params = {**params}
+            if page_token:
+                page_params["pageToken"] = page_token
+            result = await self._request(
+                "GET", f"/calendars/{calendar_path}/events", params=page_params
+            )
+            all_items.extend(result.get("items", []))
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                break
+        result["items"] = all_items
+        return result
 
     async def insert_event(self, calendar_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Insert a new event into the specified calendar."""
@@ -139,8 +177,8 @@ class GoogleCalendarClient:
     ) -> dict[str, Any]:
         url = f"{GOOGLE_CALENDAR_BASE_URL}{path}"
         headers = {"Authorization": f"Bearer {self.access_token}"}
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.request(method, url, params=params, json=json, headers=headers)
+        client = self._get_client()
+        response = await client.request(method, url, params=params, json=json, headers=headers)
         if response.status_code >= 400:
             payload = None
             try:

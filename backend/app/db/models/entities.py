@@ -55,8 +55,12 @@ class User(Base):
     todo_project_suggestions: Mapped[list["TodoProjectSuggestion"]] = relationship(
         back_populates="user"
     )
-    journal_entries: Mapped[list["JournalEntry"]] = relationship(back_populates="user")
-    journal_summaries: Mapped[list["JournalDaySummary"]] = relationship(back_populates="user")
+    journal_entries: Mapped[list["JournalEntry"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    journal_summaries: Mapped[list["JournalDaySummary"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     daily_metrics: Mapped[list["DailyMetric"]] = relationship(back_populates="user")
     nutrition_intakes: Mapped[list["NutritionIntake"]] = relationship(back_populates="user")
     profile: Mapped["UserProfile"] = relationship(back_populates="user", uselist=False)
@@ -72,8 +76,12 @@ class User(Base):
         back_populates="user", uselist=False
     )
     calendars: Mapped[list["GoogleCalendar"]] = relationship(back_populates="user")
-    calendar_events: Mapped[list["CalendarEvent"]] = relationship(back_populates="user")
-    todo_event_links: Mapped[list["TodoEventLink"]] = relationship(back_populates="user")
+    calendar_events: Mapped[list["CalendarEvent"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    todo_event_links: Mapped[list["TodoEventLink"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
     imessage_conversations: Mapped[list["IMessageConversation"]] = relationship(
         back_populates="user"
     )

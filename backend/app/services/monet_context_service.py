@@ -19,6 +19,7 @@ from app.db.repositories.todo_repository import TodoRepository
 from app.services.nutrition_intake_service import NutritionIntakeService
 from app.services.user_profile_service import UserProfileService
 from app.services.workspace_service import WorkspaceService
+from app.utils.calendar_helpers import is_declined_attendee
 from app.utils.timezone import eastern_today, local_now
 
 
@@ -215,7 +216,7 @@ class MonetContextBuilder:
         rows = result.all()
         events = []
         for event, calendar in rows:
-            if _is_declined_attendee(event.attendees):
+            if is_declined_attendee(event.attendees):
                 continue
             events.append(
                 {
@@ -408,12 +409,3 @@ def _event_priority(event: dict[str, Any]) -> int:
     if calendar.get("primary") or (event.get("organizer") or {}).get("self"):
         return 1
     return 2
-
-
-def _is_declined_attendee(attendees: list[dict[str, Any]] | None) -> bool:
-    if not attendees:
-        return False
-    for attendee in attendees:
-        if attendee.get("self") and attendee.get("responseStatus") == "declined":
-            return True
-    return False
