@@ -14,6 +14,7 @@ from app.db.models.nutrition import (
     NutritionRecipe,
     NutritionRecipeComponent,
 )
+from app.services.nutrition_recipe_expander import expand_recipe_components
 from app.db.repositories.nutrition_intake_repository import NutritionIntakeRepository
 from app.db.repositories.nutrition_ingredients_repository import (
     NutritionIngredientsRepository,
@@ -218,34 +219,26 @@ class NutritionIntakeService:
         day: date,
         source: NutritionIntakeSource,
     ) -> dict[str, Any]:
+        expanded = expand_recipe_components(recipe, servings)
         created_entries: list[dict[str, Any]] = []
-
-        async def _expand(target_recipe: NutritionRecipe, multiplier: float) -> None:
-            for comp in target_recipe.components:
-                per_serving_qty = comp.quantity / target_recipe.servings if target_recipe.servings else comp.quantity
-                effective_qty = multiplier * per_serving_qty
-                if comp.ingredient:
-                    await self.repo.log_intake(
-                        user_id=user_id,
-                        food_id=comp.ingredient.id,
-                        quantity=effective_qty,
-                        unit=comp.unit,
-                        day=day,
-                        source=source,
-                        recipe_id=recipe.id,
-                    )
-                    created_entries.append(
-                        {
-                            "ingredient_id": comp.ingredient.id,
-                            "ingredient_name": comp.ingredient.name,
-                            "quantity": effective_qty,
-                            "unit": comp.unit,
-                            "source": source.value,
-                        }
-                    )
-                elif comp.child_recipe:
-                    await _expand(comp.child_recipe, effective_qty)
-
-        await _expand(recipe, servings)
+        for comp in expanded:
+            await self.repo.log_intake(
+                user_id=user_id,
+                food_id=comp.ingredient_id,
+                quantity=comp.quantity,
+                unit=comp.unit,
+                day=day,
+                source=source,
+                recipe_id=recipe.id,
+            )
+            created_entries.append(
+                {
+                    "ingredient_id": comp.ingredient_id,
+                    "ingredient_name": comp.ingredient_name,
+                    "quantity": comp.quantity,
+                    "unit": comp.unit,
+                    "source": source.value,
+                }
+            )
         await self.session.flush()
         return {"recipe_id": recipe.id, "created_entries": created_entries}
