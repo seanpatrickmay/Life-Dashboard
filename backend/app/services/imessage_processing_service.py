@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from inspect import signature
+from collections.abc import Callable
 from typing import Any
 
 from loguru import logger
@@ -1597,7 +1598,7 @@ class IMessageProcessingService:
         *,
         action_text: str,
         candidates: list[dict[str, Any]],
-        time_bonus: callable | None = None,
+        time_bonus: Callable | None = None,
     ) -> list[dict[str, Any]]:
         ranked: list[tuple[float, dict[str, Any]]] = []
         for candidate in candidates:
