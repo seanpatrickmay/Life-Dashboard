@@ -17,6 +17,7 @@ from app.services.garmin_connection_service import GarminConnectionService
 from app.db.models.entities import DailyEnergy, GarminConnection
 from app.db.repositories.activity_repository import ActivityRepository
 from app.db.repositories.metrics_repository import MetricsRepository
+from app.utils.date_parsing import parse_iso_date
 from app.utils.timezone import EASTERN_TZ, ensure_eastern, eastern_now, eastern_today
 
 
@@ -785,12 +786,4 @@ class MetricsService:
 
     @staticmethod
     def _parse_iso_date(value: str | None) -> date | None:
-        if not value:
-            return None
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
-        except ValueError:
-            try:
-                return datetime.strptime(value, "%Y-%m-%d").date()
-            except ValueError:
-                return None
+        return parse_iso_date(value)

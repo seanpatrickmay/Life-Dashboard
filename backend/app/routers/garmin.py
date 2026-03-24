@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -57,6 +58,7 @@ async def connect_garmin(
             garmin_password=payload.garmin_password,
         )
     except Exception as exc:  # noqa: BLE001
+        logger.exception("Garmin connect failed for user {}", current_user.id)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Unable to authenticate with Garmin.",

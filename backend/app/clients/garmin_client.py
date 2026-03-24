@@ -10,6 +10,8 @@ from typing import Any
 from garminconnect import Garmin, GarminConnectTooManyRequestsError
 from loguru import logger
 
+from app.utils.date_parsing import parse_iso_date
+
 from app.core.config import settings
 
 # Rate limiting: delay between individual Garmin API calls (seconds)
@@ -375,12 +377,4 @@ class GarminClient:
 
     @staticmethod
     def _parse_iso_date(value: str | None) -> date | None:
-        if not value:
-            return None
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
-        except ValueError:
-            try:
-                return datetime.strptime(value, "%Y-%m-%d").date()
-            except ValueError:
-                return None
+        return parse_iso_date(value)
