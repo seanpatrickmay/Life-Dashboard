@@ -10,7 +10,7 @@ from app.core.auth import get_current_user
 from app.core.config import settings
 from app.db.models.entities import User
 from app.db.models.workspace import WorkspaceAsset
-from app.db.session import AsyncSessionLocal, get_session
+from app.db.session import get_session
 from app.schemas.workspace import (
     WorkspaceApplyTemplateRequest,
     WorkspaceAssetCreateRequest,
@@ -32,20 +32,12 @@ from app.schemas.workspace import (
     WorkspaceUpdateViewRequest,
     WorkspaceViewResponse,
 )
-from app.services.todo_project_suggestion_service import TodoProjectSuggestionService
+from app.routers._shared import run_project_suggestions
 from app.services.workspace_service import WorkspaceService
 
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 ASSET_STORAGE_ROOT = Path("/tmp/life_dashboard_workspace_assets")
-
-
-async def _run_workspace_task_suggestions(user_id: int, todo_ids: list[int]) -> None:
-    if not todo_ids:
-        return
-    async with AsyncSessionLocal() as session:
-        service = TodoProjectSuggestionService(session)
-        await service.process_todo_ids(user_id=user_id, todo_ids=todo_ids)
 
 
 @router.get("/bootstrap", response_model=WorkspaceBootstrapResponse)
@@ -111,7 +103,7 @@ async def create_workspace_page(
         template_id=payload.template_id,
     )
     if page.legacy_todo_id:
-        background_tasks.add_task(_run_workspace_task_suggestions, current_user.id, [page.legacy_todo_id])
+        background_tasks.add_task(run_project_suggestions, current_user.id, [page.legacy_todo_id])
     return await service.get_page_detail(current_user.id, page.id)
 
 
@@ -131,7 +123,7 @@ async def update_workspace_page(
         **updates,
     )
     if "title" in updates and page.legacy_todo_id:
-        background_tasks.add_task(_run_workspace_task_suggestions, current_user.id, [page.legacy_todo_id])
+        background_tasks.add_task(run_project_suggestions, current_user.id, [page.legacy_todo_id])
     return await service.get_page_detail(current_user.id, page.id)
 
 
@@ -244,7 +236,7 @@ async def create_workspace_database_row(
         template_id=payload.template_id,
     )
     if page.legacy_todo_id:
-        background_tasks.add_task(_run_workspace_task_suggestions, current_user.id, [page.legacy_todo_id])
+        background_tasks.add_task(run_project_suggestions, current_user.id, [page.legacy_todo_id])
     return await service.get_page_detail(current_user.id, page.id)
 
 
@@ -259,7 +251,7 @@ async def update_workspace_page_properties(
     service = WorkspaceService(session)
     page = await service.update_property_values(current_user.id, page_id, values=payload.values)
     if page.legacy_todo_id and "title" in payload.values:
-        background_tasks.add_task(_run_workspace_task_suggestions, current_user.id, [page.legacy_todo_id])
+        background_tasks.add_task(run_project_suggestions, current_user.id, [page.legacy_todo_id])
     return await service.get_page_detail(current_user.id, page.id)
 
 
