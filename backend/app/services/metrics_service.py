@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from dateutil import parser
+from garminconnect import GarminConnectAuthenticationError, GarminConnectConnectionError
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -109,9 +110,16 @@ class MetricsService:
                     energy_payload=energy_payload,
                 )
             )
-        except Exception:  # noqa: BLE001
+        except GarminConnectAuthenticationError:
             if self.garmin is None:
                 await GarminConnectionService(self.session).mark_reauth_required(user_id, True)
+            raise
+        except (GarminConnectConnectionError, OSError, TimeoutError) as exc:
+            logger.warning(
+                "Transient error during Garmin fetch for user {} (not marking reauth): {}",
+                user_id,
+                exc,
+            )
             raise
 
         if self.garmin is None:
