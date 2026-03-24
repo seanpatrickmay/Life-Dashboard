@@ -222,7 +222,7 @@ async def suggest_recipe(
     session: AsyncSession = Depends(get_session),
 ) -> RecipeSuggestion:
     agent = NutritionAssistantAgent(session)
-    suggestion = await agent._suggest_recipe(description)  # re-use agent logic
+    suggestion = await agent.suggest_recipe(description)
     if suggestion is None:
         raise HTTPException(status_code=400, detail="Unable to suggest recipe from description")
     return RecipeSuggestion(**suggestion)

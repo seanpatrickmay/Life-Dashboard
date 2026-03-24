@@ -355,6 +355,10 @@ class NutritionAssistantAgent:
         logger.info(f"[nutrition] nutrient profile resolved for {food_name}")
         return nutrients
 
+    async def suggest_recipe(self, description: str) -> dict[str, Any] | None:
+        """Public entry point for recipe suggestion from a text description."""
+        return await self._suggest_recipe(description)
+
     async def _suggest_recipe(self, description: str) -> dict[str, Any] | None:
         prompt = RECIPE_SUGGESTION_PROMPT.format(description=description)
         try:
