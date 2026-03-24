@@ -36,7 +36,7 @@ class TodoCalendarLinkService:
         """Create or update the Google Calendar event linked to a todo."""
         if todo.deadline_utc is None:
             await self._unlink_todo(todo, delete_event=True)
-            await self.session.commit()
+            await self.session.flush()
             return
         token = await self.connection_service.get_access_token(todo.user_id)
         if not token:
@@ -95,12 +95,12 @@ class TodoCalendarLinkService:
             end_time=end_time,
             todo_text_hash=text_hash,
         )
-        await self.session.commit()
+        await self.session.flush()
 
     async def unlink_todo(self, todo: TodoItem, *, delete_event: bool) -> None:
         """Remove any calendar linkage for the todo, optionally deleting the event."""
         await self._unlink_todo(todo, delete_event=delete_event)
-        await self.session.commit()
+        await self.session.flush()
 
     async def handle_event_deleted(self, calendar_id: int, google_event_id: str | None) -> None:
         """Unlink todos when their Google Calendar events are deleted."""
@@ -113,7 +113,7 @@ class TodoCalendarLinkService:
         todo.deadline_utc = None
         todo.deadline_is_date_only = False
         await self.session.delete(link)
-        await self.session.commit()
+        await self.session.flush()
 
     async def handle_event_updated(
         self,
@@ -144,7 +144,7 @@ class TodoCalendarLinkService:
                         end_time=end_time,
                         todo_text_hash=_hash_text(normalized_text),
                     )
-                    await self.session.commit()
+                    await self.session.flush()
             link = await self._get_link_by_event(calendar_id, google_event_id)
         if not link:
             return
@@ -165,14 +165,14 @@ class TodoCalendarLinkService:
         elif end_time:
             todo.deadline_utc = end_time
             todo.deadline_is_date_only = False
-        await self.session.commit()
+        await self.session.flush()
 
     async def _ensure_life_dashboard_calendar(self, user_id: int) -> GoogleCalendar:
         calendar = await self._get_life_dashboard_calendar(user_id)
         if calendar:
             calendar.selected = True
             calendar.is_life_dashboard = True
-            await self.session.commit()
+            await self.session.flush()
             return calendar
         connection = await self.connection_service.get_connection(user_id)
         if not connection:
@@ -199,7 +199,7 @@ class TodoCalendarLinkService:
             color_id=created.get("colorId"),
         )
         self.session.add(calendar)
-        await self.session.commit()
+        await self.session.flush()
         return calendar
 
     async def _get_life_dashboard_calendar(self, user_id: int) -> GoogleCalendar | None:
