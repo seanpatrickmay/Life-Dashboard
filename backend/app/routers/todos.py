@@ -71,10 +71,10 @@ async def create_todo(
     time_horizon=payload.time_horizon,
   )
   await session.flush()
-  await session.commit()
   if todo.deadline_utc is not None and not todo.completed:
     link_service = TodoCalendarLinkService(session)
     await link_service.upsert_event_for_todo(todo, time_zone=payload.time_zone)
+  await session.commit()
   background_tasks.add_task(run_project_suggestions, current_user.id, [todo.id])
   now_utc = datetime.now(timezone.utc)
   return build_todo_response(todo, now_utc)
@@ -148,7 +148,6 @@ async def update_todo(
     zone = resolve_time_zone(tz_name)
     todo.completed_local_date = todo.completed_at_utc.astimezone(zone).date()
   await session.flush()
-  await session.commit()
   link_service = TodoCalendarLinkService(session)
   if todo.completed:
     await link_service.unlink_todo(todo, delete_event=True)
@@ -156,6 +155,7 @@ async def update_todo(
     await link_service.upsert_event_for_todo(todo, time_zone=payload.time_zone)
   else:
     await link_service.unlink_todo(todo, delete_event=True)
+  await session.commit()
   if "text" in update_data and update_data["text"] is not None:
     background_tasks.add_task(run_project_suggestions, current_user.id, [todo.id])
   now_utc = datetime.now(timezone.utc)
