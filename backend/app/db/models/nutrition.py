@@ -340,7 +340,9 @@ class NutritionIngredient(Base):
     owner_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, default=1)
     profile_id: Mapped[int] = mapped_column(ForeignKey("nutrition_food_profiles.id"))
 
-    profile: Mapped[NutritionIngredientProfile] = relationship(back_populates="ingredients")
+    profile: Mapped[NutritionIngredientProfile] = relationship(
+        back_populates="ingredients", cascade="all, delete-orphan", single_parent=True
+    )
     intakes: Mapped[list["NutritionIntake"]] = relationship(back_populates="ingredient")
 
 
