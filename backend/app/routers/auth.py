@@ -34,7 +34,9 @@ from app.utils.timezone import eastern_now
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # ---------------------------------------------------------------------------
-# Simple in-memory rate limiter for auth endpoints
+# Simple in-memory rate limiter for auth endpoints.
+# NOTE: This is per-process only. Multiple uvicorn workers each maintain
+# their own store, so effective limits scale with worker count.
 # ---------------------------------------------------------------------------
 _AUTH_RATE_LIMIT = 10  # max attempts per window
 _AUTH_RATE_WINDOW = 60  # window in seconds
@@ -46,10 +48,14 @@ def _check_rate_limit(client_ip: str) -> None:
     """Raise 429 if *client_ip* has exceeded the auth rate limit."""
     now = time.monotonic()
     window_start = now - _AUTH_RATE_WINDOW
-    # Prune old entries
+    # Prune old entries and evict empty keys to prevent unbounded growth
     entries = _rate_limit_store[client_ip]
-    _rate_limit_store[client_ip] = [t for t in entries if t > window_start]
-    if len(_rate_limit_store[client_ip]) >= _AUTH_RATE_LIMIT:
+    pruned = [t for t in entries if t > window_start]
+    if not pruned:
+        _rate_limit_store.pop(client_ip, None)
+        return
+    _rate_limit_store[client_ip] = pruned
+    if len(pruned) >= _AUTH_RATE_LIMIT:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many authentication attempts. Please try again later.",
