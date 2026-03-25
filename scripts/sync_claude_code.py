@@ -7,6 +7,7 @@ import asyncio
 import logging
 import os
 import sys
+import zoneinfo
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -72,8 +73,6 @@ def _session_date(first_timestamp: str | None, time_zone: str) -> datetime:
             ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
         else:
             ts = datetime.fromtimestamp(ts_str / 1000, tz=timezone.utc)
-        # Convert to local timezone
-        import zoneinfo
         local_tz = zoneinfo.ZoneInfo(time_zone)
         return ts.astimezone(local_tz).date()
     except (ValueError, AttributeError, KeyError):
@@ -106,6 +105,9 @@ async def main() -> None:
             return
 
         projects_with_new_activity: set[int] = set()
+        # Collect summaries per (project_name, date) for aggregated journal entries
+        from collections import defaultdict
+        journal_summaries: dict[tuple[str, object], list[str]] = defaultdict(list)
 
         for session_info, session_file in unprocessed:
             try:
@@ -144,13 +146,8 @@ async def main() -> None:
                         source_project_path=project_path,
                     )
 
-                    await processing_service.upsert_journal_entry(
-                        user_id=args.user_id,
-                        project_name=project.name,
-                        local_date=session_date,
-                        summary=summary_data["summary"],
-                        time_zone=args.time_zone,
-                    )
+                    # Collect summary for aggregated journal entry
+                    journal_summaries[(project.name, session_date)].append(summary_data["summary"])
 
                     file_mtime = os.path.getmtime(session_file)
                     await sync_service.upsert_cursor(
@@ -170,6 +167,23 @@ async def main() -> None:
                 logger.exception("Failed to process session %s", session_info.session_id)
                 await session.rollback()
                 continue
+
+        # Write aggregated journal entries (one per project per date)
+        if not args.dry_run:
+            for (project_name, local_date), summaries in journal_summaries.items():
+                try:
+                    combined = " | ".join(summaries) if len(summaries) > 1 else summaries[0]
+                    await processing_service.upsert_journal_entry(
+                        user_id=args.user_id,
+                        project_name=project_name,
+                        local_date=local_date,
+                        summary=combined,
+                        time_zone=args.time_zone,
+                    )
+                    await session.commit()
+                except Exception:
+                    logger.exception("Failed to write journal entry for %s on %s", project_name, local_date)
+                    await session.rollback()
 
         if not args.dry_run and projects_with_new_activity:
             logger.info("Regenerating state for %d projects", len(projects_with_new_activity))

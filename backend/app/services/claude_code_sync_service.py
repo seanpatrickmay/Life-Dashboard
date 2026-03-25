@@ -18,8 +18,7 @@ from app.services.claude_code_project_resolver import encode_project_path
 logger = logging.getLogger(__name__)
 
 _SECRET_PATTERNS = [
-    re.compile(r"(?i)(\w*(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)\w*)\s*=\s*\S+"),
-    re.compile(r"(?i)DATABASE_URL\s*=\s*\S+"),
+    re.compile(r"(?i)(\w*(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL|URL)\w*)\s*=\s*\S+"),
     re.compile(r"://[^/\s]*:[^@/\s]*@"),
 ]
 
@@ -321,11 +320,9 @@ class ClaudeCodeSyncService:
         all_sessions = history_sessions + dir_sessions
 
         result = []
-        for session_info in all_sessions:
-            if is_session_active(claude_dir, session_info.session_id):
-                logger.debug("Skipping active session %s", session_info.session_id)
-                continue
+        stale_threshold = 6 * 60 * 60  # 6 hours in seconds
 
+        for session_info in all_sessions:
             session_file = find_session_file(claude_dir, session_info)
             if not session_file:
                 continue
@@ -334,6 +331,15 @@ class ClaudeCodeSyncService:
                 file_mtime = os.path.getmtime(session_file)
             except OSError:
                 continue
+
+            if is_session_active(claude_dir, session_info.session_id):
+                # Staleness fallback: if the file hasn't been modified in 6 hours,
+                # treat it as complete even if the PID is still running
+                import time
+                if (time.time() - file_mtime) < stale_threshold:
+                    logger.debug("Skipping active session %s", session_info.session_id)
+                    continue
+                logger.info("Session %s appears stale (>6h), processing anyway", session_info.session_id)
 
             cursor = await self.get_cursor(user_id, session_info.session_id)
             if cursor and cursor.file_mtime >= file_mtime:
