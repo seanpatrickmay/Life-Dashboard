@@ -66,6 +66,7 @@ async def get_project_board(
       ProjectResponse(
         id=project.id,
         name=project.name,
+        display_name=project.display_name,
         notes=project.notes,
         archived=project.archived,
         sort_order=project.sort_order,
@@ -216,6 +217,8 @@ async def update_project(
     if conflict is not None and conflict.id != project.id:
       raise HTTPException(status_code=409, detail="Project with this name already exists")
     project.name = name_candidate
+  if "display_name" in update_data:
+    project.display_name = update_data["display_name"].strip() if update_data["display_name"] else None
   if "notes" in update_data:
     project.notes = update_data["notes"].strip() if update_data["notes"] else None
   if "archived" in update_data and update_data["archived"] is not None:
