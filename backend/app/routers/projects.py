@@ -59,6 +59,16 @@ async def get_project_board(
       open_count += 1
     counts[todo.project_id] = (open_count, completed_count)
 
+  # Fetch last activity date per project
+  from sqlalchemy import func as sa_func
+  last_activity_stmt = (
+    select(ProjectActivity.project_id, sa_func.max(ProjectActivity.local_date))
+    .where(ProjectActivity.user_id == current_user.id)
+    .group_by(ProjectActivity.project_id)
+  )
+  last_activity_result = await session.execute(last_activity_stmt)
+  last_activity_map: dict[int, date] = {row[0]: row[1] for row in last_activity_result.all()}
+
   project_payload: list[ProjectResponse] = []
   for project in projects:
     open_count, completed_count = counts.get(project.id, (0, 0))
@@ -76,6 +86,7 @@ async def get_project_board(
         completed_count=completed_count,
         state_summary_json=project.state_summary_json,
         state_updated_at_utc=project.state_updated_at_utc,
+        last_activity_date=last_activity_map.get(project.id),
       )
     )
   project_payload.sort(key=lambda item: (item.name != INBOX_PROJECT_NAME, item.sort_order, item.id))

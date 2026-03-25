@@ -49,6 +49,11 @@ const SidebarTitle = styled.div`
   margin-bottom: 8px;
 `;
 
+const SidebarSection = styled.div`
+  margin-top: 16px;
+  &:first-child { margin-top: 0; }
+`;
+
 const ProjectRow = styled.button<{ $active?: boolean }>`
   display: flex;
   align-items: center;
@@ -413,12 +418,36 @@ export function ProjectsPage() {
     staleTime: 60_000,
   });
 
-  const projects = boardQuery.data?.projects ?? [];
+  const allProjects = boardQuery.data?.projects ?? [];
   const allTodos = boardQuery.data?.todos ?? [];
 
-  // Auto-select first project if none selected
+  // Split projects into active (activity in last 30 days or has open todos) vs other
+  const ACTIVE_CUTOFF = 30 * 24 * 60 * 60 * 1000; // 30 days
+  const now = Date.now();
+
+  const activeProjects = allProjects
+    .filter((p) => {
+      if (p.open_count > 0) return true;
+      if (p.last_activity_date) {
+        return now - new Date(p.last_activity_date + 'T00:00:00').getTime() < ACTIVE_CUTOFF;
+      }
+      return false;
+    })
+    .sort((a, b) => {
+      // Most recently active first
+      const aDate = a.last_activity_date || '0';
+      const bDate = b.last_activity_date || '0';
+      if (aDate !== bDate) return bDate.localeCompare(aDate);
+      return b.open_count - a.open_count;
+    });
+
+  const otherProjects = allProjects
+    .filter((p) => !activeProjects.includes(p))
+    .sort((a, b) => projectLabel(a).localeCompare(projectLabel(b)));
+
+  // Auto-select first active project if none selected
   const activeProject: ProjectItem | undefined =
-    projects.find((p) => p.id === selectedId) ?? projects[0];
+    allProjects.find((p) => p.id === selectedId) ?? activeProjects[0] ?? allProjects[0];
 
   const activeProjectId = activeProject?.id ?? null;
 
@@ -524,17 +553,35 @@ export function ProjectsPage() {
     <Shell>
       {/* ── Sidebar ─────────────────────────────────────────────── */}
       <Sidebar>
-        <SidebarTitle>Projects</SidebarTitle>
-        {projects.map((p) => (
-          <ProjectRow
-            key={p.id}
-            $active={p.id === activeProjectId}
-            onClick={() => selectProject(p.id)}
-          >
-            <ProjectName>{projectLabel(p)}</ProjectName>
-            {p.open_count > 0 && <Badge>{p.open_count}</Badge>}
-          </ProjectRow>
-        ))}
+        <SidebarSection>
+          <SidebarTitle>Active</SidebarTitle>
+          {activeProjects.map((p) => (
+            <ProjectRow
+              key={p.id}
+              $active={p.id === activeProjectId}
+              onClick={() => selectProject(p.id)}
+            >
+              <ProjectName>{projectLabel(p)}</ProjectName>
+              {p.open_count > 0 && <Badge>{p.open_count}</Badge>}
+            </ProjectRow>
+          ))}
+          {activeProjects.length === 0 && <Muted style={{ padding: '4px 20px' }}>No active projects</Muted>}
+        </SidebarSection>
+        {otherProjects.length > 0 && (
+          <SidebarSection>
+            <SidebarTitle>Other</SidebarTitle>
+            {otherProjects.map((p) => (
+              <ProjectRow
+                key={p.id}
+                $active={p.id === activeProjectId}
+                onClick={() => selectProject(p.id)}
+              >
+                <ProjectName>{projectLabel(p)}</ProjectName>
+                {p.open_count > 0 && <Badge>{p.open_count}</Badge>}
+              </ProjectRow>
+            ))}
+          </SidebarSection>
+        )}
       </Sidebar>
 
       {/* ── Main Content ────────────────────────────────────────── */}
