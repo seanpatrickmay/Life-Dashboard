@@ -57,14 +57,25 @@ if [ "${DEPLOY_PRUNE_IMAGES:-1}" = "1" ]; then
 fi
 
 echo "Waiting for health check..."
-for i in $(seq 1 10); do
-  if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+# Backend port 8000 is only exposed internally; check via Caddy on port 80,
+# or directly via docker exec if the reverse proxy isn't ready yet.
+health_url="${DEPLOY_HEALTH_URL:-http://localhost/health}"
+for i in $(seq 1 15); do
+  if curl -sf "$health_url" > /dev/null 2>&1; then
     echo "Health check passed!"
     echo "Deploy complete."
     exit 0
   fi
-  echo "  Attempt $i/10 failed, retrying in 3s..."
+  # Also try direct container check in case Caddy isn't routing yet
+  if "${compose_cmd[@]}" --env-file "$repo_root/.env" -f docker/docker-compose.prod.yml exec -T backend curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+    echo "Health check passed (direct container)!"
+    echo "Deploy complete."
+    exit 0
+  fi
+  echo "  Attempt $i/15 failed, retrying in 3s..."
   sleep 3
 done
-echo "Health check failed after 10 attempts!"
+
+echo "Health check failed! Backend logs:"
+"${compose_cmd[@]}" --env-file "$repo_root/.env" -f docker/docker-compose.prod.yml logs --tail=30 backend
 exit 1
