@@ -82,7 +82,41 @@ else:
 PY
 
   echo "Running migrations..."
-  alembic upgrade head
+  alembic upgrade head || {
+    echo "Migration failed! Dumping alembic_version state:" >&2
+    python - <<'PY'
+import os, psycopg2
+try:
+    conn = psycopg2.connect(os.environ["DATABASE_URL_HOST"])
+    cur = conn.cursor()
+    cur.execute("SELECT version_num FROM alembic_version")
+    rows = cur.fetchall()
+    print(f"  alembic_version rows: {rows}")
+    conn.close()
+except Exception as e:
+    print(f"  Could not query alembic_version: {e}")
+PY
+    exit 1
+  }
+
+  echo "Verifying async DB connection..."
+  DB_URL="$DATABASE_URL" python - <<'PY'
+import asyncio, os, sys
+async def check():
+    try:
+        import asyncpg
+        url = os.environ["DB_URL"]
+        # Strip the +asyncpg scheme prefix for raw asyncpg
+        url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        conn = await asyncpg.connect(url, timeout=10)
+        ver = await conn.fetchval("SELECT version()")
+        print(f"Async connection OK: {ver[:40]}...")
+        await conn.close()
+    except Exception as e:
+        print(f"Async connection FAILED: {e}", file=sys.stderr)
+        sys.exit(1)
+asyncio.run(check())
+PY
 fi
 
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000
