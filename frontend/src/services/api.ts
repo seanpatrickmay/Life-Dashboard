@@ -646,6 +646,7 @@ export type ProjectItem = {
   completed_count: number;
   state_summary_json?: ProjectStateSummary | null;
   state_updated_at_utc?: string | null;
+  last_activity_date?: string | null;
 };
 
 export type ProjectActivity = {
