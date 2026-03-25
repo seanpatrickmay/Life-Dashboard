@@ -10,6 +10,7 @@ from app.schemas.todos import TodoItemResponse
 class ProjectResponse(BaseModel):
   id: int
   name: str
+  display_name: str | None = None
   notes: str | None = None
   archived: bool
   sort_order: int
@@ -59,6 +60,7 @@ class ProjectCreateRequest(BaseModel):
 
 class ProjectUpdateRequest(BaseModel):
   name: str | None = Field(default=None, min_length=1, max_length=255)
+  display_name: str | None = Field(default=None, max_length=255)
   notes: str | None = None
   archived: bool | None = None
   sort_order: int | None = None

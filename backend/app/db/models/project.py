@@ -18,6 +18,7 @@ class Project(Base):
 
   user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
   name: Mapped[str] = mapped_column(String(255), nullable=False)
+  display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
   notes: Mapped[str | None] = mapped_column(Text, nullable=True)
   archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
   sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

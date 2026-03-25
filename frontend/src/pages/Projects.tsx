@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -9,6 +9,8 @@ import {
   createProjectTodo,
   updateProjectTodo,
   deleteProjectTodo,
+  updateProject,
+  deleteProject,
   type ProjectItem,
   type ProjectActivity,
   type TodoItem,
@@ -94,10 +96,53 @@ const Content = styled.div`
   gap: 32px;
 `;
 
+const ProjectHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+`;
+
 const ProjectTitle = styled.h1`
   font-size: 1.6rem;
   font-weight: 700;
   margin: 0;
+  flex: 1;
+`;
+
+const ProjectTitleInput = styled.input`
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin: 0;
+  flex: 1;
+  border: none;
+  border-bottom: 2px solid ${({ theme }) => theme.colors.focusRing};
+  background: transparent;
+  color: ${({ theme }) => theme.colors.textPrimary};
+  padding: 0 0 2px;
+  outline: none;
+`;
+
+const IconButton = styled.button`
+  background: none;
+  border: 1px solid transparent;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+
+  &:hover {
+    border-color: ${({ theme }) => theme.colors.borderSubtle};
+    color: ${({ theme }) => theme.colors.textPrimary};
+  }
+`;
+
+const DeleteButton = styled(IconButton)`
+  &:hover {
+    border-color: #e53e3e;
+    color: #e53e3e;
+  }
 `;
 
 /* ── Section Layout ─────────────────────────────────────────────────── */
@@ -342,6 +387,10 @@ function groupByDate(activities: ProjectActivity[]): [string, ProjectActivity[]]
   return Object.entries(map);
 }
 
+function projectLabel(p: ProjectItem): string {
+  return p.display_name || p.name;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    Main Component
    ═══════════════════════════════════════════════════════════════════════ */
@@ -390,6 +439,9 @@ export function ProjectsPage() {
   const invalidateBoard = () => queryClient.invalidateQueries({ queryKey: BOARD_KEY });
 
   const [newTodoText, setNewTodoText] = useState('');
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const renameRef = useRef<HTMLInputElement>(null);
 
   const createMutation = useMutation({
     mutationFn: createProjectTodo,
@@ -409,6 +461,47 @@ export function ProjectsPage() {
     mutationFn: deleteProjectTodo,
     onSuccess: invalidateBoard,
   });
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, display_name }: { id: number; display_name: string }) =>
+      updateProject(id, { display_name: display_name || null }),
+    onSuccess: () => {
+      invalidateBoard();
+      setRenaming(false);
+    },
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: deleteProject,
+    onSuccess: () => {
+      invalidateBoard();
+      setParams({});
+    },
+  });
+
+  const startRename = () => {
+    if (!activeProject) return;
+    setRenameValue(projectLabel(activeProject));
+    setRenaming(true);
+    setTimeout(() => renameRef.current?.select(), 0);
+  };
+
+  const submitRename = () => {
+    if (!activeProject) return;
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== projectLabel(activeProject)) {
+      renameMutation.mutate({ id: activeProject.id, display_name: trimmed });
+    } else {
+      setRenaming(false);
+    }
+  };
+
+  const handleDeleteProject = () => {
+    if (!activeProject) return;
+    if (activeProject.name === 'Inbox') return;
+    if (!window.confirm(`Delete "${projectLabel(activeProject)}"? Todos will move to Inbox.`)) return;
+    deleteProjectMutation.mutate(activeProject.id);
+  };
 
   const handleAddTodo = (e: FormEvent) => {
     e.preventDefault();
@@ -438,7 +531,7 @@ export function ProjectsPage() {
             $active={p.id === activeProjectId}
             onClick={() => selectProject(p.id)}
           >
-            <ProjectName>{p.name}</ProjectName>
+            <ProjectName>{projectLabel(p)}</ProjectName>
             {p.open_count > 0 && <Badge>{p.open_count}</Badge>}
           </ProjectRow>
         ))}
@@ -448,7 +541,30 @@ export function ProjectsPage() {
       <Main>
         {activeProject ? (
           <Content>
-            <ProjectTitle>{activeProject.name}</ProjectTitle>
+            <ProjectHeader>
+              {renaming ? (
+                <ProjectTitleInput
+                  ref={renameRef}
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={submitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitRename();
+                    if (e.key === 'Escape') setRenaming(false);
+                  }}
+                />
+              ) : (
+                <ProjectTitle>{projectLabel(activeProject)}</ProjectTitle>
+              )}
+              {!renaming && (
+                <>
+                  <IconButton type="button" onClick={startRename}>Rename</IconButton>
+                  {activeProject.name !== 'Inbox' && (
+                    <DeleteButton type="button" onClick={handleDeleteProject}>Delete</DeleteButton>
+                  )}
+                </>
+              )}
+            </ProjectHeader>
 
             {/* ── State Summary ──────────────────────────────── */}
             {state && (

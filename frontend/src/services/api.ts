@@ -636,6 +636,7 @@ export type ProjectStateSummary = {
 export type ProjectItem = {
   id: number;
   name: string;
+  display_name?: string | null;
   notes: string | null;
   archived: boolean;
   sort_order: number;
@@ -701,6 +702,7 @@ export const updateProject = async (
   id: number,
   payload: {
     name?: string;
+    display_name?: string | null;
     notes?: string | null;
     archived?: boolean;
     sort_order?: number;
