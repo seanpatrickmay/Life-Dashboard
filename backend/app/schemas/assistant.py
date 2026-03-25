@@ -42,7 +42,7 @@ class AssistantAction(BaseModel):
 class MonetMessageRequest(BaseModel):
     """Chat payload for the Monet assistant."""
 
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=4000)
     session_id: str | None = None
     window_days: int = Field(default=7, ge=1, le=30)
     time_zone: str | None = None

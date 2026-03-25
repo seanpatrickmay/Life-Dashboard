@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.openai_client import OpenAIResponsesClient
 from app.prompts import TODO_ACCOMPLISHMENT_PROMPT
@@ -12,8 +11,7 @@ from app.schemas.llm_outputs import TodoAccomplishmentOutput
 class TodoAccomplishmentAgent:
   """Rewrite a completed todo into a neutral past-tense accomplishment."""
 
-  def __init__(self, session: AsyncSession) -> None:
-    self.session = session
+  def __init__(self) -> None:
     self.client = OpenAIResponsesClient()
 
   async def rewrite(self, todo_text: str) -> str:

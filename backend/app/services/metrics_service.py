@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from dateutil import parser
+from garminconnect import GarminConnectAuthenticationError, GarminConnectConnectionError
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ from app.services.garmin_connection_service import GarminConnectionService
 from app.db.models.entities import DailyEnergy, GarminConnection
 from app.db.repositories.activity_repository import ActivityRepository
 from app.db.repositories.metrics_repository import MetricsRepository
+from app.utils.date_parsing import parse_iso_date
 from app.utils.timezone import EASTERN_TZ, ensure_eastern, eastern_now, eastern_today
 
 
@@ -109,9 +111,19 @@ class MetricsService:
                     energy_payload=energy_payload,
                 )
             )
-        except Exception:  # noqa: BLE001
+        except GarminConnectAuthenticationError:
             if self.garmin is None:
                 await GarminConnectionService(self.session).mark_reauth_required(user_id, True)
+            raise
+        except (GarminConnectConnectionError, OSError, TimeoutError) as exc:
+            logger.warning(
+                "Transient error during Garmin fetch for user {} (not marking reauth): {}",
+                user_id,
+                exc,
+            )
+            raise
+        except Exception:
+            logger.exception("Unexpected error during Garmin ingest for user {}", user_id)
             raise
 
         if self.garmin is None:
@@ -353,12 +365,9 @@ class MetricsService:
         with_timestamps = [(payload, ts) for payload, ts in entries if ts is not None]
         without_timestamps = [payload for payload, ts in entries if ts is None]
         with_timestamps.sort(key=lambda item: item[1], reverse=True)
-        limited: list[dict[str, Any]] = [payload for payload, _ in with_timestamps[:6]]
-        if len(with_timestamps) > 6:
-            logger.debug("Truncated {} activities to keep the latest 6 entries", len(with_timestamps) - 6)
-        remaining_slots = max(0, 6 - len(limited))
-        limited.extend(without_timestamps[:remaining_slots])
-        return limited
+        result: list[dict[str, Any]] = [payload for payload, _ in with_timestamps]
+        result.extend(without_timestamps)
+        return result
 
     def _map_hrv(self, payload: list[dict]) -> dict[date, float]:
         result: dict[date, float] = {}
@@ -596,6 +605,9 @@ class MetricsService:
         activity_totals: dict[date, dict[str, float]],
     ) -> None:
         energy_map = self._map_daily_energy(energy_payload)
+
+        # Build the full map of dates -> (entry, source) to persist.
+        upsert_map: dict[date, tuple[dict[str, Any], str]] = {}
         current = start
         while current <= end:
             entry = energy_map.get(current)
@@ -610,29 +622,41 @@ class MetricsService:
                     }
                     source = "activities"
             if entry:
-                stmt = select(DailyEnergy).where(
-                    DailyEnergy.user_id == user_id,
-                    DailyEnergy.metric_date == current,
-                )
-                result = await self.session.execute(stmt)
-                record = result.scalar_one_or_none()
-                if record is None:
-                    record = DailyEnergy(
-                        user_id=user_id,
-                        metric_date=current,
-                        total_kcal=entry["total"],
-                        active_kcal=entry.get("active"),
-                        bmr_kcal=entry.get("bmr"),
-                        source=source,
-                    )
-                    self.session.add(record)
-                else:
-                    record.total_kcal = entry["total"]
-                    record.active_kcal = entry.get("active")
-                    record.bmr_kcal = entry.get("bmr")
-                    record.source = source
-                    record.ingested_at = eastern_now()
+                upsert_map[current] = (entry, source)
             current += timedelta(days=1)
+
+        if not upsert_map:
+            return
+
+        # Batch-fetch all existing DailyEnergy records for the date range in one query.
+        stmt = select(DailyEnergy).where(
+            DailyEnergy.user_id == user_id,
+            DailyEnergy.metric_date >= start,
+            DailyEnergy.metric_date <= end,
+        )
+        result = await self.session.execute(stmt)
+        existing: dict[date, DailyEnergy] = {
+            record.metric_date: record for record in result.scalars().all()
+        }
+
+        for metric_date, (entry, source) in upsert_map.items():
+            record = existing.get(metric_date)
+            if record is None:
+                record = DailyEnergy(
+                    user_id=user_id,
+                    metric_date=metric_date,
+                    total_kcal=entry["total"],
+                    active_kcal=entry.get("active"),
+                    bmr_kcal=entry.get("bmr"),
+                    source=source,
+                )
+                self.session.add(record)
+            else:
+                record.total_kcal = entry["total"]
+                record.active_kcal = entry.get("active")
+                record.bmr_kcal = entry.get("bmr")
+                record.source = source
+                record.ingested_at = eastern_now()
 
     def _map_daily_energy(self, payload: list[dict[str, Any]]) -> dict[date, dict[str, float | None]]:
         result: dict[date, dict[str, float | None]] = {}
@@ -765,12 +789,4 @@ class MetricsService:
 
     @staticmethod
     def _parse_iso_date(value: str | None) -> date | None:
-        if not value:
-            return None
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
-        except ValueError:
-            try:
-                return datetime.strptime(value, "%Y-%m-%d").date()
-            except ValueError:
-                return None
+        return parse_iso_date(value)

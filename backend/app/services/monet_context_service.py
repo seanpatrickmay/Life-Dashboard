@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,6 +19,7 @@ from app.db.repositories.todo_repository import TodoRepository
 from app.services.nutrition_intake_service import NutritionIntakeService
 from app.services.user_profile_service import UserProfileService
 from app.services.workspace_service import WorkspaceService
+from app.utils.calendar_helpers import is_declined_attendee
 from app.utils.timezone import eastern_today, local_now
 
 
@@ -45,49 +47,69 @@ class MonetContextBuilder:
         start_date = today - timedelta(days=window_days - 1)
         local_time = _compute_local_time(time_zone)
 
-        # Gather data sources with individual error isolation
-        metrics_payload: list[dict] = []
-        latest_metric = None
-        nutrition_today: dict = {}
-        nutrition_history: dict = {}
-        profile_payload: dict = {}
-        todo_payload: list[dict] = []
-        calendar_payload: list[dict] = []
-        workspace_payload: dict = {}
+        # Gather data sources concurrently with individual error isolation
+        async def _safe_metrics() -> tuple[list[dict], dict | None]:
+            try:
+                metrics = await self.metrics_repo.list_metrics_since(user_id, start_date)
+                payload = [self._serialize_metric(m) for m in metrics]
+                return payload, (payload[-1] if payload else None)
+            except Exception as exc:
+                logger.warning("[context] metrics failed: {}", exc)
+                return [], None
 
-        try:
-            metrics = await self.metrics_repo.list_metrics_since(user_id, start_date)
-            metrics_payload = [self._serialize_metric(metric) for metric in metrics]
-            latest_metric = metrics_payload[-1] if metrics_payload else None
-        except Exception as exc:
-            logger.warning("[context] metrics failed: {}", exc)
+        async def _safe_nutrition() -> tuple[dict, dict]:
+            try:
+                t = await self.nutrition_service.daily_summary(user_id, today)
+                h = await self.nutrition_service.rolling_average(user_id, window_days)
+                return t, h
+            except Exception as exc:
+                logger.warning("[context] nutrition failed: {}", exc)
+                return {}, {}
 
-        try:
-            nutrition_today = await self.nutrition_service.daily_summary(user_id, today)
-            nutrition_history = await self.nutrition_service.rolling_average(user_id, window_days)
-        except Exception as exc:
-            logger.warning("[context] nutrition failed: {}", exc)
+        async def _safe_profile() -> dict:
+            try:
+                return await self.profile_service.fetch_profile_payload(user_id)
+            except Exception as exc:
+                logger.warning("[context] profile failed: {}", exc)
+                return {}
 
-        try:
-            profile_payload = await self.profile_service.fetch_profile_payload(user_id)
-        except Exception as exc:
-            logger.warning("[context] profile failed: {}", exc)
+        async def _safe_todos() -> list[dict]:
+            try:
+                todos = await self.todo_repo.list_for_user(user_id)
+                return [self._serialize_todo(todo) for todo in todos]
+            except Exception as exc:
+                logger.warning("[context] todos failed: {}", exc)
+                return []
 
-        try:
-            todos = await self.todo_repo.list_for_user(user_id)
-            todo_payload = [self._serialize_todo(todo) for todo in todos]
-        except Exception as exc:
-            logger.warning("[context] todos failed: {}", exc)
+        async def _safe_calendar() -> list[dict]:
+            try:
+                return await self._serialize_calendar_events(user_id, window_days, time_zone)
+            except Exception as exc:
+                logger.warning("[context] calendar failed: {}", exc)
+                return []
 
-        try:
-            calendar_payload = await self._serialize_calendar_events(user_id, window_days, time_zone)
-        except Exception as exc:
-            logger.warning("[context] calendar failed: {}", exc)
+        async def _safe_workspace() -> dict:
+            try:
+                return await self._serialize_workspace_knowledge(user_id, page_context)
+            except Exception as exc:
+                logger.warning("[context] workspace failed: {}", exc)
+                return {}
 
-        try:
-            workspace_payload = await self._serialize_workspace_knowledge(user_id, page_context)
-        except Exception as exc:
-            logger.warning("[context] workspace failed: {}", exc)
+        (
+            (metrics_payload, latest_metric),
+            (nutrition_today, nutrition_history),
+            profile_payload,
+            todo_payload,
+            calendar_payload,
+            workspace_payload,
+        ) = await asyncio.gather(
+            _safe_metrics(),
+            _safe_nutrition(),
+            _safe_profile(),
+            _safe_todos(),
+            _safe_calendar(),
+            _safe_workspace(),
+        )
 
         return {
             "window_days": window_days,
@@ -187,12 +209,14 @@ class MonetContextBuilder:
                 CalendarEvent.end_time >= start_utc,
                 GoogleCalendar.selected.is_(True),
             )
+            .order_by(CalendarEvent.start_time.asc())
+            .limit(50)
         )
         result = await self.session.execute(stmt)
         rows = result.all()
         events = []
         for event, calendar in rows:
-            if _is_declined_attendee(event.attendees):
+            if is_declined_attendee(event.attendees):
                 continue
             events.append(
                 {
@@ -248,8 +272,10 @@ class MonetContextBuilder:
         )
         result = await self.session.execute(stmt)
         pages = list(result.scalars().all())
+        # NOTE: N+1 query – get_page_text_body is called per page.
+        # WorkspaceService has no batch alternative yet; capped by limit param.
         serialized: list[dict[str, Any]] = []
-        for page in pages:
+        for page in pages[:limit]:
             body = await self.workspace_service.get_page_text_body(user_id, page.id)
             serialized.append(self._serialize_workspace_page(page, body, max_chars=320))
         return serialized
@@ -383,12 +409,3 @@ def _event_priority(event: dict[str, Any]) -> int:
     if calendar.get("primary") or (event.get("organizer") or {}).get("self"):
         return 1
     return 2
-
-
-def _is_declined_attendee(attendees: list[dict[str, Any]] | None) -> bool:
-    if not attendees:
-        return False
-    for attendee in attendees:
-        if attendee.get("self") and attendee.get("responseStatus") == "declined":
-            return True
-    return False

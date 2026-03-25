@@ -7,7 +7,7 @@ import { MonetChatBubble } from '../dashboard/MonetChatPanel';
 import { exitGuestMode, isGuestMode } from '../../demo/guest/guestMode';
 import { clearGuestState } from '../../demo/guest/guestStore';
 
-const paletteAccent = (mode: 'light' | 'dark', theme?: any) =>
+const paletteAccent = (mode: 'light' | 'dark', theme?: { colors?: { accent?: string } }) =>
   theme?.colors?.accent ?? (mode === 'dark' ? palette.bloom['300'] : palette.bloom['200']);
 
 const Frame = styled.div<{ $fullWidth?: boolean }>`
@@ -125,7 +125,7 @@ export function PageShell({ children }: PropsWithChildren) {
         </GuestBanner>
       ) : null}
       <CloudNavShelf>
-        <Nav>
+        <Nav aria-label="Main navigation">
           <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/" end>
             Dashboard
           </NavLink>
@@ -152,7 +152,7 @@ export function PageShell({ children }: PropsWithChildren) {
           </NavLink>
         </Nav>
       </CloudNavShelf>
-      <Surface>{children}</Surface>
+      <main><Surface>{children}</Surface></main>
       <MonetChatBubble />
     </Frame>
   );

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from inspect import signature
+from collections.abc import Callable
 from typing import Any
 
 from loguru import logger
@@ -115,6 +116,62 @@ class DuplicateDecision:
     matched_candidate_id: int | None = None
 
 
+# (key, action_type, index, verdict, duplicate)
+ActionDecision = tuple[str, str, int, JudgmentOutcome, DuplicateDecision | None]
+
+ACTION_SPECS: list[tuple[str, str]] = [
+    ("todo_creates", "todo.create"),
+    ("todo_completions", "todo.complete"),
+    ("calendar_creates", "calendar.create"),
+    ("journal_entries", "journal.entry"),
+    ("workspace_updates", "workspace.update"),
+    ("nutrition_logs", "nutrition.log"),
+]
+
+
+@dataclass(slots=True)
+class ClusterEvaluation:
+    """Intermediate result from evaluating a message cluster.
+
+    Holds everything needed for both process (apply actions) and preview
+    (return proposed actions) code paths.
+    """
+
+    payload: dict[str, Any]
+    extracted: dict[str, Any]
+    judged: dict[str, Any]
+    decisions: list[ActionDecision]
+    project: Any  # Project | None
+    used_fallback: bool
+    extraction_method: str
+
+
+@dataclass(slots=True)
+class ActionAuditRecord:
+    """Encapsulates all fields needed to record an action audit entry.
+
+    Collects the 15+ parameters that _record_action_audit previously
+    accepted as individual keyword arguments into a single object.
+    """
+
+    action_type: str
+    fingerprint: str
+    status: str
+    action: dict[str, Any]
+    project_id: int | None = None
+    target_page_id: int | None = None
+    target_todo_id: int | None = None
+    target_calendar_event_id: int | None = None
+    target_journal_entry_id: int | None = None
+    applied_payload: dict[str, Any] | None = None
+    judge_reasoning: str | None = None
+    rationale: str | None = None
+    supporting_message_ids: list[int] | None = None
+    source_occurred_at_utc: datetime | None = None
+    applied: bool = False
+    extraction_method: str | None = None
+
+
 def cluster_messages(
     messages: list[IMessageMessage], *, max_cluster_messages: int = MAX_CLUSTER_MESSAGES
 ) -> list[MessageCluster]:
@@ -200,7 +257,7 @@ class IMessageProcessingService:
         self.journal_service = JournalService(session)
         self.calendar_service = GoogleCalendarEventService(session)
         self.workspace_service = WorkspaceService(session)
-        self.todo_accomplishment_agent = TodoAccomplishmentAgent(session)
+        self.todo_accomplishment_agent = TodoAccomplishmentAgent()
         try:
             self.client = OpenAIResponsesClient()
         except Exception as exc:  # noqa: BLE001
@@ -307,19 +364,6 @@ class IMessageProcessingService:
             result[key] = fixed
         return result
 
-    async def process_new_messages(
-        self,
-        user_id: int,
-        *,
-        time_zone: str = "America/New_York",
-        max_messages: int = MAX_PENDING_MESSAGES,
-    ) -> IMessageProcessingRun:
-        return await self.process_pending_messages(
-            user_id=user_id,
-            time_zone=time_zone,
-            max_messages=max_messages,
-        )
-
     async def process_pending_messages(
         self,
         *,
@@ -348,6 +392,12 @@ class IMessageProcessingService:
                 return run
 
             clusters = cluster_messages(pending_messages)
+            # NOTE: Clusters are processed sequentially on purpose. Although
+            # they are logically independent, they share the same SQLAlchemy
+            # async session and are wrapped in a single transaction that is
+            # committed once at the end (line below).  Concurrent processing
+            # would cause interleaved session operations and violate the
+            # transaction boundary guarantees we rely on for atomicity.
             for cluster in clusters:
                 applied = await self._process_cluster(
                     run=run,
@@ -604,26 +654,9 @@ class IMessageProcessingService:
             for name, count in counts.items()
         }
 
-    async def _process_cluster(
-        self,
-        *,
-        run: IMessageProcessingRun,
-        cluster: MessageCluster,
-        project_catalog: list[ProjectCatalogEntry],
-        time_zone: str,
-    ) -> dict[str, int]:
-        payload = await self._build_cluster_payload(
-            cluster=cluster,
-            project_catalog=project_catalog,
-            time_zone=time_zone,
-        )
-        raw_extracted = await self._extract_actions(payload)
-        used_fallback = bool(raw_extracted.pop("_used_fallback", False))
-        if used_fallback:
-            run.llm_fallback_count += 1
-        extraction_method = "heuristic_fallback" if used_fallback else "llm"
-
-        # Consolidate journal entries: merge N>1 into a single entry
+    @staticmethod
+    def _consolidate_journal_entries(raw_extracted: dict[str, Any]) -> dict[str, Any]:
+        """Merge multiple journal entries into a single consolidated entry."""
         journal_entries = raw_extracted.get("journal_entries") or []
         if len(journal_entries) > 1:
             sorted_entries = sorted(
@@ -642,6 +675,32 @@ class IMessageProcessingService:
             if sorted_entries[0].get("reason"):
                 merged["reason"] = sorted_entries[0]["reason"]
             raw_extracted["journal_entries"] = [merged]
+        return raw_extracted
+
+    async def _evaluate_cluster(
+        self,
+        *,
+        cluster: MessageCluster,
+        project_catalog: list[ProjectCatalogEntry],
+        time_zone: str,
+        user_id: int,
+    ) -> ClusterEvaluation:
+        """Run the shared extraction-judge-dedup-resolve pipeline for a cluster.
+
+        Returns a ClusterEvaluation containing everything both _process_cluster
+        (which applies actions) and _preview_cluster (which reports them) need.
+        """
+        payload = await self._build_cluster_payload(
+            cluster=cluster,
+            project_catalog=project_catalog,
+            time_zone=time_zone,
+        )
+        raw_extracted = await self._extract_actions(payload)
+        used_fallback = bool(raw_extracted.pop("_used_fallback", False))
+        extraction_method = "heuristic_fallback" if used_fallback else "llm"
+
+        # Consolidate journal entries: merge N>1 into a single entry
+        raw_extracted = self._consolidate_journal_entries(raw_extracted)
 
         # Filter out "reply to X" todos when the user already responded in the cluster
         raw_extracted["todo_creates"] = self._filter_already_responded_todos(
@@ -650,24 +709,16 @@ class IMessageProcessingService:
 
         judged = await self._judge_actions(payload, raw_extracted)
 
-        # Phase 1: collect LLM decisions using anonymized data
-        action_specs = [
-            ("todo_creates", "todo.create"),
-            ("todo_completions", "todo.complete"),
-            ("calendar_creates", "calendar.create"),
-            ("journal_entries", "journal.entry"),
-            ("workspace_updates", "workspace.update"),
-            ("nutrition_logs", "nutrition.log"),
-        ]
-        decisions: list[tuple[str, str, int, JudgmentOutcome, DuplicateDecision | None]] = []
-        for key, action_type in action_specs:
+        # Collect LLM decisions using anonymized data
+        decisions: list[ActionDecision] = []
+        for key, action_type in ACTION_SPECS:
             anon_actions = raw_extracted.get(key) or []
             for index, anon_action in enumerate(anon_actions):
                 verdict = self._judge_item(judged, key, index)
                 duplicate = None
                 if verdict.approved:
                     duplicate = await self._deduplicate_action(
-                        user_id=run.user_id,
+                        user_id=user_id,
                         cluster=cluster,
                         action_type=action_type,
                         action=anon_action,
@@ -676,14 +727,47 @@ class IMessageProcessingService:
                     )
                 decisions.append((key, action_type, index, verdict, duplicate))
 
-        # Phase 2: de-anonymize + enrich now that all LLM calls are done
+        # De-anonymize + enrich now that all LLM calls are done
         extracted = self._finalize_extracted_actions(payload, raw_extracted)
         project = await self._resolve_project(
             cluster=cluster,
             extracted=extracted,
             judged=judged,
+            user_id=user_id,
+        )
+
+        return ClusterEvaluation(
+            payload=payload,
+            extracted=extracted,
+            judged=judged,
+            decisions=decisions,
+            project=project,
+            used_fallback=used_fallback,
+            extraction_method=extraction_method,
+        )
+
+    async def _process_cluster(
+        self,
+        *,
+        run: IMessageProcessingRun,
+        cluster: MessageCluster,
+        project_catalog: list[ProjectCatalogEntry],
+        time_zone: str,
+    ) -> dict[str, int]:
+        evaluation = await self._evaluate_cluster(
+            cluster=cluster,
+            project_catalog=project_catalog,
+            time_zone=time_zone,
             user_id=run.user_id,
         )
+        if evaluation.used_fallback:
+            run.llm_fallback_count += 1
+        payload = evaluation.payload
+        extracted = evaluation.extracted
+        judged = evaluation.judged
+        decisions = evaluation.decisions
+        project = evaluation.project
+        extraction_method = evaluation.extraction_method
 
         # Phase 3: apply with real (de-anonymized) names
         counts = {"applied": 0}
@@ -818,78 +902,27 @@ class IMessageProcessingService:
         time_zone: str,
         user_id: int,
     ) -> dict[str, Any]:
-        payload = await self._build_cluster_payload(
+        evaluation = await self._evaluate_cluster(
             cluster=cluster,
             project_catalog=project_catalog,
             time_zone=time_zone,
-        )
-        raw_extracted = await self._extract_actions(payload)
-
-        # Consolidate journal entries: merge N>1 into a single entry
-        journal_entries = raw_extracted.get("journal_entries") or []
-        if len(journal_entries) > 1:
-            sorted_entries = sorted(
-                journal_entries,
-                key=lambda e: e.get("source_occurred_at_utc") or e.get("occurred_at_utc") or "",
-            )
-            merged_text = " · ".join(
-                e.get("text", "").strip() for e in sorted_entries if e.get("text", "").strip()
-            )
-            all_msg_ids: list[int] = []
-            for e in sorted_entries:
-                for mid in e.get("source_message_ids") or []:
-                    if mid not in all_msg_ids:
-                        all_msg_ids.append(mid)
-            merged = {**sorted_entries[0], "text": merged_text, "source_message_ids": all_msg_ids}
-            if sorted_entries[0].get("reason"):
-                merged["reason"] = sorted_entries[0]["reason"]
-            raw_extracted["journal_entries"] = [merged]
-
-        judged = await self._judge_actions(payload, raw_extracted)
-
-        # Phase 1: collect LLM dedup decisions using anonymized data
-        action_specs = [
-            ("todo_creates", "todo.create"),
-            ("todo_completions", "todo.complete"),
-            ("calendar_creates", "calendar.create"),
-            ("journal_entries", "journal.entry"),
-            ("workspace_updates", "workspace.update"),
-            ("nutrition_logs", "nutrition.log"),
-        ]
-        dedup_results: list[tuple[str, str, int, JudgmentOutcome, DuplicateDecision | None]] = []
-        for key, action_type in action_specs:
-            for index, anon_action in enumerate(raw_extracted.get(key) or []):
-                verdict = self._judge_item(judged, key, index)
-                duplicate = None
-                if verdict.approved:
-                    duplicate = await self._deduplicate_action(
-                        user_id=user_id,
-                        cluster=cluster,
-                        action_type=action_type,
-                        action=anon_action,
-                        project_id=None,
-                        time_zone=time_zone,
-                    )
-                dedup_results.append((key, action_type, index, verdict, duplicate))
-
-        # Phase 2: de-anonymize + enrich now that all LLM calls are done
-        extracted = self._finalize_extracted_actions(payload, raw_extracted)
-        project = await self._resolve_project(
-            cluster=cluster,
-            extracted=extracted,
-            judged=judged,
             user_id=user_id,
         )
+        payload = evaluation.payload
+        extracted = evaluation.extracted
+        judged = evaluation.judged
+        decisions = evaluation.decisions
+        project = evaluation.project
 
-        # Phase 3: build preview response with real names
+        # Build preview response with real names
         actions: list[dict[str, Any]] = []
         preview_cluster_actions = [
             (at, (extracted.get(k) or [])[i])
-            for k, at, i, v, _ in dedup_results
+            for k, at, i, v, _ in decisions
             if v.approved
         ]
         preview_conversation_type = payload.get("conversation", {}).get("type")
-        for key, action_type, index, verdict, duplicate in dedup_results:
+        for key, action_type, index, verdict, duplicate in decisions:
             action = (extracted.get(key) or [])[index]
             final_approved = verdict.approved and not (duplicate and duplicate.is_duplicate)
             # Relevancy gate
@@ -1565,7 +1598,7 @@ class IMessageProcessingService:
         *,
         action_text: str,
         candidates: list[dict[str, Any]],
-        time_bonus: callable | None = None,
+        time_bonus: Callable | None = None,
     ) -> list[dict[str, Any]]:
         ranked: list[tuple[float, dict[str, Any]]] = []
         for candidate in candidates:
@@ -2711,15 +2744,17 @@ class IMessageProcessingService:
         await self._record_action_audit(
             run=run,
             cluster=cluster,
-            action_type=action_type,
-            fingerprint=fingerprint,
-            status=status,
-            project_id=project_id,
-            action=action,
-            judge_reasoning=judge_reasoning,
-            supporting_message_ids=source_message_ids,
-            source_occurred_at_utc=source_occurred_at_utc,
-            extraction_method=extraction_method,
+            record=ActionAuditRecord(
+                action_type=action_type,
+                fingerprint=fingerprint,
+                status=status,
+                project_id=project_id,
+                action=action,
+                judge_reasoning=judge_reasoning,
+                supporting_message_ids=source_message_ids,
+                source_occurred_at_utc=source_occurred_at_utc,
+                extraction_method=extraction_method,
+            ),
         )
 
     async def _record_duplicate_action(
@@ -2766,20 +2801,22 @@ class IMessageProcessingService:
         await self._record_action_audit(
             run=run,
             cluster=cluster,
-            action_type=action_type,
-            fingerprint=fingerprint,
-            status="skipped_duplicate_existing",
-            project_id=project_id,
-            action=action,
-            judge_reasoning=duplicate.reason,
-            supporting_message_ids=source_message_ids,
-            source_occurred_at_utc=source_occurred_at_utc,
-            extraction_method=extraction_method,
-            applied_payload={
-                "matched_candidate_type": duplicate.matched_candidate_type,
-                "matched_candidate_id": duplicate.matched_candidate_id,
-            },
-            **target_kwargs,
+            record=ActionAuditRecord(
+                action_type=action_type,
+                fingerprint=fingerprint,
+                status="skipped_duplicate_existing",
+                project_id=project_id,
+                action=action,
+                judge_reasoning=duplicate.reason,
+                supporting_message_ids=source_message_ids,
+                source_occurred_at_utc=source_occurred_at_utc,
+                extraction_method=extraction_method,
+                applied_payload={
+                    "matched_candidate_type": duplicate.matched_candidate_type,
+                    "matched_candidate_id": duplicate.matched_candidate_id,
+                },
+                **target_kwargs,
+            ),
         )
 
     async def _apply_todo_create(
@@ -2839,16 +2876,18 @@ class IMessageProcessingService:
         await self._record_action_audit(
             run=run,
             cluster=cluster,
-            action_type="todo.create",
-            fingerprint=fingerprint,
-            status="applied",
-            project_id=project_id or inbox.id,
-            target_todo_id=todo.id,
-            action=action,
-            supporting_message_ids=source_message_ids,
-            source_occurred_at_utc=created_at,
-            applied=True,
-            extraction_method=extraction_method,
+            record=ActionAuditRecord(
+                action_type="todo.create",
+                fingerprint=fingerprint,
+                status="applied",
+                project_id=project_id or inbox.id,
+                target_todo_id=todo.id,
+                action=action,
+                supporting_message_ids=source_message_ids,
+                source_occurred_at_utc=created_at,
+                applied=True,
+                extraction_method=extraction_method,
+            ),
         )
         return True
 
@@ -2909,16 +2948,18 @@ class IMessageProcessingService:
         await self._record_action_audit(
             run=run,
             cluster=cluster,
-            action_type="todo.complete",
-            fingerprint=fingerprint,
-            status="applied",
-            project_id=target.project_id,
-            target_todo_id=target.id,
-            action=action,
-            supporting_message_ids=source_message_ids,
-            source_occurred_at_utc=completed_at_utc,
-            applied=True,
-            extraction_method=extraction_method,
+            record=ActionAuditRecord(
+                action_type="todo.complete",
+                fingerprint=fingerprint,
+                status="applied",
+                project_id=target.project_id,
+                target_todo_id=target.id,
+                action=action,
+                supporting_message_ids=source_message_ids,
+                source_occurred_at_utc=completed_at_utc,
+                applied=True,
+                extraction_method=extraction_method,
+            ),
         )
         return True
 
@@ -2963,30 +3004,34 @@ class IMessageProcessingService:
             await self._record_action_audit(
                 run=run,
                 cluster=cluster,
-                action_type="calendar.create",
-                fingerprint=fingerprint,
-                status="skipped_missing_calendar",
-                project_id=project_id,
-                action=action,
-                judge_reasoning=str(exc),
-                supporting_message_ids=source_message_ids,
-                source_occurred_at_utc=source_occurred_at_utc,
-                extraction_method=extraction_method,
+                record=ActionAuditRecord(
+                    action_type="calendar.create",
+                    fingerprint=fingerprint,
+                    status="skipped_missing_calendar",
+                    project_id=project_id,
+                    action=action,
+                    judge_reasoning=str(exc),
+                    supporting_message_ids=source_message_ids,
+                    source_occurred_at_utc=source_occurred_at_utc,
+                    extraction_method=extraction_method,
+                ),
             )
             return False
         await self._record_action_audit(
             run=run,
             cluster=cluster,
-            action_type="calendar.create",
-            fingerprint=fingerprint,
-            status="applied",
-            project_id=project_id,
-            target_calendar_event_id=event.id,
-            action=action,
-            supporting_message_ids=source_message_ids,
-            source_occurred_at_utc=source_occurred_at_utc,
-            applied=True,
-            extraction_method=extraction_method,
+            record=ActionAuditRecord(
+                action_type="calendar.create",
+                fingerprint=fingerprint,
+                status="applied",
+                project_id=project_id,
+                target_calendar_event_id=event.id,
+                action=action,
+                supporting_message_ids=source_message_ids,
+                source_occurred_at_utc=source_occurred_at_utc,
+                applied=True,
+                extraction_method=extraction_method,
+            ),
         )
         return True
 
@@ -3027,15 +3072,17 @@ class IMessageProcessingService:
         await self._record_action_audit(
             run=run,
             cluster=cluster,
-            action_type="journal.entry",
-            fingerprint=fingerprint,
-            status="applied",
-            target_journal_entry_id=entry.id,
-            action=action,
-            supporting_message_ids=source_message_ids,
-            source_occurred_at_utc=occurred_at_utc,
-            applied=True,
-            extraction_method=extraction_method,
+            record=ActionAuditRecord(
+                action_type="journal.entry",
+                fingerprint=fingerprint,
+                status="applied",
+                target_journal_entry_id=entry.id,
+                action=action,
+                supporting_message_ids=source_message_ids,
+                source_occurred_at_utc=occurred_at_utc,
+                applied=True,
+                extraction_method=extraction_method,
+            ),
         )
         return True
 
@@ -3109,15 +3156,17 @@ class IMessageProcessingService:
         await self._record_action_audit(
             run=run,
             cluster=cluster,
-            action_type="nutrition.log",
-            fingerprint=fingerprint,
-            status="applied",
-            action=action,
-            applied_payload={"foods_logged": logged_count, "message": message_text},
-            supporting_message_ids=source_message_ids,
-            source_occurred_at_utc=occurred_at_utc,
-            applied=True,
-            extraction_method=extraction_method,
+            record=ActionAuditRecord(
+                action_type="nutrition.log",
+                fingerprint=fingerprint,
+                status="applied",
+                action=action,
+                applied_payload={"foods_logged": logged_count, "message": message_text},
+                supporting_message_ids=source_message_ids,
+                source_occurred_at_utc=occurred_at_utc,
+                applied=True,
+                extraction_method=extraction_method,
+            ),
         )
         return True
 
@@ -3187,15 +3236,17 @@ class IMessageProcessingService:
             await self._record_action_audit(
                 run=run,
                 cluster=cluster,
-                action_type="workspace.update",
-                fingerprint=fingerprint,
-                status="skipped",
-                project_id=project_id,
-                action=action,
-                judge_reasoning=str(selection.get("reason") or "Selection policy skipped the update."),
-                supporting_message_ids=source_message_ids,
-                source_occurred_at_utc=source_occurred_at_utc,
-                extraction_method=extraction_method,
+                record=ActionAuditRecord(
+                    action_type="workspace.update",
+                    fingerprint=fingerprint,
+                    status="skipped",
+                    project_id=project_id,
+                    action=action,
+                    judge_reasoning=str(selection.get("reason") or "Selection policy skipped the update."),
+                    supporting_message_ids=source_message_ids,
+                    source_occurred_at_utc=source_occurred_at_utc,
+                    extraction_method=extraction_method,
+                ),
             )
             return False
 
@@ -3231,15 +3282,17 @@ class IMessageProcessingService:
                 await self._record_action_audit(
                     run=run,
                     cluster=cluster,
-                    action_type="workspace.update",
-                    fingerprint=fingerprint,
-                    status="skipped_invalid_target",
-                    project_id=project_id,
-                    action=action,
-                    judge_reasoning="Selected page was not found in the project subtree.",
-                    supporting_message_ids=source_message_ids,
-                    source_occurred_at_utc=source_occurred_at_utc,
-                    extraction_method=extraction_method,
+                    record=ActionAuditRecord(
+                        action_type="workspace.update",
+                        fingerprint=fingerprint,
+                        status="skipped_invalid_target",
+                        project_id=project_id,
+                        action=action,
+                        judge_reasoning="Selected page was not found in the project subtree.",
+                        supporting_message_ids=source_message_ids,
+                        source_occurred_at_utc=source_occurred_at_utc,
+                        extraction_method=extraction_method,
+                    ),
                 )
                 return False
             if self._is_engine_managed_page(target_page):
@@ -3265,16 +3318,18 @@ class IMessageProcessingService:
                     await self._record_action_audit(
                         run=run,
                         cluster=cluster,
-                        action_type="workspace.update",
-                        fingerprint=fingerprint,
-                        status="skipped_duplicate_content",
-                        project_id=project_id,
-                        action=action,
-                        target_page_id=target_page_id,
-                        judge_reasoning="The target page already contains the proposed update text.",
-                        supporting_message_ids=source_message_ids,
-                        source_occurred_at_utc=source_occurred_at_utc,
-                        extraction_method=extraction_method,
+                        record=ActionAuditRecord(
+                            action_type="workspace.update",
+                            fingerprint=fingerprint,
+                            status="skipped_duplicate_content",
+                            project_id=project_id,
+                            action=action,
+                            target_page_id=target_page_id,
+                            judge_reasoning="The target page already contains the proposed update text.",
+                            supporting_message_ids=source_message_ids,
+                            source_occurred_at_utc=source_occurred_at_utc,
+                            extraction_method=extraction_method,
+                        ),
                     )
                     return False
                 applied_payload = {
@@ -3287,17 +3342,19 @@ class IMessageProcessingService:
         await self._record_action_audit(
             run=run,
             cluster=cluster,
-            action_type="workspace.update",
-            fingerprint=fingerprint,
-            status="applied",
-            project_id=project_id,
-            target_page_id=target_page_id,
-            action=action,
-            applied_payload=applied_payload,
-            supporting_message_ids=source_message_ids,
-            source_occurred_at_utc=source_occurred_at_utc,
-            applied=True,
-            extraction_method=extraction_method,
+            record=ActionAuditRecord(
+                action_type="workspace.update",
+                fingerprint=fingerprint,
+                status="applied",
+                project_id=project_id,
+                target_page_id=target_page_id,
+                action=action,
+                applied_payload=applied_payload,
+                supporting_message_ids=source_message_ids,
+                source_occurred_at_utc=source_occurred_at_utc,
+                applied=True,
+                extraction_method=extraction_method,
+            ),
         )
         return True
 
@@ -3519,49 +3576,34 @@ class IMessageProcessingService:
         *,
         run: IMessageProcessingRun,
         cluster: MessageCluster,
-        action_type: str,
-        fingerprint: str,
-        status: str,
-        action: dict[str, Any],
-        project_id: int | None = None,
-        target_page_id: int | None = None,
-        target_todo_id: int | None = None,
-        target_calendar_event_id: int | None = None,
-        target_journal_entry_id: int | None = None,
-        applied_payload: dict[str, Any] | None = None,
-        judge_reasoning: str | None = None,
-        rationale: str | None = None,
-        supporting_message_ids: list[int] | None = None,
-        source_occurred_at_utc: datetime | None = None,
-        applied: bool = False,
-        extraction_method: str | None = None,
+        record: ActionAuditRecord,
     ) -> None:
         self.session.add(
             IMessageActionAudit(
                 user_id=run.user_id,
                 processing_run_id=run.id,
                 conversation_id=cluster.conversation.id,
-                action_type=action_type,
-                action_fingerprint=fingerprint,
-                status=status,
-                extraction_method=extraction_method,
-                project_id=project_id,
-                target_page_id=target_page_id,
-                target_todo_id=target_todo_id,
-                target_calendar_event_id=target_calendar_event_id,
-                target_journal_entry_id=target_journal_entry_id,
-                supporting_message_ids_json=supporting_message_ids
-                if supporting_message_ids is not None
+                action_type=record.action_type,
+                action_fingerprint=record.fingerprint,
+                status=record.status,
+                extraction_method=record.extraction_method,
+                project_id=record.project_id,
+                target_page_id=record.target_page_id,
+                target_todo_id=record.target_todo_id,
+                target_calendar_event_id=record.target_calendar_event_id,
+                target_journal_entry_id=record.target_journal_entry_id,
+                supporting_message_ids_json=record.supporting_message_ids
+                if record.supporting_message_ids is not None
                 else [message.id for message in cluster.messages],
-                extracted_payload=action,
-                applied_payload=applied_payload,
-                rationale=rationale or str(action.get("reason") or ""),
-                judge_reasoning=judge_reasoning,
-                source_occurred_at_utc=source_occurred_at_utc,
-                applied_at_utc=datetime.now(timezone.utc) if applied else None,
+                extracted_payload=record.action,
+                applied_payload=record.applied_payload,
+                rationale=record.rationale or str(record.action.get("reason") or ""),
+                judge_reasoning=record.judge_reasoning,
+                source_occurred_at_utc=record.source_occurred_at_utc,
+                applied_at_utc=datetime.now(timezone.utc) if record.applied else None,
             )
         )
-        await self.session.commit()
+        await self.session.flush()
 
     async def _call_model(self, prompt: str, response_model):
         if self.client is None:

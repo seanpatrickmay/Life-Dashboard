@@ -122,7 +122,7 @@ class IMessageTodoReconciliationService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.todo_repo = TodoRepository(session)
-        self.todo_accomplishment_agent = TodoAccomplishmentAgent(session)
+        self.todo_accomplishment_agent = TodoAccomplishmentAgent()
 
     async def list_completion_proposals(
         self,

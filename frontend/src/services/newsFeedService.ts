@@ -43,6 +43,14 @@ export type FeedSource = {
   enabled: boolean;
 };
 
+type Rss2JsonItem = {
+  title?: string;
+  link?: string;
+  guid?: string;
+  description?: string;
+  pubDate?: string;
+};
+
 type StoredState = {
   articles: NewsArticle[];
   lastRefresh: string | null;
@@ -130,12 +138,12 @@ async function fetchRssViaProxy(feedUrl: string): Promise<Array<{ title: string;
     if (resp.ok) {
       const data = await resp.json();
       if (data.status === 'ok' && data.items?.length) {
-        return data.items.slice(0, 12).map((item: any) => ({
+        return data.items.slice(0, 12).map((item: Rss2JsonItem) => ({
           title: stripHtml(item.title || ''),
           url: item.link || item.guid || '',
           summary: truncate(stripHtml(item.description || '')),
           publishedAt: item.pubDate ? new Date(item.pubDate).toISOString() : null,
-        })).filter((item: any) => item.title && item.url);
+        })).filter((item: { title: string; url: string }) => item.title && item.url);
       }
     }
   } catch { /* fall through */ }

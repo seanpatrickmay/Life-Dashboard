@@ -1,20 +1,24 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import secrets
+import time
+from collections import defaultdict
 from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
+from loguru import logger
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import (
+    _hash_token,
     clear_session_cookie,
     create_user_session,
     get_current_user,
@@ -28,6 +32,35 @@ from app.schemas.auth import AuthMeResponse, AuthUserResponse
 from app.utils.timezone import eastern_now
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# ---------------------------------------------------------------------------
+# Simple in-memory rate limiter for auth endpoints.
+# NOTE: This is per-process only. Multiple uvicorn workers each maintain
+# their own store, so effective limits scale with worker count.
+# ---------------------------------------------------------------------------
+_AUTH_RATE_LIMIT = 10  # max attempts per window
+_AUTH_RATE_WINDOW = 60  # window in seconds
+
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(client_ip: str) -> None:
+    """Raise 429 if *client_ip* has exceeded the auth rate limit."""
+    now = time.monotonic()
+    window_start = now - _AUTH_RATE_WINDOW
+    # Prune old entries and evict empty keys to prevent unbounded growth
+    entries = _rate_limit_store[client_ip]
+    pruned = [t for t in entries if t > window_start]
+    if not pruned:
+        _rate_limit_store.pop(client_ip, None)
+        return
+    _rate_limit_store[client_ip] = pruned
+    if len(pruned) >= _AUTH_RATE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many authentication attempts. Please try again later.",
+        )
+    _rate_limit_store[client_ip].append(now)
 
 OAUTH_STATE_COOKIE = "ld_oauth_state"
 OAUTH_REDIRECT_COOKIE = "ld_oauth_redirect"
@@ -67,9 +100,11 @@ def _google_auth_url(state: str) -> str:
 
 @router.get("/google/login")
 async def google_login(
+    request: Request,
     redirect: str | None = Query(None),
     remember_me: bool = Query(False),
 ) -> Response:
+    _check_rate_limit(request.client.host if request.client else "unknown")
     state = secrets.token_urlsafe(24)
     redirect_url = _safe_redirect(redirect)
     response = RedirectResponse(url=_google_auth_url(state))
@@ -140,13 +175,35 @@ async def _upsert_user(session: AsyncSession, payload: dict[str, Any]) -> User:
             role=role,
         )
         session.add(user)
+        try:
+            await session.flush()
+        except IntegrityError:
+            # Concurrent insert for the same user -- fetch the winner's row.
+            await session.rollback()
+            stmt = select(User).where(User.google_sub == subject)
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+            if user is None:
+                stmt = select(User).where(User.email == email)
+                result = await session.execute(stmt)
+                user = result.scalar_one_or_none()
+            if user is None:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create or locate user after conflict.",
+                )
     else:
         if user.google_sub is None:
             user.google_sub = subject
         user.email = email
         user.display_name = payload.get("name") or user.display_name
         user.email_verified = bool(payload.get("email_verified"))
-        if user.email.lower() == settings.admin_email.lower():
+        if user.email.lower() == settings.admin_email.lower() and user.role != UserRole.ADMIN:
+            logger.info(
+                "Elevating user {} ({}) to admin role (matches ADMIN_EMAIL)",
+                user.id,
+                user.email,
+            )
             user.role = UserRole.ADMIN
 
     await session.commit()
@@ -156,6 +213,7 @@ async def _upsert_user(session: AsyncSession, payload: dict[str, Any]) -> User:
 
 @router.get("/google/callback")
 async def google_callback(
+    request: Request,
     code: str | None = Query(None),
     state: str | None = Query(None),
     error: str | None = Query(None),
@@ -164,6 +222,7 @@ async def google_callback(
     stored_redirect: str | None = Cookie(None, alias=OAUTH_REDIRECT_COOKIE),
     stored_remember: str | None = Cookie(None, alias=OAUTH_REMEMBER_COOKIE),
 ) -> Response:
+    _check_rate_limit(request.client.host if request.client else "unknown")
     redirect_url = _safe_redirect(stored_redirect)
     if error:
         return RedirectResponse(url=f"{redirect_url}?auth_error={error}")
@@ -172,14 +231,22 @@ async def google_callback(
 
     try:
         tokens = await _exchange_code_for_tokens(code)
+    except httpx.HTTPStatusError:
+        logger.exception("OAuth token exchange failed (HTTP error)")
+        return RedirectResponse(url=f"{redirect_url}?auth_error=token_exchange_failed")
     except Exception:
+        logger.exception("OAuth token exchange failed")
         return RedirectResponse(url=f"{redirect_url}?auth_error=token_exchange_failed")
     id_token_value = tokens.get("id_token")
     if not id_token_value:
         return RedirectResponse(url=f"{redirect_url}?auth_error=missing_token")
     try:
         payload = await _verify_id_token_async(id_token_value)
+    except ValueError:
+        logger.exception("OAuth ID token verification failed (invalid token)")
+        return RedirectResponse(url=f"{redirect_url}?auth_error=invalid_token")
     except Exception:
+        logger.exception("OAuth ID token verification failed")
         return RedirectResponse(url=f"{redirect_url}?auth_error=invalid_token")
 
     user = await _upsert_user(session, payload)
@@ -218,7 +285,7 @@ async def logout(
     token: str | None = Cookie(None, alias=settings.session_cookie_name),
 ) -> Response:
     if token:
-        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        token_hash = _hash_token(token)
         stmt = select(UserSession).where(UserSession.token_hash == token_hash)
         result = await session.execute(stmt)
         session_obj = result.scalar_one_or_none()

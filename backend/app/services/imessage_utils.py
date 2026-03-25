@@ -293,6 +293,18 @@ def conversation_display_name(
     return "Untitled Conversation"
 
 
+def participant_hash(participants: list[str]) -> str:
+    """Return a stable SHA-256 hex digest identifying a set of participants.
+
+    Handles are lowered, stripped, sorted, and joined so that the same group
+    of participants always produces the same 64-character hash regardless of
+    ordering.
+    """
+    normalized = sorted(p.strip().lower() for p in participants if p and p.strip())
+    raw = ",".join(normalized)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 def stable_fingerprint(action_type: str, *parts: Any) -> str:
     payload = {"action_type": action_type, "parts": list(parts)}
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=True, default=str)

@@ -54,6 +54,7 @@ class GoogleCalendar(Base):
     channel_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     channel_resource_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     channel_expiration: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    channel_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="calendars")

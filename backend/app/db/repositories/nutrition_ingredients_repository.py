@@ -88,17 +88,28 @@ class NutritionIngredientsRepository:
     async def search_ingredients_fuzzy(
         self, owner_user_id: int, query: str, *, limit: int = 5, min_score: float = 0.4
     ) -> list[NutritionIngredient]:
+        query_tokens = _tokenize(query)
+        if not query_tokens:
+            return []
+
+        # Pre-filter at the SQL level so we don't load the entire table
         stmt = (
             select(NutritionIngredient)
             .where(NutritionIngredient.owner_user_id == owner_user_id)
             .options(selectinload(NutritionIngredient.profile))
         )
+        token_filters = [
+            sa.func.lower(NutritionIngredient.name).like(f"%{token}%")
+            for token in query_tokens
+        ]
+        stmt = stmt.where(sa.or_(*token_filters))
+
         result = await self.session.execute(stmt)
-        all_ingredients = list(result.scalars().all())
-        query_tokens = _tokenize(query)
+        candidates = list(result.scalars().all())
+
         scored = [
             (_token_overlap_score(query_tokens, _tokenize(ing.name)), ing)
-            for ing in all_ingredients
+            for ing in candidates
         ]
         scored = [(score, ing) for score, ing in scored if score >= min_score]
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -235,6 +246,11 @@ class NutritionRecipesRepository:
     async def search_recipes_fuzzy(
         self, owner_user_id: int, query: str, *, limit: int = 5, min_score: float = 0.3
     ) -> list[NutritionRecipe]:
+        query_tokens = _tokenize(query)
+        if not query_tokens:
+            return []
+
+        # Pre-filter at the SQL level so we don't load the entire table
         stmt = (
             select(NutritionRecipe)
             .where(NutritionRecipe.owner_user_id == owner_user_id)
@@ -247,12 +263,18 @@ class NutritionRecipesRepository:
                 ),
             )
         )
+        token_filters = [
+            sa.func.lower(NutritionRecipe.name).like(f"%{token}%")
+            for token in query_tokens
+        ]
+        stmt = stmt.where(sa.or_(*token_filters))
+
         result = await self.session.execute(stmt)
-        all_recipes = list(result.scalars().all())
-        query_tokens = _tokenize(query)
+        candidates = list(result.scalars().all())
+
         scored = [
             (_token_overlap_score(query_tokens, _tokenize(r.name)), r)
-            for r in all_recipes
+            for r in candidates
         ]
         scored = [(score, r) for score, r in scored if score >= min_score]
         scored.sort(key=lambda x: x[0], reverse=True)

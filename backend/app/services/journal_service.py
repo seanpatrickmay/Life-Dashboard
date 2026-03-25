@@ -14,6 +14,7 @@ from app.db.models.calendar import CalendarEvent, GoogleCalendar, TodoEventLink
 from app.db.repositories.journal_repository import JournalRepository
 from app.db.repositories.todo_repository import TodoRepository
 from app.services.journal_compiler import JournalCompiler
+from app.utils.calendar_helpers import is_declined_attendee
 from app.utils.timezone import local_today, resolve_time_zone
 
 
@@ -136,10 +137,9 @@ class JournalService:
     ):
       return summary
 
-    # Release the DB connection before the LLM compile step so concurrent
-    # journal requests don't monopolize the pool while waiting on OpenAI.
-    if self.session is not None:
-      await self.session.close()
+    # Expire cached ORM state before the LLM compile step so the session
+    # can be reused afterwards without stale data.
+    self.session.expire_all()
 
     now_utc = datetime.now(timezone.utc)
     summary_payload = {"groups": []}
@@ -271,7 +271,7 @@ class JournalService:
     for event, calendar, link in rows:
       if link and link.todo_id:
         continue
-      if _is_declined_attendee(event.attendees):
+      if is_declined_attendee(event.attendees):
         continue
       summary = (event.summary or "").strip()
       if not summary:
@@ -301,15 +301,6 @@ class JournalService:
         }
       )
     return events
-
-
-def _is_declined_attendee(attendees: list[dict[str, object]] | None) -> bool:
-  if not attendees:
-    return False
-  for attendee in attendees:
-    if attendee.get("self") and attendee.get("responseStatus") == "declined":
-      return True
-  return False
 
 
 def _format_local_time(value: datetime | None) -> str:

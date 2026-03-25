@@ -12,8 +12,9 @@ from app.db.models.nutrition import (
     NutritionIntake,
     NutritionIntakeSource,
     NutritionRecipe,
-    NutritionRecipeComponent,
 )
+from app.core.exceptions import NotFoundException
+from app.services.nutrition_recipe_expander import expand_recipe_components
 from app.db.repositories.nutrition_intake_repository import NutritionIntakeRepository
 from app.db.repositories.nutrition_ingredients_repository import (
     NutritionIngredientsRepository,
@@ -48,7 +49,7 @@ class NutritionIntakeService:
         if ingredient_id:
             ingredient = await self.ingredients_repo.get_ingredient(ingredient_id, user_id)
             if ingredient is None:
-                raise ValueError("Ingredient not found")
+                raise NotFoundException("Ingredient not found")
             intake = await self.repo.log_intake(
                 user_id=user_id,
                 food_id=ingredient_id,
@@ -70,7 +71,7 @@ class NutritionIntakeService:
 
         recipe = await self.recipes_repo.get_recipe(recipe_id, user_id, load_components=True)
         if recipe is None:
-            raise ValueError("Recipe not found")
+            raise NotFoundException("Recipe not found")
         created = await self._expand_and_log_recipe(
             user_id=user_id,
             recipe=recipe,
@@ -96,7 +97,7 @@ class NutritionIntakeService:
             unit=unit,
         )
         if intake is None:
-            raise ValueError("Intake not found")
+            raise NotFoundException("Intake not found")
         await self.session.flush()
         await self._mark_suggestions_stale(owner_user_id)
         await self.session.commit()
@@ -218,34 +219,26 @@ class NutritionIntakeService:
         day: date,
         source: NutritionIntakeSource,
     ) -> dict[str, Any]:
+        expanded = expand_recipe_components(recipe, servings)
         created_entries: list[dict[str, Any]] = []
-
-        async def _expand(target_recipe: NutritionRecipe, multiplier: float) -> None:
-            for comp in target_recipe.components:
-                per_serving_qty = comp.quantity / target_recipe.servings if target_recipe.servings else comp.quantity
-                effective_qty = multiplier * per_serving_qty
-                if comp.ingredient:
-                    await self.repo.log_intake(
-                        user_id=user_id,
-                        food_id=comp.ingredient.id,
-                        quantity=effective_qty,
-                        unit=comp.unit,
-                        day=day,
-                        source=source,
-                        recipe_id=recipe.id,
-                    )
-                    created_entries.append(
-                        {
-                            "ingredient_id": comp.ingredient.id,
-                            "ingredient_name": comp.ingredient.name,
-                            "quantity": effective_qty,
-                            "unit": comp.unit,
-                            "source": source.value,
-                        }
-                    )
-                elif comp.child_recipe:
-                    await _expand(comp.child_recipe, effective_qty)
-
-        await _expand(recipe, servings)
+        for comp in expanded:
+            await self.repo.log_intake(
+                user_id=user_id,
+                food_id=comp.ingredient_id,
+                quantity=comp.quantity,
+                unit=comp.unit,
+                day=day,
+                source=source,
+                recipe_id=recipe.id,
+            )
+            created_entries.append(
+                {
+                    "ingredient_id": comp.ingredient_id,
+                    "ingredient_name": comp.ingredient_name,
+                    "quantity": comp.quantity,
+                    "unit": comp.unit,
+                    "source": source.value,
+                }
+            )
         await self.session.flush()
         return {"recipe_id": recipe.id, "created_entries": created_entries}

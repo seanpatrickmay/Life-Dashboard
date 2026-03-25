@@ -17,12 +17,25 @@ class ActivityRepository:
         self.session = session
 
     async def upsert_many(self, user_id: int, activities: Iterable[dict]) -> int:
+        activity_list = list(activities)
+        if not activity_list:
+            return 0
+
+        # Batch-fetch all existing activities by garmin_id in one query
+        garmin_ids = [int(p["activityId"]) for p in activity_list]
+        stmt = select(Activity).where(
+            Activity.user_id == user_id,
+            Activity.garmin_id.in_(garmin_ids),
+        )
+        result = await self.session.execute(stmt)
+        existing_map: dict[int, Activity] = {
+            a.garmin_id: a for a in result.scalars().all()
+        }
+
         count = 0
-        for payload in activities:
+        for payload in activity_list:
             garmin_id = int(payload["activityId"])
-            stmt = select(Activity).where(Activity.user_id == user_id, Activity.garmin_id == garmin_id)
-            result = await self.session.execute(stmt)
-            existing = result.scalar_one_or_none()
+            existing = existing_map.get(garmin_id)
             start_time = self._parse_start(payload)
             start_time_naive = to_naive_eastern(start_time)
             if existing:

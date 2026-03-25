@@ -3,7 +3,7 @@ import { fetchNutritionSuggestions, quickLogFood } from '../services/api';
 
 const SUGGESTIONS_KEY = ['nutrition', 'suggestions'];
 const MENU_KEY = ['nutrition', 'menu'];
-const SUMMARY_KEY = ['nutrition', 'daily'];
+const SUMMARY_KEY = ['nutrition', 'summary'];
 const HISTORY_KEY = ['nutrition', 'history'];
 
 export function useNutritionSuggestions() {

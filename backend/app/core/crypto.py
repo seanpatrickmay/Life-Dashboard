@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from cryptography.fernet import Fernet, InvalidToken
+from loguru import logger
 
 from app.core.config import settings
 
@@ -24,7 +25,13 @@ def _iter_garmin_keys() -> list[str]:
 
 
 def _get_calendar_fernet() -> Fernet:
-    key = settings.google_calendar_token_encryption_key or settings.garmin_password_encryption_key
+    key = settings.google_calendar_token_encryption_key
+    if not key:
+        logger.warning(
+            "GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY is not set; "
+            "falling back to GARMIN_PASSWORD_ENCRYPTION_KEY for calendar token encryption"
+        )
+        key = settings.garmin_password_encryption_key
     return _get_fernet(key)
 
 

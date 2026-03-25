@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zoneinfo
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
@@ -15,9 +16,10 @@ from app.db.repositories.project_repository import (
   TodoProjectSuggestionRepository,
 )
 from app.db.repositories.todo_repository import TodoRepository
-from app.db.session import AsyncSessionLocal, get_session
+from app.db.session import get_session
 from app.db.models.claude_code import ProjectActivity
 from app.db.models.project import Project
+from app.routers._shared import build_todo_response, run_project_suggestions
 from app.schemas.projects import (
   ProjectActivityResponse,
   ProjectBoardResponse,
@@ -28,32 +30,9 @@ from app.schemas.projects import (
   SuggestionRecomputeRequest,
 )
 from app.schemas.todos import TodoCreateRequest, TodoItemResponse, TodoUpdateRequest
-from app.services.todo_project_suggestion_service import TodoProjectSuggestionService
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
-
-
-def _to_todo_response(item: TodoItem, now_utc: datetime) -> TodoItemResponse:
-  return TodoItemResponse(
-    id=item.id,
-    project_id=item.project_id,
-    text=item.text,
-    completed=item.completed,
-    deadline_utc=item.deadline_utc,
-    deadline_is_date_only=item.deadline_is_date_only,
-    is_overdue=bool(
-      not item.completed and item.deadline_utc is not None and item.deadline_utc < now_utc
-    ),
-    created_at=item.created_at,
-    updated_at=item.updated_at,
-  )
-
-
-async def _run_project_suggestions(user_id: int, todo_ids: list[int]) -> None:
-  async with AsyncSessionLocal() as session:
-    service = TodoProjectSuggestionService(session)
-    await service.process_todo_ids(user_id=user_id, todo_ids=todo_ids)
 
 
 @router.get("/board", response_model=ProjectBoardResponse)
@@ -102,7 +81,7 @@ async def get_project_board(
 
   return ProjectBoardResponse(
     projects=project_payload,
-    todos=[_to_todo_response(todo, now_utc) for todo in todos],
+    todos=[build_todo_response(todo, now_utc) for todo in todos],
     suggestions=[
       ProjectSuggestionResponse(
         todo_id=suggestion.todo_id,
@@ -299,7 +278,7 @@ async def recompute_suggestions(
     todo_ids = [row[0] for row in result.all()]
 
   if todo_ids:
-    background_tasks.add_task(_run_project_suggestions, current_user.id, todo_ids)
+    background_tasks.add_task(run_project_suggestions, current_user.id, todo_ids)
   return {"scheduled_count": len(todo_ids)}
 
 
@@ -342,22 +321,7 @@ async def create_todo(
     time_horizon=payload.time_horizon,
   )
   await session.commit()
-  now_utc = datetime.now(timezone.utc)
-  return TodoItemResponse(
-    id=todo.id,
-    project_id=todo.project_id,
-    text=todo.text,
-    completed=todo.completed,
-    completed_at_utc=todo.completed_at_utc,
-    deadline_utc=todo.deadline_utc,
-    deadline_is_date_only=todo.deadline_is_date_only,
-    time_horizon=todo.time_horizon,
-    is_overdue=bool(
-      not todo.completed and todo.deadline_utc is not None and todo.deadline_utc < now_utc
-    ),
-    created_at=todo.created_at,
-    updated_at=todo.updated_at,
-  )
+  return build_todo_response(todo, datetime.now(timezone.utc))
 
 
 @router.patch("/todos/{todo_id}", response_model=TodoItemResponse)
@@ -390,7 +354,6 @@ async def update_todo(
       todo.completed = True
       todo.completed_at_utc = now
       if payload.time_zone:
-        import zoneinfo
         local_tz = zoneinfo.ZoneInfo(payload.time_zone)
         todo.completed_local_date = now.astimezone(local_tz).date()
       else:
@@ -402,22 +365,7 @@ async def update_todo(
 
   await session.flush()
   await session.commit()
-  now_utc = datetime.now(timezone.utc)
-  return TodoItemResponse(
-    id=todo.id,
-    project_id=todo.project_id,
-    text=todo.text,
-    completed=todo.completed,
-    completed_at_utc=todo.completed_at_utc,
-    deadline_utc=todo.deadline_utc,
-    deadline_is_date_only=todo.deadline_is_date_only,
-    time_horizon=todo.time_horizon,
-    is_overdue=bool(
-      not todo.completed and todo.deadline_utc is not None and todo.deadline_utc < now_utc
-    ),
-    created_at=todo.created_at,
-    updated_at=todo.updated_at,
-  )
+  return build_todo_response(todo, datetime.now(timezone.utc))
 
 
 @router.delete("/todos/{todo_id}", status_code=204, response_class=Response)

@@ -1,6 +1,7 @@
 """Manage Google Calendar OAuth connections and token refresh."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -24,6 +25,8 @@ GOOGLE_CALENDAR_SCOPES = [
 
 class GoogleCalendarConnectionService:
     """Persist and refresh per-user Google Calendar OAuth credentials."""
+
+    _refresh_locks: dict[int, asyncio.Lock] = {}
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -79,22 +82,29 @@ class GoogleCalendarConnectionService:
         await self.session.commit()
         return connection
 
+    def _get_refresh_lock(self, user_id: int) -> asyncio.Lock:
+        """Return a per-user lock to serialise concurrent token refreshes."""
+        if user_id not in self._refresh_locks:
+            self._refresh_locks[user_id] = asyncio.Lock()
+        return self._refresh_locks[user_id]
+
     async def get_access_token(self, user_id: int) -> str | None:
         """Return a valid access token, refreshing when nearing expiry."""
-        connection = await self.get_connection(user_id)
-        if not connection:
-            return None
-        if connection.requires_reauth:
-            return None
-        if connection.token_expiry and connection.token_expiry <= datetime.now(timezone.utc) + timedelta(
-            minutes=1
-        ):
-            return await self.refresh_access_token(connection)
-        try:
-            return decrypt_calendar_token(connection.encrypted_access_token)
-        except ValueError:
-            await self.mark_reauth_required(user_id)
-            return None
+        async with self._get_refresh_lock(user_id):
+            connection = await self.get_connection(user_id)
+            if not connection:
+                return None
+            if connection.requires_reauth:
+                return None
+            if connection.token_expiry and connection.token_expiry <= datetime.now(timezone.utc) + timedelta(
+                minutes=1
+            ):
+                return await self.refresh_access_token(connection)
+            try:
+                return decrypt_calendar_token(connection.encrypted_access_token)
+            except ValueError:
+                await self.mark_reauth_required(user_id)
+                return None
 
     async def refresh_access_token(self, connection: GoogleCalendarConnection) -> str | None:
         """Refresh the access token using the stored refresh token."""

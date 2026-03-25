@@ -35,6 +35,7 @@ from app.services.google_calendar_connection_service import (
 )
 from app.services.google_calendar_event_service import GoogleCalendarEventService
 from app.services.google_calendar_sync_service import GoogleCalendarSyncService
+from app.utils.calendar_helpers import build_calendar_event_response, is_declined_attendee
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 
@@ -288,34 +289,9 @@ async def list_events(
 
     events = []
     for event, calendar, link in rows:
-        if _is_declined_attendee(event.attendees):
+        if is_declined_attendee(event.attendees):
             continue
-        events.append(
-            CalendarEventResponse(
-                id=event.id,
-                todo_id=link.todo_id if link else None,
-                calendar_google_id=calendar.google_id,
-                calendar_summary=calendar.summary,
-                calendar_primary=calendar.primary,
-                calendar_is_life_dashboard=calendar.is_life_dashboard,
-                google_event_id=event.google_event_id,
-                recurring_event_id=event.recurring_event_id,
-                ical_uid=event.ical_uid,
-                summary=event.summary,
-                description=event.description,
-                location=event.location,
-                start_time=event.start_time,
-                end_time=event.end_time,
-                is_all_day=event.is_all_day,
-                status=event.status,
-                visibility=event.visibility,
-                transparency=event.transparency,
-                hangout_link=event.hangout_link,
-                conference_link=event.conference_link,
-                organizer=event.organizer,
-                attendees=event.attendees,
-            )
-        )
+        events.append(build_calendar_event_response(event, calendar, link))
 
     deduped = _dedupe_events(events)
     return CalendarEventsResponse(events=deduped)
@@ -337,29 +313,7 @@ async def create_event(
         end_time=payload.end_time,
         is_all_day=payload.is_all_day,
     )
-    return CalendarEventResponse(
-        id=event.id,
-        calendar_google_id=calendar.google_id,
-        calendar_summary=calendar.summary,
-        calendar_primary=calendar.primary,
-        calendar_is_life_dashboard=calendar.is_life_dashboard,
-        google_event_id=event.google_event_id,
-        recurring_event_id=event.recurring_event_id,
-        ical_uid=event.ical_uid,
-        summary=event.summary,
-        description=event.description,
-        location=event.location,
-        start_time=event.start_time,
-        end_time=event.end_time,
-        is_all_day=event.is_all_day,
-        status=event.status,
-        visibility=event.visibility,
-        transparency=event.transparency,
-        hangout_link=event.hangout_link,
-        conference_link=event.conference_link,
-        organizer=event.organizer,
-        attendees=event.attendees,
-    )
+    return build_calendar_event_response(event, calendar)
 
 
 @router.patch("/events/{event_id}", response_model=CalendarEventResponse)
@@ -392,29 +346,7 @@ async def update_event(
         is_all_day=payload.is_all_day,
     )
     await session.refresh(event)
-    return CalendarEventResponse(
-        id=event.id,
-        calendar_google_id=calendar.google_id,
-        calendar_summary=calendar.summary,
-        calendar_primary=calendar.primary,
-        calendar_is_life_dashboard=calendar.is_life_dashboard,
-        google_event_id=event.google_event_id,
-        recurring_event_id=event.recurring_event_id,
-        ical_uid=event.ical_uid,
-        summary=event.summary,
-        description=event.description,
-        location=event.location,
-        start_time=event.start_time,
-        end_time=event.end_time,
-        is_all_day=event.is_all_day,
-        status=event.status,
-        visibility=event.visibility,
-        transparency=event.transparency,
-        hangout_link=event.hangout_link,
-        conference_link=event.conference_link,
-        organizer=event.organizer,
-        attendees=event.attendees,
-    )
+    return build_calendar_event_response(event, calendar)
 
 
 @router.post("/google/webhook")
@@ -423,6 +355,7 @@ async def google_calendar_webhook(
     session: AsyncSession = Depends(get_session),
     resource_state: str | None = Header(None, alias="X-Goog-Resource-State"),
     channel_id: str | None = Header(None, alias="X-Goog-Channel-Id"),
+    channel_token: str | None = Header(None, alias="X-Goog-Channel-Token"),
 ) -> Response:
     """Receive Google Calendar webhook notifications and resync."""
     if resource_state == "sync":
@@ -435,6 +368,9 @@ async def google_calendar_webhook(
     result = await session.execute(stmt)
     calendar = result.scalar_one_or_none()
     if not calendar:
+        response.status_code = status.HTTP_200_OK
+        return response
+    if not calendar.channel_token or calendar.channel_token != channel_token:
         response.status_code = status.HTTP_200_OK
         return response
     sync_service = GoogleCalendarSyncService(session)
@@ -574,12 +510,3 @@ def _priority(event: CalendarEventResponse) -> int:
     if event.calendar_primary or (event.organizer or {}).get("self"):
         return 1
     return 2
-
-
-def _is_declined_attendee(attendees: list[dict[str, object]] | None) -> bool:
-    if not attendees:
-        return False
-    for attendee in attendees:
-        if attendee.get("self") and attendee.get("responseStatus") == "declined":
-            return True
-    return False

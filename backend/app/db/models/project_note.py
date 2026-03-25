@@ -23,7 +23,7 @@ class ProjectNote(Base):
 project_note_todo_ref = Table(
   "project_note_todo_ref",
   Base.metadata,
-  Column("note_id", Integer, ForeignKey("project_note.id"), primary_key=True),
-  Column("todo_id", Integer, ForeignKey("todo_item.id"), primary_key=True),
+  Column("note_id", Integer, ForeignKey("project_note.id", ondelete="CASCADE"), primary_key=True),
+  Column("todo_id", Integer, ForeignKey("todo_item.id", ondelete="CASCADE"), primary_key=True),
   Column("user_id", Integer, ForeignKey("user.id"), nullable=False, index=True),
 )
