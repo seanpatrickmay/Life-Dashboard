@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Iterable
 
-from sqlalchemy import and_, case, delete, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -181,6 +181,23 @@ class TodoRepository:
     )
     result = await self.session.execute(stmt)
     return list(result.scalars().all())
+
+  async def count_completed_by_date(
+    self, user_id: int, start: date, end: date
+  ) -> dict[date, int]:
+    """Return completed todo counts grouped by local date for a date range."""
+    stmt = (
+      select(TodoItem.completed_local_date, func.count(TodoItem.id))
+      .where(
+        TodoItem.user_id == user_id,
+        TodoItem.completed.is_(True),
+        TodoItem.completed_local_date >= start,
+        TodoItem.completed_local_date <= end,
+      )
+      .group_by(TodoItem.completed_local_date)
+    )
+    result = await self.session.execute(stmt)
+    return {row[0]: row[1] for row in result.all()}
 
 
 def _to_utc(value: datetime | None) -> datetime | None:

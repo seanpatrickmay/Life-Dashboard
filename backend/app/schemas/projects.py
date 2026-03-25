@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,22 @@ class ProjectResponse(BaseModel):
   updated_at: datetime
   open_count: int = 0
   completed_count: int = 0
+  state_summary_json: dict | None = None
+  state_updated_at_utc: datetime | None = None
+
+  class Config:
+    from_attributes = True
+
+
+class ProjectActivityResponse(BaseModel):
+  id: int
+  project_id: int
+  project_name: str | None = None
+  local_date: date
+  session_id: str
+  summary: str
+  details_json: dict | None = None
+  created_at: datetime
 
   class Config:
     from_attributes = True

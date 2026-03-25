@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import zoneinfo
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy import select, update
@@ -16,8 +17,11 @@ from app.db.repositories.project_repository import (
 )
 from app.db.repositories.todo_repository import TodoRepository
 from app.db.session import get_session
+from app.db.models.claude_code import ProjectActivity
+from app.db.models.project import Project
 from app.routers._shared import build_todo_response, run_project_suggestions
 from app.schemas.projects import (
+  ProjectActivityResponse,
   ProjectBoardResponse,
   ProjectCreateRequest,
   ProjectResponse,
@@ -25,6 +29,7 @@ from app.schemas.projects import (
   ProjectUpdateRequest,
   SuggestionRecomputeRequest,
 )
+from app.schemas.todos import TodoCreateRequest, TodoItemResponse, TodoUpdateRequest
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -68,6 +73,8 @@ async def get_project_board(
         updated_at=project.updated_at,
         open_count=open_count,
         completed_count=completed_count,
+        state_summary_json=project.state_summary_json,
+        state_updated_at_utc=project.state_updated_at_utc,
       )
     )
   project_payload.sort(key=lambda item: (item.name != INBOX_PROJECT_NAME, item.sort_order, item.id))
@@ -85,6 +92,88 @@ async def get_project_board(
       for suggestion in suggestions
     ],
   )
+
+
+@router.get("/activities/all", response_model=list[ProjectActivityResponse])
+async def get_all_activities(
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+  since: date | None = None,
+  until: date | None = None,
+  page: int = 1,
+  per_page: int = 50,
+) -> list[ProjectActivityResponse]:
+  """Unified activity feed across all projects."""
+  query = (
+    select(ProjectActivity, Project.name)
+    .join(Project, ProjectActivity.project_id == Project.id)
+    .where(ProjectActivity.user_id == current_user.id)
+    .order_by(ProjectActivity.local_date.desc(), ProjectActivity.created_at.desc())
+  )
+  if since:
+    query = query.where(ProjectActivity.local_date >= since)
+  if until:
+    query = query.where(ProjectActivity.local_date <= until)
+  query = query.offset((page - 1) * per_page).limit(per_page)
+
+  result = await session.execute(query)
+  rows = result.all()
+
+  return [
+    ProjectActivityResponse(
+      id=activity.id,
+      project_id=activity.project_id,
+      project_name=project_name,
+      local_date=activity.local_date,
+      session_id=activity.session_id,
+      summary=activity.summary,
+      details_json=activity.details_json,
+      created_at=activity.created_at,
+    )
+    for activity, project_name in rows
+  ]
+
+
+@router.get("/{project_id}/activities", response_model=list[ProjectActivityResponse])
+async def get_project_activities(
+  project_id: int,
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+  since: date | None = None,
+  until: date | None = None,
+  page: int = 1,
+  per_page: int = 50,
+) -> list[ProjectActivityResponse]:
+  """Activity feed for a specific project."""
+  query = (
+    select(ProjectActivity)
+    .where(
+      ProjectActivity.user_id == current_user.id,
+      ProjectActivity.project_id == project_id,
+    )
+    .order_by(ProjectActivity.local_date.desc(), ProjectActivity.created_at.desc())
+  )
+  if since:
+    query = query.where(ProjectActivity.local_date >= since)
+  if until:
+    query = query.where(ProjectActivity.local_date <= until)
+  query = query.offset((page - 1) * per_page).limit(per_page)
+
+  result = await session.execute(query)
+  activities = result.scalars().all()
+
+  return [
+    ProjectActivityResponse(
+      id=a.id,
+      project_id=a.project_id,
+      local_date=a.local_date,
+      session_id=a.session_id,
+      summary=a.summary,
+      details_json=a.details_json,
+      created_at=a.created_at,
+    )
+    for a in activities
+  ]
 
 
 @router.post("", response_model=ProjectResponse)
@@ -201,5 +290,95 @@ async def dismiss_suggestion(
 ) -> Response:
   suggestion_repo = TodoProjectSuggestionRepository(session)
   await suggestion_repo.delete_for_todo(current_user.id, todo_id)
+  await session.commit()
+  return Response(status_code=204)
+
+
+# ── Todo CRUD ────────────────────────────────────────────────────────────
+
+
+@router.post("/todos", response_model=TodoItemResponse)
+async def create_todo(
+  payload: TodoCreateRequest,
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+) -> TodoItemResponse:
+  """Create a todo, optionally assigned to a project."""
+  project_repo = ProjectRepository(session)
+  todo_repo = TodoRepository(session)
+
+  project_id = payload.project_id
+  if project_id is None:
+    inbox = await project_repo.ensure_inbox_project(current_user.id)
+    project_id = inbox.id
+
+  todo = await todo_repo.create_one(
+    user_id=current_user.id,
+    project_id=project_id,
+    text=payload.text,
+    deadline=payload.deadline_utc,
+    deadline_is_date_only=payload.deadline_is_date_only,
+    time_horizon=payload.time_horizon,
+  )
+  await session.commit()
+  return build_todo_response(todo, datetime.now(timezone.utc))
+
+
+@router.patch("/todos/{todo_id}", response_model=TodoItemResponse)
+async def update_todo(
+  todo_id: int,
+  payload: TodoUpdateRequest,
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+) -> TodoItemResponse:
+  """Update a todo (text, completed, project, deadline, etc.)."""
+  todo_repo = TodoRepository(session)
+  todo = await todo_repo.get_for_user(current_user.id, todo_id)
+  if todo is None:
+    raise HTTPException(status_code=404, detail="Todo not found")
+
+  update_data = payload.model_dump(exclude_unset=True)
+  if "text" in update_data and update_data["text"] is not None:
+    todo.text = update_data["text"].strip()
+  if "project_id" in update_data and update_data["project_id"] is not None:
+    todo.project_id = update_data["project_id"]
+  if "deadline_utc" in update_data:
+    todo.deadline_utc = update_data["deadline_utc"]
+  if "deadline_is_date_only" in update_data and update_data["deadline_is_date_only"] is not None:
+    todo.deadline_is_date_only = update_data["deadline_is_date_only"]
+  if "time_horizon" in update_data and update_data["time_horizon"] is not None:
+    todo.time_horizon = update_data["time_horizon"]
+  if "completed" in update_data and update_data["completed"] is not None:
+    now = datetime.now(timezone.utc)
+    if update_data["completed"] and not todo.completed:
+      todo.completed = True
+      todo.completed_at_utc = now
+      if payload.time_zone:
+        local_tz = zoneinfo.ZoneInfo(payload.time_zone)
+        todo.completed_local_date = now.astimezone(local_tz).date()
+      else:
+        todo.completed_local_date = now.date()
+    elif not update_data["completed"] and todo.completed:
+      todo.completed = False
+      todo.completed_at_utc = None
+      todo.completed_local_date = None
+
+  await session.flush()
+  await session.commit()
+  return build_todo_response(todo, datetime.now(timezone.utc))
+
+
+@router.delete("/todos/{todo_id}", status_code=204, response_class=Response)
+async def delete_todo(
+  todo_id: int,
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+) -> Response:
+  """Delete a todo."""
+  todo_repo = TodoRepository(session)
+  todo = await todo_repo.get_for_user(current_user.id, todo_id)
+  if todo is None:
+    raise HTTPException(status_code=404, detail="Todo not found")
+  await todo_repo.delete_for_user(current_user.id, todo_id)
   await session.commit()
   return Response(status_code=204)

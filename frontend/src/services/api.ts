@@ -627,6 +627,12 @@ export const sendTodoChatMessage = async (
 
 // Projects
 
+export type ProjectStateSummary = {
+  status: string;
+  recent_focus: string;
+  next_steps: string[];
+};
+
 export type ProjectItem = {
   id: number;
   name: string;
@@ -637,6 +643,25 @@ export type ProjectItem = {
   updated_at: string;
   open_count: number;
   completed_count: number;
+  state_summary_json?: ProjectStateSummary | null;
+  state_updated_at_utc?: string | null;
+};
+
+export type ProjectActivity = {
+  id: number;
+  project_id: number;
+  project_name?: string;
+  local_date: string;
+  session_id: string;
+  summary: string;
+  details_json: {
+    files_modified?: string[];
+    git_branch?: string;
+    git_commits?: string[];
+    category?: string;
+    key_decisions?: string[];
+  } | null;
+  created_at: string;
 };
 
 export type ProjectSuggestion = {
@@ -725,6 +750,51 @@ export const dismissProjectSuggestion = async (todo_id: number): Promise<void> =
     return;
   }
   await api.delete(`/api/projects/suggestions/${todo_id}`);
+};
+
+export const fetchProjectActivities = async (
+  projectId: number,
+  params?: { since?: string; until?: string; page?: number; per_page?: number }
+): Promise<ProjectActivity[]> => {
+  const { data } = await api.get(`/api/projects/${projectId}/activities`, { params });
+  return data as ProjectActivity[];
+};
+
+export const fetchAllActivities = async (
+  params?: { since?: string; until?: string; page?: number; per_page?: number }
+): Promise<ProjectActivity[]> => {
+  const { data } = await api.get('/api/projects/activities/all', { params });
+  return data as ProjectActivity[];
+};
+
+export const createProjectTodo = async (payload: {
+  text: string;
+  project_id: number;
+  deadline_utc?: string | null;
+  deadline_is_date_only?: boolean;
+  time_horizon?: string;
+  time_zone?: string;
+}): Promise<TodoItem> => {
+  const { data } = await api.post('/api/projects/todos', payload);
+  return data as TodoItem;
+};
+
+export const updateProjectTodo = async (
+  todoId: number,
+  payload: {
+    text?: string;
+    project_id?: number;
+    completed?: boolean;
+    deadline_utc?: string | null;
+    time_zone?: string;
+  }
+): Promise<TodoItem> => {
+  const { data } = await api.patch(`/api/projects/todos/${todoId}`, payload);
+  return data as TodoItem;
+};
+
+export const deleteProjectTodo = async (todoId: number): Promise<void> => {
+  await api.delete(`/api/projects/todos/${todoId}`);
 };
 
 // Calendar

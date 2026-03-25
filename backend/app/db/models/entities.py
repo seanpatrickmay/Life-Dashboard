@@ -96,6 +96,12 @@ class User(Base):
     imessage_contact_identities: Mapped[list["IMessageContactIdentity"]] = relationship(
         back_populates="user"
     )
+    claude_code_sync_cursors: Mapped[list["ClaudeCodeSyncCursor"]] = relationship(
+        back_populates="user"
+    )
+    project_activities: Mapped[list["ProjectActivity"]] = relationship(
+        back_populates="user"
+    )
 
 
 class Activity(Base):

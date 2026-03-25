@@ -58,11 +58,6 @@ class JournalService:
   ) -> dict[str, Any]:
     today = local_today(time_zone)
     if local_date >= today:
-      await self._ensure_summary(
-        user_id=user_id,
-        local_date=today - timedelta(days=1),
-        time_zone=time_zone,
-      )
       entries = await self.journal_repo.list_entries_for_day(user_id, local_date)
       completed = await self.todo_repo.list_completed_for_day(user_id, local_date)
       return {
@@ -103,13 +98,7 @@ class JournalService:
   async def _list_completed_counts(
     self, user_id: int, start: date, end: date
   ) -> dict[date, int]:
-    counts: dict[date, int] = {}
-    current = start
-    while current <= end:
-      items = await self.todo_repo.list_completed_for_day(user_id, current)
-      counts[current] = len(items)
-      current = current.fromordinal(current.toordinal() + 1)
-    return counts
+    return await self.todo_repo.count_completed_by_date(user_id, start, end)
 
   async def _ensure_summary(
     self, *, user_id: int, local_date: date, time_zone: str
