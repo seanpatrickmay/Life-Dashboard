@@ -19,6 +19,7 @@ class JournalEntry(Base):
   local_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
   time_zone: Mapped[str] = mapped_column(String(64), nullable=False)
   text: Mapped[str] = mapped_column(Text, nullable=False)
+  source: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
   user: Mapped[User] = relationship(back_populates="journal_entries")
 
