@@ -8,13 +8,14 @@ import logging
 import os
 import sys
 import zoneinfo
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(ROOT / ".env")
+load_dotenv(ROOT / ".env", override=True)
 
 # DATABASE_URL_HOST → async DATABASE_URL rewriting (matches sync_imessage.py pattern)
 host_db_url = os.getenv("DATABASE_URL_HOST")
@@ -40,7 +41,10 @@ from app.services.claude_code_processing_service import (  # noqa: E402
     ClaudeCodeProcessingService,
     get_git_log_for_session,
 )
-from app.services.claude_code_project_resolver import ClaudeCodeProjectResolver  # noqa: E402
+from app.services.claude_code_project_resolver import (  # noqa: E402
+    ClaudeCodeProjectResolver,
+    GENERAL_PROJECT_NAME,
+)
 from app.utils.timezone import local_today  # noqa: E402
 
 logging.basicConfig(
@@ -105,9 +109,10 @@ async def main() -> None:
             return
 
         projects_with_new_activity: set[int] = set()
-        # Collect summaries per (project_name, date) for aggregated journal entries
-        from collections import defaultdict
+        # Track journal summaries per (project_name, date) for aggregation
         journal_summaries: dict[tuple[str, object], list[str]] = defaultdict(list)
+        processed_count = 0
+        skipped_count = 0
 
         for session_info, session_file in unprocessed:
             try:
@@ -133,6 +138,23 @@ async def main() -> None:
 
                 summary_data = await processing_service.summarize_session(content, git_log=git_log)
 
+                # Skip low-signal sessions (brief Q&A, model selection, etc.)
+                if summary_data.get("skip", False):
+                    logger.info("Session %s flagged as low-signal, skipping activity creation", session_info.session_id)
+                    skipped_count += 1
+                    # Still update cursor so we don't reprocess
+                    if not args.dry_run:
+                        file_mtime = os.path.getmtime(session_file)
+                        await sync_service.upsert_cursor(
+                            user_id=args.user_id,
+                            session_id=session_info.session_id,
+                            project_path=project_path,
+                            entry_count=content.entry_count,
+                            file_mtime=file_mtime,
+                        )
+                        await session.commit()
+                    continue
+
                 session_date = _session_date(content.first_timestamp, args.time_zone)
 
                 if not args.dry_run:
@@ -146,8 +168,18 @@ async def main() -> None:
                         source_project_path=project_path,
                     )
 
-                    # Collect summary for aggregated journal entry
+                    # Accumulate journal summary for this project+date
                     journal_summaries[(project.name, session_date)].append(summary_data["summary"])
+
+                    # Write journal entry immediately (aggregated for this project+date so far)
+                    combined = " | ".join(journal_summaries[(project.name, session_date)])
+                    await processing_service.upsert_journal_entry(
+                        user_id=args.user_id,
+                        project_name=project.name,
+                        local_date=session_date,
+                        summary=combined,
+                        time_zone=args.time_zone,
+                    )
 
                     file_mtime = os.path.getmtime(session_file)
                     await sync_service.upsert_cursor(
@@ -160,6 +192,7 @@ async def main() -> None:
 
                     projects_with_new_activity.add(project.id)
                     await session.commit()
+                    processed_count += 1
 
                 logger.info("Processed session %s → %s: %s", session_info.session_id, project.name, summary_data["summary"][:100])
 
@@ -168,23 +201,7 @@ async def main() -> None:
                 await session.rollback()
                 continue
 
-        # Write aggregated journal entries (one per project per date)
-        if not args.dry_run:
-            for (project_name, local_date), summaries in journal_summaries.items():
-                try:
-                    combined = " | ".join(summaries) if len(summaries) > 1 else summaries[0]
-                    await processing_service.upsert_journal_entry(
-                        user_id=args.user_id,
-                        project_name=project_name,
-                        local_date=local_date,
-                        summary=combined,
-                        time_zone=args.time_zone,
-                    )
-                    await session.commit()
-                except Exception:
-                    logger.exception("Failed to write journal entry for %s on %s", project_name, local_date)
-                    await session.rollback()
-
+        # Regenerate project state for each project that got new activities
         if not args.dry_run and projects_with_new_activity:
             logger.info("Regenerating state for %d projects", len(projects_with_new_activity))
             for project_id in projects_with_new_activity:
@@ -194,11 +211,12 @@ async def main() -> None:
                         project_id=project_id,
                     )
                     await session.commit()
+                    logger.info("Regenerated state for project %d", project_id)
                 except Exception:
                     logger.exception("Failed to regenerate state for project %d", project_id)
                     await session.rollback()
 
-    logger.info("Claude Code sync complete.")
+    logger.info("Claude Code sync complete. Processed: %d, Skipped: %d", processed_count, skipped_count)
 
 
 if __name__ == "__main__":

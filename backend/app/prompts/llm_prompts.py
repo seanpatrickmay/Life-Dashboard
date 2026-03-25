@@ -881,14 +881,16 @@ CLAUDE_CODE_SESSION_SUMMARY_PROMPT = """\
 You are summarizing a Claude Code (AI coding assistant) session for a personal productivity dashboard.
 
 Given the conversation content below, produce a JSON response with:
-- "summary": 1-3 sentence plain-language description of what was accomplished
-- "files_modified": list of file paths that were edited or created
+- "summary": 1-3 sentence plain-language description of what was accomplished. Focus on OUTCOMES (what was built, fixed, shipped, decided) NOT process (what the user asked, what was explored).
+- "files_modified": list of file paths that were edited or created (empty list if none)
 - "git_branch": the git branch name if mentioned (or null)
 - "git_commits": list of commit messages if any commits were made (or [])
 - "category": one of "feature", "bugfix", "refactor", "debugging", "planning", "research", "config"
 - "key_decisions": list of important decisions or trade-offs made (or [])
+- "skip": true if this session had NO meaningful work output — e.g., a single question answered, model selection, or a failed/abandoned attempt with no code changes. false otherwise.
 
-Focus on OUTCOMES — what was built, fixed, or decided — not the process.
+A session with no files modified, no commits, and only a brief Q&A exchange should have skip=true.
+A session that produced code changes, design decisions, or meaningful research should have skip=false.
 
 USER MESSAGES:
 {user_messages}
