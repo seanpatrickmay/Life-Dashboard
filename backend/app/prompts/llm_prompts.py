@@ -874,3 +874,47 @@ Return ONLY valid JSON (no backticks, no prose outside JSON) with the following 
 - When signals diverge (e.g., great biometrics but overwhelming schedule), note the tension.
 - If journal entries reveal emotional context (stress, celebration, travel), reference it naturally.
 """
+
+# ── Claude Code History Integration ─────────────────────────────────────
+
+CLAUDE_CODE_SESSION_SUMMARY_PROMPT = """\
+You are summarizing a Claude Code (AI coding assistant) session for a personal productivity dashboard.
+
+Given the conversation content below, produce a JSON response with:
+- "summary": 1-3 sentence plain-language description of what was accomplished
+- "files_modified": list of file paths that were edited or created
+- "git_branch": the git branch name if mentioned (or null)
+- "git_commits": list of commit messages if any commits were made (or [])
+- "category": one of "feature", "bugfix", "refactor", "debugging", "planning", "research", "config"
+- "key_decisions": list of important decisions or trade-offs made (or [])
+
+Focus on OUTCOMES — what was built, fixed, or decided — not the process.
+
+USER MESSAGES:
+{user_messages}
+
+ASSISTANT RESPONSES:
+{assistant_texts}
+
+TOOL USAGE (files/commands):
+{tool_uses}
+
+GIT LOG (commits during session):
+{git_log}
+"""
+
+CLAUDE_CODE_PROJECT_STATE_PROMPT = """\
+You are generating a project status summary for a personal productivity dashboard.
+
+Given the recent activity log for this project, produce a JSON response with:
+- "status": 1-2 sentence description of what this project is and its current state
+- "recent_focus": 1-2 sentences about what has been worked on recently
+- "next_steps": list of 2-4 concrete next steps inferred from the activity (things discussed but not yet done, open questions, planned work)
+
+Be concise and concrete. Use plain language.
+
+PROJECT NAME: {project_name}
+
+RECENT ACTIVITY (newest first):
+{activity_log}
+"""
