@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy import select, update
@@ -16,7 +16,10 @@ from app.db.repositories.project_repository import (
 )
 from app.db.repositories.todo_repository import TodoRepository
 from app.db.session import AsyncSessionLocal, get_session
+from app.db.models.claude_code import ProjectActivity
+from app.db.models.project import Project
 from app.schemas.projects import (
+  ProjectActivityResponse,
   ProjectBoardResponse,
   ProjectCreateRequest,
   ProjectResponse,
@@ -91,6 +94,8 @@ async def get_project_board(
         updated_at=project.updated_at,
         open_count=open_count,
         completed_count=completed_count,
+        state_summary_json=project.state_summary_json,
+        state_updated_at_utc=project.state_updated_at_utc,
       )
     )
   project_payload.sort(key=lambda item: (item.name != INBOX_PROJECT_NAME, item.sort_order, item.id))
@@ -108,6 +113,88 @@ async def get_project_board(
       for suggestion in suggestions
     ],
   )
+
+
+@router.get("/activities/all", response_model=list[ProjectActivityResponse])
+async def get_all_activities(
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+  since: date | None = None,
+  until: date | None = None,
+  page: int = 1,
+  per_page: int = 50,
+) -> list[ProjectActivityResponse]:
+  """Unified activity feed across all projects."""
+  query = (
+    select(ProjectActivity, Project.name)
+    .join(Project, ProjectActivity.project_id == Project.id)
+    .where(ProjectActivity.user_id == current_user.id)
+    .order_by(ProjectActivity.local_date.desc(), ProjectActivity.created_at.desc())
+  )
+  if since:
+    query = query.where(ProjectActivity.local_date >= since)
+  if until:
+    query = query.where(ProjectActivity.local_date <= until)
+  query = query.offset((page - 1) * per_page).limit(per_page)
+
+  result = await session.execute(query)
+  rows = result.all()
+
+  return [
+    ProjectActivityResponse(
+      id=activity.id,
+      project_id=activity.project_id,
+      project_name=project_name,
+      local_date=activity.local_date,
+      session_id=activity.session_id,
+      summary=activity.summary,
+      details_json=activity.details_json,
+      created_at=activity.created_at,
+    )
+    for activity, project_name in rows
+  ]
+
+
+@router.get("/{project_id}/activities", response_model=list[ProjectActivityResponse])
+async def get_project_activities(
+  project_id: int,
+  current_user: User = Depends(get_current_user),
+  session: AsyncSession = Depends(get_session),
+  since: date | None = None,
+  until: date | None = None,
+  page: int = 1,
+  per_page: int = 50,
+) -> list[ProjectActivityResponse]:
+  """Activity feed for a specific project."""
+  query = (
+    select(ProjectActivity)
+    .where(
+      ProjectActivity.user_id == current_user.id,
+      ProjectActivity.project_id == project_id,
+    )
+    .order_by(ProjectActivity.local_date.desc(), ProjectActivity.created_at.desc())
+  )
+  if since:
+    query = query.where(ProjectActivity.local_date >= since)
+  if until:
+    query = query.where(ProjectActivity.local_date <= until)
+  query = query.offset((page - 1) * per_page).limit(per_page)
+
+  result = await session.execute(query)
+  activities = result.scalars().all()
+
+  return [
+    ProjectActivityResponse(
+      id=a.id,
+      project_id=a.project_id,
+      local_date=a.local_date,
+      session_id=a.session_id,
+      summary=a.summary,
+      details_json=a.details_json,
+      created_at=a.created_at,
+    )
+    for a in activities
+  ]
 
 
 @router.post("", response_model=ProjectResponse)
