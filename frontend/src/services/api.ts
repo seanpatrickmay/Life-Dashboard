@@ -754,6 +754,36 @@ export const fetchAllActivities = async (
   return data as ProjectActivity[];
 };
 
+export const createProjectTodo = async (payload: {
+  text: string;
+  project_id: number;
+  deadline_utc?: string | null;
+  deadline_is_date_only?: boolean;
+  time_horizon?: string;
+  time_zone?: string;
+}): Promise<TodoItem> => {
+  const { data } = await api.post('/api/projects/todos', payload);
+  return data as TodoItem;
+};
+
+export const updateProjectTodo = async (
+  todoId: number,
+  payload: {
+    text?: string;
+    project_id?: number;
+    completed?: boolean;
+    deadline_utc?: string | null;
+    time_zone?: string;
+  }
+): Promise<TodoItem> => {
+  const { data } = await api.patch(`/api/projects/todos/${todoId}`, payload);
+  return data as TodoItem;
+};
+
+export const deleteProjectTodo = async (todoId: number): Promise<void> => {
+  await api.delete(`/api/projects/todos/${todoId}`);
+};
+
 // Calendar
 
 export type CalendarStatus = {
