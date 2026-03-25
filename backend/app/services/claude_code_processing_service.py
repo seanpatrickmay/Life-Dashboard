@@ -30,6 +30,7 @@ class SessionSummaryResponse(BaseModel):
     git_commits: list[str] = []
     category: str = "feature"
     key_decisions: list[str] = []
+    skip: bool = False
 
 
 class ProjectStateResponse(BaseModel):
