@@ -31,12 +31,17 @@ const fadeIn = keyframes`
 const Shell = styled.div`
   display: grid;
   grid-template-columns: 280px 1fr;
-  height: 100vh;
-  background: ${({ theme }) => theme.colors.backgroundPage};
+  height: calc(100vh - 140px);
+  min-height: 400px;
+  background: transparent;
   color: ${({ theme }) => theme.colors.textPrimary};
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
 
   @media (max-width: 800px) {
     grid-template-columns: 1fr;
+    height: calc(100vh - 120px);
   }
 `;
 
@@ -47,7 +52,7 @@ const Sidebar = styled.aside`
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  background: ${({ theme }) => theme.colors.surfaceRaised};
+  background: ${({ theme }) => theme.colors.overlay};
 
   @media (max-width: 800px) {
     display: none;
@@ -124,10 +129,11 @@ const Badge = styled.span`
 
 const Main = styled.main`
   overflow-y: auto;
-  padding: 36px 48px 64px;
+  padding: 28px 40px 48px;
+  background: transparent;
 
   @media (max-width: 1000px) {
-    padding: 24px 20px 48px;
+    padding: 20px 16px 40px;
   }
 `;
 
