@@ -1127,9 +1127,9 @@ def test_apply_todo_create_uses_cluster_message_time_as_created_at() -> None:
     async def fake_audit_exists(self, user_id, fingerprint):
         return False
 
-    async def fake_record_action_audit(self, **kwargs):
+    async def fake_record_action_audit(self, *, run, cluster, record):
         captured["audited"] = True
-        captured["audit_kwargs"] = kwargs
+        captured["audit_record"] = record
 
     service.todo_repo = SimpleNamespace(create_one=MethodType(fake_create_one, object()))
     service.project_repo = SimpleNamespace(
@@ -1160,8 +1160,8 @@ def test_apply_todo_create_uses_cluster_message_time_as_created_at() -> None:
     assert captured["project_id"] == 7
     assert captured["created_at"] == datetime(2026, 1, 14, 22, 15, tzinfo=timezone.utc)
     assert captured["audited"] is True
-    assert captured["audit_kwargs"]["supporting_message_ids"] == [1]
-    assert captured["audit_kwargs"]["source_occurred_at_utc"] == datetime(2026, 1, 14, 22, 15, tzinfo=timezone.utc)
+    assert captured["audit_record"].supporting_message_ids == [1]
+    assert captured["audit_record"].source_occurred_at_utc == datetime(2026, 1, 14, 22, 15, tzinfo=timezone.utc)
 
 
 def test_apply_todo_completion_uses_cluster_message_time_for_completion_date() -> None:
@@ -1202,8 +1202,8 @@ def test_apply_todo_completion_uses_cluster_message_time_for_completion_date() -
     async def fake_audit_exists(self, user_id, fingerprint):
         return False
 
-    async def fake_record_action_audit(self, **kwargs):
-        target.audit_kwargs = kwargs
+    async def fake_record_action_audit(self, *, run, cluster, record):
+        target.audit_record = record
         return None
 
     async def fake_rewrite(self, text):
@@ -1228,8 +1228,8 @@ def test_apply_todo_completion_uses_cluster_message_time_for_completion_date() -
     assert target.completed_at_utc == datetime(2026, 1, 15, 3, 30, tzinfo=timezone.utc)
     assert str(target.completed_local_date) == "2026-01-14"
     assert target.completed_time_zone == "America/New_York"
-    assert target.audit_kwargs["supporting_message_ids"] == [1]
-    assert target.audit_kwargs["source_occurred_at_utc"] == datetime(2026, 1, 15, 3, 30, tzinfo=timezone.utc)
+    assert target.audit_record.supporting_message_ids == [1]
+    assert target.audit_record.source_occurred_at_utc == datetime(2026, 1, 15, 3, 30, tzinfo=timezone.utc)
 
 
 def test_apply_journal_entry_uses_cluster_message_time_for_local_day() -> None:
@@ -1258,9 +1258,9 @@ def test_apply_journal_entry_uses_cluster_message_time_for_local_day() -> None:
         captured["occurred_at_utc"] = occurred_at_utc
         return {"entry": SimpleNamespace(id=611)}
 
-    async def fake_record_action_audit(self, **kwargs):
+    async def fake_record_action_audit(self, *, run, cluster, record):
         captured["audited"] = True
-        captured["audit_kwargs"] = kwargs
+        captured["audit_record"] = record
 
     service._audit_exists = MethodType(fake_audit_exists, service)
     service._record_action_audit = MethodType(fake_record_action_audit, service)
@@ -1278,8 +1278,8 @@ def test_apply_journal_entry_uses_cluster_message_time_for_local_day() -> None:
     assert applied is True
     assert captured["occurred_at_utc"] == datetime(2026, 1, 15, 3, 30, tzinfo=timezone.utc)
     assert captured["audited"] is True
-    assert captured["audit_kwargs"]["supporting_message_ids"] == [1]
-    assert captured["audit_kwargs"]["source_occurred_at_utc"] == datetime(2026, 1, 15, 3, 30, tzinfo=timezone.utc)
+    assert captured["audit_record"].supporting_message_ids == [1]
+    assert captured["audit_record"].source_occurred_at_utc == datetime(2026, 1, 15, 3, 30, tzinfo=timezone.utc)
 
 
 def test_extract_actions_normalizes_source_message_ids_from_model_output() -> None:

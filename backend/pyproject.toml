@@ -36,6 +36,7 @@ isort = "^5.13"
 mypy = "^1.8"
 ruff = "^0.4.0"
 pytest = "^8.3"
+aiosqlite = "^0.22.1"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
