@@ -1,6 +1,6 @@
 import { FormEvent, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -13,45 +13,67 @@ import {
   deleteProject,
   type ProjectItem,
   type ProjectActivity,
-  type TodoItem,
 } from '../services/api';
 
 /* ═══════════════════════════════════════════════════════════════════════
-   Styled Components
+   Animations
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const fadeIn = keyframes`
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+`;
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Layout
    ═══════════════════════════════════════════════════════════════════════ */
 
 const Shell = styled.div`
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 280px 1fr;
   height: 100vh;
   background: ${({ theme }) => theme.colors.backgroundPage};
   color: ${({ theme }) => theme.colors.textPrimary};
+
+  @media (max-width: 800px) {
+    grid-template-columns: 1fr;
+  }
 `;
 
 /* ── Sidebar ────────────────────────────────────────────────────────── */
 
 const Sidebar = styled.aside`
   border-right: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  padding: 24px 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  background: ${({ theme }) => theme.colors.surfaceRaised};
+
+  @media (max-width: 800px) {
+    display: none;
+  }
 `;
 
-const SidebarTitle = styled.div`
-  font-size: 0.72rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: ${({ theme }) => theme.colors.textSecondary};
-  padding: 0 20px;
-  margin-bottom: 8px;
+const SidebarTop = styled.div`
+  padding: 28px 24px 20px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 `;
 
 const SidebarSection = styled.div`
-  margin-top: 16px;
-  &:first-child { margin-top: 0; }
+  padding: 0 12px;
+  margin-bottom: 20px;
+`;
+
+const SidebarLabel = styled.div`
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  padding: 0 12px;
+  margin-bottom: 6px;
 `;
 
 const ProjectRow = styled.button<{ $active?: boolean }>`
@@ -59,18 +81,25 @@ const ProjectRow = styled.button<{ $active?: boolean }>`
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 20px;
+  padding: 7px 12px;
   border: none;
-  background: ${({ $active, theme }) => ($active ? theme.colors.backgroundCard : 'transparent')};
+  background: ${({ $active, theme }) =>
+    $active ? theme.colors.backgroundCard : 'transparent'};
   color: ${({ theme }) => theme.colors.textPrimary};
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   text-align: left;
   cursor: pointer;
   width: 100%;
-  border-radius: 0;
+  border-radius: 8px;
+  transition: background 0.12s;
+
+  ${({ $active, theme }) =>
+    $active &&
+    `box-shadow: 0 1px 3px ${theme.colors.overlay}, 0 0 0 1px ${theme.colors.borderSubtle};`}
 
   &:hover {
-    background: ${({ theme }) => theme.colors.backgroundCard};
+    background: ${({ $active, theme }) =>
+      $active ? theme.colors.backgroundCard : theme.colors.overlayHover};
   }
 `;
 
@@ -78,11 +107,16 @@ const ProjectName = styled.span`
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
 `;
 
 const Badge = styled.span`
-  font-size: 0.72rem;
-  color: ${({ theme }) => theme.colors.textSecondary};
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: ${({ theme }) => theme.colors.accent};
+  background: ${({ theme }) => theme.colors.accentSubtle};
+  padding: 1px 7px;
+  border-radius: 10px;
   flex-shrink: 0;
 `;
 
@@ -90,120 +124,157 @@ const Badge = styled.span`
 
 const Main = styled.main`
   overflow-y: auto;
-  padding: 32px 48px;
+  padding: 36px 48px 64px;
+
+  @media (max-width: 1000px) {
+    padding: 24px 20px 48px;
+  }
 `;
 
 const Content = styled.div`
-  max-width: 780px;
+  max-width: 740px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 36px;
+  animation: ${fadeIn} 0.3s ease-out;
 `;
+
+/* ── Project Header ─────────────────────────────────────────────────── */
 
 const ProjectHeader = styled.div`
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 `;
 
 const ProjectTitle = styled.h1`
-  font-size: 1.6rem;
-  font-weight: 700;
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   margin: 0;
   flex: 1;
 `;
 
 const ProjectTitleInput = styled.input`
-  font-size: 1.6rem;
-  font-weight: 700;
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   margin: 0;
   flex: 1;
   border: none;
-  border-bottom: 2px solid ${({ theme }) => theme.colors.focusRing};
+  border-bottom: 2px solid ${({ theme }) => theme.colors.accent};
   background: transparent;
   color: ${({ theme }) => theme.colors.textPrimary};
   padding: 0 0 2px;
   outline: none;
 `;
 
-const IconButton = styled.button`
+const HeaderActions = styled.div`
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+`;
+
+const SmallButton = styled.button`
   background: none;
   border: 1px solid transparent;
   color: ${({ theme }) => theme.colors.textSecondary};
   cursor: pointer;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   padding: 4px 10px;
   border-radius: 6px;
+  transition: all 0.12s;
 
   &:hover {
     border-color: ${({ theme }) => theme.colors.borderSubtle};
     color: ${({ theme }) => theme.colors.textPrimary};
+    background: ${({ theme }) => theme.colors.overlayHover};
   }
 `;
 
-const DeleteButton = styled(IconButton)`
+const DangerButton = styled(SmallButton)`
   &:hover {
-    border-color: #e53e3e;
-    color: #e53e3e;
+    border-color: ${({ theme }) => theme.colors.danger};
+    color: ${({ theme }) => theme.colors.danger};
+    background: ${({ theme }) => theme.colors.dangerSubtle};
   }
 `;
 
-/* ── Section Layout ─────────────────────────────────────────────────── */
+/* ── Sections ───────────────────────────────────────────────────────── */
 
 const Section = styled.section`
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-`;
-
-const SectionHeader = styled.h2`
-  font-size: 0.76rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: ${({ theme }) => theme.colors.textSecondary};
-  margin: 0;
-`;
-
-/* ── State Summary ──────────────────────────────────────────────────── */
-
-const StateCard = styled.div`
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  border-radius: 12px;
-  padding: 18px 22px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 `;
 
-const StateLabel = styled.div`
+const SectionHeader = styled.h2`
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   color: ${({ theme }) => theme.colors.textSecondary};
-  margin-bottom: 2px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const SectionCount = styled.span`
+  font-weight: 600;
+  font-size: 0.68rem;
+  color: ${({ theme }) => theme.colors.accent};
+  background: ${({ theme }) => theme.colors.accentSubtle};
+  padding: 0 6px;
+  border-radius: 8px;
+  line-height: 1.6;
+`;
+
+/* ── State Card ─────────────────────────────────────────────────────── */
+
+const StateCard = styled.div`
+  background: ${({ theme }) => theme.colors.backgroundCard};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  border-radius: 14px;
+  padding: 20px 24px;
+  display: grid;
+  gap: 16px;
+  box-shadow: 0 1px 4px ${({ theme }) => theme.colors.overlay};
+`;
+
+const StateRow = styled.div``;
+
+const StateLabel = styled.div`
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  margin-bottom: 4px;
 `;
 
 const StateText = styled.div`
   font-size: 0.9rem;
-  line-height: 1.5;
+  line-height: 1.55;
 `;
 
 const NextStepsList = styled.ul`
   margin: 0;
   padding-left: 18px;
   font-size: 0.9rem;
-  line-height: 1.6;
+  line-height: 1.7;
+
+  li::marker {
+    color: ${({ theme }) => theme.colors.accent};
+  }
 `;
 
 const Freshness = styled.div<{ $stale?: boolean }>`
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   color: ${({ theme }) => theme.colors.textSecondary};
-  opacity: ${({ $stale }) => ($stale ? 0.5 : 0.8)};
+  opacity: ${({ $stale }) => ($stale ? 0.45 : 0.7)};
   font-style: ${({ $stale }) => ($stale ? 'italic' : 'normal')};
 `;
 
@@ -212,31 +283,62 @@ const Freshness = styled.div<{ $stale?: boolean }>`
 const TodoList = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 `;
 
 const TodoRow = styled.div<{ $done?: boolean }>`
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 9px 14px;
+  border-radius: 10px;
   background: ${({ theme }) => theme.colors.backgroundCard};
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  opacity: ${({ $done }) => ($done ? 0.55 : 1)};
+  opacity: ${({ $done }) => ($done ? 0.5 : 1)};
+  transition: opacity 0.15s, box-shadow 0.15s;
+
+  &:hover {
+    box-shadow: 0 1px 4px ${({ theme }) => theme.colors.overlay};
+  }
 `;
 
 const Checkbox = styled.input`
-  width: 16px;
-  height: 16px;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid ${({ theme }) => theme.colors.borderSubtle};
+  border-radius: 5px;
   cursor: pointer;
   flex-shrink: 0;
+  transition: all 0.12s;
+  position: relative;
+
+  &:checked {
+    background: ${({ theme }) => theme.colors.accent};
+    border-color: ${({ theme }) => theme.colors.accent};
+  }
+  &:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  &:hover {
+    border-color: ${({ theme }) => theme.colors.accent};
+  }
 `;
 
 const TodoText = styled.span<{ $done?: boolean }>`
   flex: 1;
   font-size: 0.9rem;
+  line-height: 1.4;
   text-decoration: ${({ $done }) => ($done ? 'line-through' : 'none')};
+  color: ${({ $done, theme }) => ($done ? theme.colors.textSecondary : theme.colors.textPrimary)};
 `;
 
 const TodoDelete = styled.button`
@@ -244,59 +346,78 @@ const TodoDelete = styled.button`
   border: none;
   color: ${({ theme }) => theme.colors.textSecondary};
   cursor: pointer;
-  font-size: 0.78rem;
-  padding: 2px 6px;
+  font-size: 1rem;
+  padding: 0 4px;
   border-radius: 4px;
   opacity: 0;
+  transition: opacity 0.1s;
+  line-height: 1;
 
-  ${TodoRow}:hover & {
-    opacity: 0.6;
-  }
+  ${TodoRow}:hover & { opacity: 0.4; }
   &:hover {
     opacity: 1 !important;
-    color: #e53e3e;
+    color: ${({ theme }) => theme.colors.danger};
   }
+`;
+
+const CompletedToggle = styled.button`
+  background: none;
+  border: none;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-top: 2px;
+
+  &:hover { color: ${({ theme }) => theme.colors.textPrimary}; }
 `;
 
 const AddTodoForm = styled.form`
   display: flex;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: 6px;
 `;
 
 const AddTodoInput = styled.input`
   flex: 1;
-  padding: 8px 12px;
+  padding: 9px 14px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  border-radius: 8px;
+  border-radius: 10px;
   background: ${({ theme }) => theme.colors.backgroundCard};
   color: ${({ theme }) => theme.colors.textPrimary};
   font-size: 0.88rem;
+  transition: border-color 0.12s;
 
-  &::placeholder {
-    color: ${({ theme }) => theme.colors.textSecondary};
-  }
+  &::placeholder { color: ${({ theme }) => theme.colors.textSecondary}; opacity: 0.6; }
   &:focus {
-    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
-    outline-offset: -1px;
+    outline: none;
+    border-color: ${({ theme }) => theme.colors.accent};
+    box-shadow: 0 0 0 3px ${({ theme }) => theme.colors.accentSubtle};
   }
 `;
 
 const AddTodoButton = styled.button`
-  padding: 8px 16px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  border-radius: 8px;
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  color: ${({ theme }) => theme.colors.textPrimary};
+  padding: 9px 18px;
+  border: none;
+  border-radius: 10px;
+  background: ${({ theme }) => theme.colors.accent};
+  color: white;
   font-size: 0.84rem;
+  font-weight: 600;
   cursor: pointer;
+  transition: opacity 0.12s;
 
-  &:hover {
-    background: ${({ theme }) => theme.colors.borderSubtle};
-  }
+  &:hover { opacity: 0.85; }
+  &:disabled { opacity: 0.4; cursor: default; }
 `;
 
-/* ── Activity Feed ──────────────────────────────────────────────────── */
+/* ── Activity ───────────────────────────────────────────────────────── */
+
+const ActivityTimeline = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+`;
 
 const ActivityGroup = styled.div`
   display: flex;
@@ -305,59 +426,86 @@ const ActivityGroup = styled.div`
 `;
 
 const ActivityDate = styled.div`
-  font-size: 0.76rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: ${({ theme }) => theme.colors.textSecondary};
-  letter-spacing: 0.04em;
   padding-bottom: 4px;
-  border-bottom: 1px solid ${({ theme }) => theme.colors.borderSubtle};
 `;
 
 const ActivityCard = styled.div`
-  padding: 10px 14px;
+  padding: 12px 16px;
   background: ${({ theme }) => theme.colors.backgroundCard};
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   border-radius: 10px;
+  transition: box-shadow 0.12s;
+
+  &:hover {
+    box-shadow: 0 2px 8px ${({ theme }) => theme.colors.overlay};
+  }
 `;
 
 const ActivitySummary = styled.div`
   font-size: 0.88rem;
-  line-height: 1.5;
+  line-height: 1.55;
 `;
 
 const CategoryBadge = styled.span<{ $cat?: string }>`
   display: inline-block;
-  font-size: 0.68rem;
-  font-weight: 600;
-  padding: 1px 7px;
-  border-radius: 4px;
-  margin-right: 6px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: 5px;
+  margin-right: 8px;
   vertical-align: middle;
   color: #fff;
   background: ${({ $cat }) => {
     const m: Record<string, string> = {
-      feature: '#4a9eff',
-      bugfix: '#ff6b6b',
-      refactor: '#ffd93d',
-      debugging: '#ff8c42',
-      planning: '#a78bfa',
-      research: '#67d5b5',
-      config: '#888',
+      feature: '#4a90d9',
+      bugfix: '#d94a4a',
+      refactor: '#c9a227',
+      debugging: '#d97a2e',
+      planning: '#8b6fc0',
+      research: '#3f9b8a',
+      config: '#7a7a8a',
     };
-    return m[$cat ?? ''] ?? '#888';
+    return m[$cat ?? ''] ?? '#7a7a8a';
   }};
 `;
 
 const ActivityMeta = styled.div`
-  margin-top: 4px;
-  font-size: 0.76rem;
+  margin-top: 6px;
+  font-size: 0.74rem;
   color: ${({ theme }) => theme.colors.textSecondary};
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+`;
+
+const MetaItem = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 `;
 
 const Muted = styled.div`
   color: ${({ theme }) => theme.colors.textSecondary};
   font-size: 0.88rem;
   padding: 4px 0;
+`;
+
+const EmptyState = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 8px;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  font-size: 0.92rem;
 `;
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -397,11 +545,13 @@ function projectLabel(p: ProjectItem): string {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   Main Component
+   Component
    ═══════════════════════════════════════════════════════════════════════ */
 
 const BOARD_KEY = ['projectBoard'];
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const ACTIVE_CUTOFF = 30 * 24 * 60 * 60 * 1000;
+const COMPLETED_PREVIEW = 3;
 
 export function ProjectsPage() {
   const [params, setParams] = useSearchParams();
@@ -410,7 +560,7 @@ export function ProjectsPage() {
   const selectedId = Number(params.get('project')) || null;
   const selectProject = (id: number) => setParams({ project: String(id) });
 
-  // ── Data fetching ──────────────────────────────────────────────────
+  // ── Data ───────────────────────────────────────────────────────────
 
   const boardQuery = useQuery({
     queryKey: BOARD_KEY,
@@ -420,24 +570,19 @@ export function ProjectsPage() {
 
   const allProjects = boardQuery.data?.projects ?? [];
   const allTodos = boardQuery.data?.todos ?? [];
-
-  // Split projects into active (activity in last 30 days or has open todos) vs other
-  const ACTIVE_CUTOFF = 30 * 24 * 60 * 60 * 1000; // 30 days
   const now = Date.now();
 
   const activeProjects = allProjects
     .filter((p) => {
       if (p.open_count > 0) return true;
-      if (p.last_activity_date) {
+      if (p.last_activity_date)
         return now - new Date(p.last_activity_date + 'T00:00:00').getTime() < ACTIVE_CUTOFF;
-      }
       return false;
     })
     .sort((a, b) => {
-      // Most recently active first
-      const aDate = a.last_activity_date || '0';
-      const bDate = b.last_activity_date || '0';
-      if (aDate !== bDate) return bDate.localeCompare(aDate);
+      const ad = a.last_activity_date || '0';
+      const bd = b.last_activity_date || '0';
+      if (ad !== bd) return bd.localeCompare(ad);
       return b.open_count - a.open_count;
     });
 
@@ -445,15 +590,14 @@ export function ProjectsPage() {
     .filter((p) => !activeProjects.includes(p))
     .sort((a, b) => projectLabel(a).localeCompare(projectLabel(b)));
 
-  // Auto-select first active project if none selected
   const activeProject: ProjectItem | undefined =
     allProjects.find((p) => p.id === selectedId) ?? activeProjects[0] ?? allProjects[0];
-
   const activeProjectId = activeProject?.id ?? null;
 
   const activitiesQuery = useQuery({
     queryKey: ['projectActivities', activeProjectId],
-    queryFn: () => (activeProjectId ? fetchProjectActivities(activeProjectId) : Promise.resolve([])),
+    queryFn: () =>
+      activeProjectId ? fetchProjectActivities(activeProjectId) : Promise.resolve([]),
     staleTime: 5 * 60_000,
     enabled: activeProjectId !== null,
   });
@@ -470,42 +614,30 @@ export function ProjectsPage() {
   const [newTodoText, setNewTodoText] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
+  const [showCompleted, setShowCompleted] = useState(false);
   const renameRef = useRef<HTMLInputElement>(null);
 
   const createMutation = useMutation({
     mutationFn: createProjectTodo,
-    onSuccess: () => {
-      invalidateBoard();
-      setNewTodoText('');
-    },
+    onSuccess: () => { invalidateBoard(); setNewTodoText(''); },
   });
-
   const toggleMutation = useMutation({
     mutationFn: ({ id, completed }: { id: number; completed: boolean }) =>
       updateProjectTodo(id, { completed, time_zone: TZ }),
     onSuccess: invalidateBoard,
   });
-
   const deleteMutation = useMutation({
     mutationFn: deleteProjectTodo,
     onSuccess: invalidateBoard,
   });
-
   const renameMutation = useMutation({
     mutationFn: ({ id, display_name }: { id: number; display_name: string }) =>
       updateProject(id, { display_name: display_name || null }),
-    onSuccess: () => {
-      invalidateBoard();
-      setRenaming(false);
-    },
+    onSuccess: () => { invalidateBoard(); setRenaming(false); },
   });
-
   const deleteProjectMutation = useMutation({
     mutationFn: deleteProject,
-    onSuccess: () => {
-      invalidateBoard();
-      setParams({});
-    },
+    onSuccess: () => { invalidateBoard(); setParams({}); },
   });
 
   const startRename = () => {
@@ -514,7 +646,6 @@ export function ProjectsPage() {
     setRenaming(true);
     setTimeout(() => renameRef.current?.select(), 0);
   };
-
   const submitRename = () => {
     if (!activeProject) return;
     const trimmed = renameValue.trim();
@@ -524,14 +655,11 @@ export function ProjectsPage() {
       setRenaming(false);
     }
   };
-
-  const handleDeleteProject = () => {
-    if (!activeProject) return;
-    if (activeProject.name === 'Inbox') return;
+  const handleDelete = () => {
+    if (!activeProject || activeProject.name === 'Inbox') return;
     if (!window.confirm(`Delete "${projectLabel(activeProject)}"? Todos will move to Inbox.`)) return;
     deleteProjectMutation.mutate(activeProject.id);
   };
-
   const handleAddTodo = (e: FormEvent) => {
     e.preventDefault();
     const text = newTodoText.trim();
@@ -541,7 +669,7 @@ export function ProjectsPage() {
 
   // ── Render ─────────────────────────────────────────────────────────
 
-  if (boardQuery.isLoading) return <Shell><Muted style={{ padding: 32 }}>Loading…</Muted></Shell>;
+  if (boardQuery.isLoading) return <Shell><EmptyState>Loading projects...</EmptyState></Shell>;
 
   const state = activeProject?.state_summary_json;
   const stateUpdated = activeProject?.state_updated_at_utc;
@@ -549,45 +677,33 @@ export function ProjectsPage() {
     ? Date.now() - new Date(stateUpdated).getTime() > 7 * 24 * 60 * 60 * 1000
     : true;
 
+  const visibleCompleted = showCompleted ? doneTodos : doneTodos.slice(0, COMPLETED_PREVIEW);
+
+  const sidebarGroup = (label: string, items: ProjectItem[]) =>
+    items.length > 0 && (
+      <SidebarSection>
+        <SidebarLabel>{label}</SidebarLabel>
+        {items.map((p) => (
+          <ProjectRow key={p.id} $active={p.id === activeProjectId} onClick={() => selectProject(p.id)}>
+            <ProjectName>{projectLabel(p)}</ProjectName>
+            {p.open_count > 0 && <Badge>{p.open_count}</Badge>}
+          </ProjectRow>
+        ))}
+      </SidebarSection>
+    );
+
   return (
     <Shell>
-      {/* ── Sidebar ─────────────────────────────────────────────── */}
       <Sidebar>
-        <SidebarSection>
-          <SidebarTitle>Active</SidebarTitle>
-          {activeProjects.map((p) => (
-            <ProjectRow
-              key={p.id}
-              $active={p.id === activeProjectId}
-              onClick={() => selectProject(p.id)}
-            >
-              <ProjectName>{projectLabel(p)}</ProjectName>
-              {p.open_count > 0 && <Badge>{p.open_count}</Badge>}
-            </ProjectRow>
-          ))}
-          {activeProjects.length === 0 && <Muted style={{ padding: '4px 20px' }}>No active projects</Muted>}
-        </SidebarSection>
-        {otherProjects.length > 0 && (
-          <SidebarSection>
-            <SidebarTitle>Other</SidebarTitle>
-            {otherProjects.map((p) => (
-              <ProjectRow
-                key={p.id}
-                $active={p.id === activeProjectId}
-                onClick={() => selectProject(p.id)}
-              >
-                <ProjectName>{projectLabel(p)}</ProjectName>
-                {p.open_count > 0 && <Badge>{p.open_count}</Badge>}
-              </ProjectRow>
-            ))}
-          </SidebarSection>
-        )}
+        <SidebarTop>Projects</SidebarTop>
+        {sidebarGroup('Active', activeProjects)}
+        {sidebarGroup('Other', otherProjects)}
       </Sidebar>
 
-      {/* ── Main Content ────────────────────────────────────────── */}
       <Main>
         {activeProject ? (
-          <Content>
+          <Content key={activeProject.id}>
+            {/* Header */}
             <ProjectHeader>
               {renaming ? (
                 <ProjectTitleInput
@@ -604,51 +720,48 @@ export function ProjectsPage() {
                 <ProjectTitle>{projectLabel(activeProject)}</ProjectTitle>
               )}
               {!renaming && (
-                <>
-                  <IconButton type="button" onClick={startRename}>Rename</IconButton>
+                <HeaderActions>
+                  <SmallButton type="button" onClick={startRename}>Rename</SmallButton>
                   {activeProject.name !== 'Inbox' && (
-                    <DeleteButton type="button" onClick={handleDeleteProject}>Delete</DeleteButton>
+                    <DangerButton type="button" onClick={handleDelete}>Delete</DangerButton>
                   )}
-                </>
+                </HeaderActions>
               )}
             </ProjectHeader>
 
-            {/* ── State Summary ──────────────────────────────── */}
+            {/* State */}
             {state && (
               <Section>
-                <SectionHeader>State</SectionHeader>
+                <SectionHeader>Overview</SectionHeader>
                 <StateCard>
-                  <div>
+                  <StateRow>
                     <StateLabel>Status</StateLabel>
                     <StateText>{state.status}</StateText>
-                  </div>
-                  <div>
+                  </StateRow>
+                  <StateRow>
                     <StateLabel>Recent Focus</StateLabel>
                     <StateText>{state.recent_focus}</StateText>
-                  </div>
+                  </StateRow>
                   {state.next_steps.length > 0 && (
-                    <div>
+                    <StateRow>
                       <StateLabel>Next Steps</StateLabel>
                       <NextStepsList>
-                        {state.next_steps.map((s, i) => (
-                          <li key={i}>{s}</li>
-                        ))}
+                        {state.next_steps.map((s, i) => <li key={i}>{s}</li>)}
                       </NextStepsList>
-                    </div>
+                    </StateRow>
                   )}
                   {stateUpdated && (
-                    <Freshness $stale={isStale}>
-                      Updated {relativeTime(stateUpdated)}
-                    </Freshness>
+                    <Freshness $stale={isStale}>Updated {relativeTime(stateUpdated)}</Freshness>
                   )}
                 </StateCard>
               </Section>
             )}
 
-            {/* ── Todos ──────────────────────────────────────── */}
+            {/* Todos */}
             <Section>
               <SectionHeader>
-                Todos{openTodos.length > 0 ? ` (${openTodos.length})` : ''}
+                Todos
+                {openTodos.length > 0 && <SectionCount>{openTodos.length}</SectionCount>}
               </SectionHeader>
               <TodoList>
                 {openTodos.map((todo) => (
@@ -660,11 +773,11 @@ export function ProjectsPage() {
                     />
                     <TodoText>{todo.text}</TodoText>
                     <TodoDelete type="button" onClick={() => deleteMutation.mutate(todo.id)}>
-                      ×
+                      &times;
                     </TodoDelete>
                   </TodoRow>
                 ))}
-                {doneTodos.length > 0 && doneTodos.slice(0, 5).map((todo) => (
+                {visibleCompleted.map((todo) => (
                   <TodoRow key={todo.id} $done>
                     <Checkbox
                       type="checkbox"
@@ -674,6 +787,13 @@ export function ProjectsPage() {
                     <TodoText $done>{todo.text}</TodoText>
                   </TodoRow>
                 ))}
+                {doneTodos.length > COMPLETED_PREVIEW && (
+                  <CompletedToggle type="button" onClick={() => setShowCompleted((v) => !v)}>
+                    {showCompleted
+                      ? 'Hide completed'
+                      : `Show ${doneTodos.length - COMPLETED_PREVIEW} more completed`}
+                  </CompletedToggle>
+                )}
                 {openTodos.length === 0 && doneTodos.length === 0 && (
                   <Muted>No todos yet.</Muted>
                 )}
@@ -681,59 +801,56 @@ export function ProjectsPage() {
               <AddTodoForm onSubmit={handleAddTodo}>
                 <AddTodoInput
                   type="text"
-                  placeholder="Add a todo…"
+                  placeholder="Add a todo..."
                   value={newTodoText}
                   onChange={(e) => setNewTodoText(e.target.value)}
                 />
-                <AddTodoButton type="submit" disabled={!newTodoText.trim()}>
-                  Add
-                </AddTodoButton>
+                <AddTodoButton type="submit" disabled={!newTodoText.trim()}>Add</AddTodoButton>
               </AddTodoForm>
             </Section>
 
-            {/* ── Activity ───────────────────────────────────── */}
+            {/* Activity */}
             <Section>
               <SectionHeader>Activity</SectionHeader>
               {activitiesQuery.isLoading ? (
-                <Muted>Loading activity…</Muted>
+                <Muted>Loading activity...</Muted>
               ) : activities.length === 0 ? (
                 <Muted>No activity recorded yet.</Muted>
               ) : (
-                groupByDate(activities).map(([dateStr, items]) => (
-                  <ActivityGroup key={dateStr}>
-                    <ActivityDate>{friendlyDate(dateStr)}</ActivityDate>
-                    {items.map((a) => (
-                      <ActivityCard key={a.id}>
-                        <ActivitySummary>
-                          {a.details_json?.category && (
-                            <CategoryBadge $cat={a.details_json.category}>
-                              {a.details_json.category}
-                            </CategoryBadge>
-                          )}
-                          {a.summary}
-                        </ActivitySummary>
-                        {a.details_json && (
-                          <ActivityMeta>
-                            {a.details_json.git_branch && (
-                              <span>Branch: {a.details_json.git_branch}</span>
+                <ActivityTimeline>
+                  {groupByDate(activities).map(([dateStr, items]) => (
+                    <ActivityGroup key={dateStr}>
+                      <ActivityDate>{friendlyDate(dateStr)}</ActivityDate>
+                      {items.map((a) => (
+                        <ActivityCard key={a.id}>
+                          <ActivitySummary>
+                            {a.details_json?.category && (
+                              <CategoryBadge $cat={a.details_json.category}>
+                                {a.details_json.category}
+                              </CategoryBadge>
                             )}
-                            {a.details_json.files_modified?.length ? (
-                              <span>
-                                {a.details_json.git_branch ? ' · ' : ''}
-                                {a.details_json.files_modified.length} files modified
-                              </span>
-                            ) : null}
-                          </ActivityMeta>
-                        )}
-                      </ActivityCard>
-                    ))}
-                  </ActivityGroup>
-                ))
+                            {a.summary}
+                          </ActivitySummary>
+                          {a.details_json && (a.details_json.git_branch || a.details_json.files_modified?.length) && (
+                            <ActivityMeta>
+                              {a.details_json.git_branch && (
+                                <MetaItem>{a.details_json.git_branch}</MetaItem>
+                              )}
+                              {a.details_json.files_modified?.length ? (
+                                <MetaItem>{a.details_json.files_modified.length} files</MetaItem>
+                              ) : null}
+                            </ActivityMeta>
+                          )}
+                        </ActivityCard>
+                      ))}
+                    </ActivityGroup>
+                  ))}
+                </ActivityTimeline>
               )}
             </Section>
           </Content>
         ) : (
-          <Muted>Select a project from the sidebar.</Muted>
+          <EmptyState>Select a project to get started.</EmptyState>
         )}
       </Main>
     </Shell>
