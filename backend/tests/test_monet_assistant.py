@@ -47,7 +47,8 @@ def mock_session():
 def agent(mock_session, monkeypatch):
     mock_client = MagicMock()
     mock_context_builder = MagicMock()
-    monkeypatch.setattr("app.services.monet_assistant.OpenAIResponsesClient", lambda: mock_client)
+    monkeypatch.setattr("app.services.monet_assistant.get_shared_openai_client", lambda: MagicMock())
+    monkeypatch.setattr("app.services.monet_assistant.OpenAIResponsesClient", lambda **kwargs: mock_client)
     monkeypatch.setattr("app.services.monet_assistant.MonetContextBuilder", lambda session: mock_context_builder)
     a = MonetAssistantAgent(mock_session)
     a.client = mock_client

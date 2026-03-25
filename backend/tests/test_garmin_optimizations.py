@@ -1,6 +1,7 @@
 """Tests for Garmin fetch optimizations: range building, change detection, concurrency."""
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from datetime import date, timedelta
@@ -11,6 +12,11 @@ get_settings.cache_clear()
 
 import pytest
 from app.services.metrics_service import MetricsService
+
+
+def _run(coro):
+    """Helper to run async code in sync tests."""
+    return asyncio.run(coro)
 
 
 class TestBuildFetchRanges:
@@ -97,8 +103,7 @@ class TestBuildFetchRanges:
 class TestDetectChangedHistoricalDates:
     """Tests for the activity-based change detection."""
 
-    @pytest.mark.asyncio
-    async def test_no_new_activities_returns_empty(self):
+    def test_no_new_activities_returns_empty(self):
         session = AsyncMock()
         service = MetricsService(session)
         service.activity_repo = AsyncMock()
@@ -108,16 +113,15 @@ class TestDetectChangedHistoricalDates:
             {"activityId": 100, "startTimeLocal": "2026-03-10T08:00:00"},
             {"activityId": 200, "startTimeLocal": "2026-03-15T08:00:00"},
         ]
-        result = await service._detect_changed_historical_dates(
+        result = _run(service._detect_changed_historical_dates(
             user_id=1,
             activities=activities,
             history_start=date(2026, 2, 19),
             history_end=date(2026, 3, 17),
-        )
+        ))
         assert result == set()
 
-    @pytest.mark.asyncio
-    async def test_new_activity_in_history_detected(self):
+    def test_new_activity_in_history_detected(self):
         session = AsyncMock()
         service = MetricsService(session)
         service.activity_repo = AsyncMock()
@@ -127,16 +131,15 @@ class TestDetectChangedHistoricalDates:
             {"activityId": 100, "startTimeLocal": "2026-03-10T08:00:00"},
             {"activityId": 999, "startTimeLocal": "2026-03-12T08:00:00"},  # new!
         ]
-        result = await service._detect_changed_historical_dates(
+        result = _run(service._detect_changed_historical_dates(
             user_id=1,
             activities=activities,
             history_start=date(2026, 2, 19),
             history_end=date(2026, 3, 17),
-        )
+        ))
         assert result == {date(2026, 3, 12)}
 
-    @pytest.mark.asyncio
-    async def test_new_activity_in_fresh_window_ignored(self):
+    def test_new_activity_in_fresh_window_ignored(self):
         """Activities in the fresh window aren't flagged as historical changes."""
         session = AsyncMock()
         service = MetricsService(session)
@@ -146,12 +149,12 @@ class TestDetectChangedHistoricalDates:
         activities = [
             {"activityId": 999, "startTimeLocal": "2026-03-20T08:00:00"},  # today = fresh
         ]
-        result = await service._detect_changed_historical_dates(
+        result = _run(service._detect_changed_historical_dates(
             user_id=1,
             activities=activities,
             history_start=date(2026, 2, 19),
             history_end=date(2026, 3, 17),  # fresh starts 3/19
-        )
+        ))
         assert result == set()
 
 

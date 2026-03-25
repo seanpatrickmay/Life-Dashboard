@@ -17,7 +17,7 @@ def run(coro):
 
 def make_service() -> JournalService:
   service = object.__new__(JournalService)
-  service.session = None
+  service.session = SimpleNamespace(expire_all=lambda: None)
   service.journal_repo = SimpleNamespace()
   service.todo_repo = SimpleNamespace()
   service.compiler = SimpleNamespace(VERSION="v3", model_name="test-model")

@@ -9,11 +9,17 @@ Run live tests: RUN_LIVE_LLM_TESTS=1 pytest tests/test_nutrition_accuracy.py -v
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+
+def _run(coro):
+    """Helper to run async code in sync tests."""
+    return asyncio.run(coro)
 
 from app.core.config import get_settings
 get_settings.cache_clear()
@@ -103,8 +109,7 @@ class TestNutrientMath:
         totals = service._accumulate([])
         assert totals["calories"] == pytest.approx(0.0)
 
-    @pytest.mark.asyncio
-    async def test_daily_summary_calorie_total(self):
+    def test_daily_summary_calorie_total(self):
         """daily_summary should return correct calorie amount and percent_of_goal."""
         session = AsyncMock()
         service = NutritionIntakeService(session)
@@ -117,23 +122,24 @@ class TestNutrientMath:
             {"slug": "calories", "goal": 2000.0, "display_name": "Calories", "unit": "kcal"},
         ])
 
-        summary = await service.daily_summary(user_id=1, day=date(2026, 3, 19))
+        summary = _run(service.daily_summary(user_id=1, day=date(2026, 3, 19)))
         cal_entry = next(n for n in summary["nutrients"] if n["slug"] == "calories")
         assert cal_entry["amount"] == pytest.approx(216.0)  # 3 * 72
         assert cal_entry["percent_of_goal"] == pytest.approx(10.8)  # 216/2000*100
 
-    @pytest.mark.asyncio
-    async def test_ingredient_not_found_raises(self):
-        """Logging a non-existent ingredient should raise ValueError."""
+    def test_ingredient_not_found_raises(self):
+        """Logging a non-existent ingredient should raise NotFoundException."""
+        from app.core.exceptions import NotFoundException
+
         session = AsyncMock()
         service = NutritionIntakeService(session)
         service.ingredients_repo.get_ingredient = AsyncMock(return_value=None)
 
-        with pytest.raises(ValueError, match="Ingredient not found"):
-            await service.log_manual_intake(
+        with pytest.raises(NotFoundException, match="Ingredient not found"):
+            _run(service.log_manual_intake(
                 user_id=1, ingredient_id=999, quantity=1.0, unit="piece",
                 day=date(2026, 3, 19),
-            )
+            ))
 
 
 def _require_live_llm() -> None:
@@ -223,8 +229,7 @@ class TestAIExtraction:
 class TestEndToEndCalories:
     """Verify extraction -> logging -> daily_summary produces correct calorie totals."""
 
-    @pytest.mark.asyncio
-    async def test_known_ingredient_through_daily_summary(self):
+    def test_known_ingredient_through_daily_summary(self):
         """
         Mock extraction to return 3 eggs.
         Build intake records with known calorie profiles.
@@ -244,15 +249,14 @@ class TestEndToEndCalories:
             {"slug": "protein", "goal": 160.0, "display_name": "Protein", "unit": "g"},
         ])
 
-        summary = await service.daily_summary(user_id=1, day=date(2026, 3, 19))
+        summary = _run(service.daily_summary(user_id=1, day=date(2026, 3, 19)))
         cal = next(n for n in summary["nutrients"] if n["slug"] == "calories")
         protein = next(n for n in summary["nutrients"] if n["slug"] == "protein")
 
         assert cal["amount"] == pytest.approx(216.0)  # 3 * 72
         assert protein["amount"] == pytest.approx(18.0)  # 3 * 6
 
-    @pytest.mark.asyncio
-    async def test_mixed_meal_calorie_total(self):
+    def test_mixed_meal_calorie_total(self):
         """
         2 eggs (72 each) + 1 toast (80) + 1 cup yogurt (150) = 374 kcal.
         """
@@ -270,7 +274,7 @@ class TestEndToEndCalories:
             {"slug": "calories", "goal": 2000.0, "display_name": "Calories", "unit": "kcal"},
         ])
 
-        summary = await service.daily_summary(user_id=1, day=date(2026, 3, 19))
+        summary = _run(service.daily_summary(user_id=1, day=date(2026, 3, 19)))
         cal = next(n for n in summary["nutrients"] if n["slug"] == "calories")
         assert cal["amount"] == pytest.approx(374.0)
         assert cal["percent_of_goal"] == pytest.approx(18.7)  # 374/2000*100
