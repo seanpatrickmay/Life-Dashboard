@@ -19,6 +19,13 @@ _PROJECT_MARKERS = {".git", "package.json", "pyproject.toml", "Cargo.toml", "go.
 # Paths that are parent directories, not real projects
 _SKIP_NAMES = {"current projects", "desktop", "archived", "documents", "downloads"}
 
+# Manual aliases for directory names that don't fuzzy-match their merged project.
+# Key: normalized directory name → Value: exact project name in the DB.
+_ALIASES: dict[str, str] = {
+    _normalize("next-chief-of-staff"): "AI Chief of Staff",
+    _normalize("seanpatrickmay.github.io"): "Personal Website",
+}
+
 
 def _normalize(name: str) -> str:
     """Normalize a name for fuzzy comparison: lowercase, strip non-alnum."""
@@ -105,6 +112,15 @@ class ClaudeCodeProjectResolver:
 
         if name in self._cache:
             return self._cache[name]
+
+        # Check static aliases first
+        alias_target = _ALIASES.get(_normalize(name))
+        if alias_target:
+            aliased = await self._project_repo.get_by_name_for_user(user_id, alias_target)
+            if aliased:
+                logger.info("Alias matched '%s' → '%s'", name, alias_target)
+                self._cache[name] = aliased
+                return aliased
 
         # Try exact match first
         existing = await self._project_repo.get_by_name_for_user(user_id, name)
