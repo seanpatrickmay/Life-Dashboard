@@ -2,6 +2,8 @@ import { DragEvent, FormEvent, KeyboardEvent, useDeferredValue, useEffect, useMe
 import { useMatch, useNavigate, useSearchParams } from 'react-router-dom';
 import styled from 'styled-components';
 
+import { useProjectActivities, useProjectState } from '../hooks/useProjectActivities';
+import type { ProjectActivity, ProjectStateSummary } from '../services/api';
 import {
   useWorkspaceBacklinks,
   useWorkspaceBootstrap,
@@ -457,6 +459,94 @@ const ChildDescription = styled.div`
   color: var(--workspace-muted);
   font-size: 0.88rem;
 `;
+
+/* ── Activity Feed & State Summary ────────────────────────────────── */
+
+const StateSummaryCard = styled.div`
+  background: var(--workspace-panel);
+  border: 1px solid var(--workspace-line);
+  border-radius: 12px;
+  padding: 16px 20px;
+`;
+
+const StateRow = styled.div`
+  margin-bottom: 10px;
+  &:last-child { margin-bottom: 0; }
+`;
+
+const StateLabel = styled.div`
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--workspace-muted);
+  margin-bottom: 2px;
+`;
+
+const StateFreshness = styled.span<{ $stale?: boolean }>`
+  font-size: 0.72rem;
+  color: var(--workspace-muted);
+  opacity: ${({ $stale }) => ($stale ? 0.5 : 0.8)};
+  font-style: ${({ $stale }) => ($stale ? 'italic' : 'normal')};
+`;
+
+const ActivityList = styled.div`
+  display: grid;
+  gap: 8px;
+`;
+
+const ActivityDateHeader = styled.div`
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--workspace-muted);
+  letter-spacing: 0.04em;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--workspace-line);
+`;
+
+const ActivityCard = styled.div`
+  padding: 10px 14px;
+  background: var(--workspace-panel);
+  border: 1px solid var(--workspace-line);
+  border-radius: 10px;
+`;
+
+const ActivitySummaryText = styled.div`
+  font-size: 0.88rem;
+  color: var(--workspace-text);
+  line-height: 1.5;
+`;
+
+const CategoryBadge = styled.span<{ $cat?: string }>`
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 4px;
+  margin-right: 6px;
+  vertical-align: middle;
+  background: ${({ $cat }) => {
+    const m: Record<string, string> = {
+      feature: '#4a9eff',
+      bugfix: '#ff6b6b',
+      refactor: '#ffd93d',
+      debugging: '#ff8c42',
+      planning: '#a78bfa',
+      research: '#67d5b5',
+      config: '#888',
+    };
+    return m[$cat ?? ''] ?? '#888';
+  }};
+  color: #fff;
+`;
+
+const ActivityMeta = styled.div`
+  margin-top: 4px;
+  font-size: 0.76rem;
+  color: var(--workspace-muted);
+`;
+
+/* ── end Activity Feed ────────────────────────────────────────────── */
 
 const BlockList = styled.div`
   display: grid;
@@ -2941,6 +3031,108 @@ function parsePageIdParam(value: string | null | undefined): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+/* ── Activity Feed & State Summary components ─────────────────────── */
+
+function formatRelativeTime(d: Date): string {
+  const diff = Date.now() - d.getTime();
+  const hours = Math.floor(diff / 3600000);
+  if (hours < 1) return 'just now';
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks}w ago`;
+}
+
+function formatActivityDate(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function ProjectStateView({ state, updatedAt }: { state: ProjectStateSummary; updatedAt: string | null }) {
+  const updated = updatedAt ? new Date(updatedAt) : null;
+  const isStale = updated ? Date.now() - updated.getTime() > 7 * 24 * 60 * 60 * 1000 : true;
+
+  return (
+    <StateSummaryCard>
+      <StateRow>
+        <StateLabel>Status</StateLabel>
+        <div style={{ fontSize: '0.88rem' }}>{state.status}</div>
+      </StateRow>
+      <StateRow>
+        <StateLabel>Recent Focus</StateLabel>
+        <div style={{ fontSize: '0.88rem' }}>{state.recent_focus}</div>
+      </StateRow>
+      {state.next_steps.length > 0 && (
+        <StateRow>
+          <StateLabel>Next Steps</StateLabel>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: '0.88rem' }}>
+            {state.next_steps.map((step, i) => (
+              <li key={i}>{step}</li>
+            ))}
+          </ul>
+        </StateRow>
+      )}
+      {updated && (
+        <StateFreshness $stale={isStale}>
+          Updated {formatRelativeTime(updated)}
+        </StateFreshness>
+      )}
+    </StateSummaryCard>
+  );
+}
+
+function ProjectActivityFeed({ projectId }: { projectId: number | null }) {
+  const { data: activities, isLoading } = useProjectActivities(projectId);
+
+  if (isLoading) return <Muted>Loading activity…</Muted>;
+  if (!activities?.length) return <Muted>No activity yet.</Muted>;
+
+  const grouped = activities.reduce<Record<string, ProjectActivity[]>>((acc, a) => {
+    (acc[a.local_date] ||= []).push(a);
+    return acc;
+  }, {});
+
+  return (
+    <ActivityList>
+      {Object.entries(grouped).map(([dateStr, items]) => (
+        <div key={dateStr}>
+          <ActivityDateHeader>{formatActivityDate(dateStr)}</ActivityDateHeader>
+          {items.map((activity) => (
+            <ActivityCard key={activity.id}>
+              <ActivitySummaryText>
+                {activity.details_json?.category && (
+                  <CategoryBadge $cat={activity.details_json.category}>
+                    {activity.details_json.category}
+                  </CategoryBadge>
+                )}
+                {activity.summary}
+              </ActivitySummaryText>
+              {activity.details_json && (
+                <ActivityMeta>
+                  {activity.details_json.git_branch && (
+                    <span>Branch: {activity.details_json.git_branch}</span>
+                  )}
+                  {activity.details_json.files_modified?.length ? (
+                    <span>{activity.details_json.git_branch ? ' · ' : ''}{activity.details_json.files_modified.length} files modified</span>
+                  ) : null}
+                </ActivityMeta>
+              )}
+            </ActivityCard>
+          ))}
+        </div>
+      ))}
+    </ActivityList>
+  );
+}
+
+/* ── end Activity components ──────────────────────────────────────── */
+
 export function ProjectsPage() {
   const bootstrapQuery = useWorkspaceBootstrap();
   const workspaceMutations = useWorkspaceMutations();
@@ -2970,6 +3162,10 @@ export function ProjectsPage() {
     Boolean(peekDetail) && (peekMode === 'side_peek' || peekMode === 'center_peek')
   );
   const templatesQuery = useWorkspaceTemplates(null);
+
+  // Claude Code activity integration
+  const activeProjectId = detail?.page.legacy_project_id ?? null;
+  const projectStateQuery = useProjectState(activeProjectId);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const deferredPaletteQuery = useDeferredValue(paletteQuery);
@@ -3688,6 +3884,23 @@ export function ProjectsPage() {
             onCreateView={openCreateViewDialog}
             onEditView={openEditViewDialog}
           />
+        ) : null}
+
+        {isProjectPage && projectStateQuery.data?.state ? (
+          <ChildPages>
+            <SectionTitle>Project State</SectionTitle>
+            <ProjectStateView
+              state={projectStateQuery.data.state}
+              updatedAt={projectStateQuery.data.updatedAt}
+            />
+          </ChildPages>
+        ) : null}
+
+        {isProjectPage && pageDetail.page.legacy_project_id ? (
+          <ChildPages>
+            <SectionTitle>Activity</SectionTitle>
+            <ProjectActivityFeed projectId={pageDetail.page.legacy_project_id} />
+          </ChildPages>
         ) : null}
 
         {isProjectPage ? (

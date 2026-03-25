@@ -614,6 +614,12 @@ export const sendTodoChatMessage = async (
 
 // Projects
 
+export type ProjectStateSummary = {
+  status: string;
+  recent_focus: string;
+  next_steps: string[];
+};
+
 export type ProjectItem = {
   id: number;
   name: string;
@@ -624,6 +630,25 @@ export type ProjectItem = {
   updated_at: string;
   open_count: number;
   completed_count: number;
+  state_summary_json?: ProjectStateSummary | null;
+  state_updated_at_utc?: string | null;
+};
+
+export type ProjectActivity = {
+  id: number;
+  project_id: number;
+  project_name?: string;
+  local_date: string;
+  session_id: string;
+  summary: string;
+  details_json: {
+    files_modified?: string[];
+    git_branch?: string;
+    git_commits?: string[];
+    category?: string;
+    key_decisions?: string[];
+  } | null;
+  created_at: string;
 };
 
 export type ProjectSuggestion = {
@@ -712,6 +737,21 @@ export const dismissProjectSuggestion = async (todo_id: number): Promise<void> =
     return;
   }
   await api.delete(`/api/projects/suggestions/${todo_id}`);
+};
+
+export const fetchProjectActivities = async (
+  projectId: number,
+  params?: { since?: string; until?: string; page?: number; per_page?: number }
+): Promise<ProjectActivity[]> => {
+  const { data } = await api.get(`/api/projects/${projectId}/activities`, { params });
+  return data as ProjectActivity[];
+};
+
+export const fetchAllActivities = async (
+  params?: { since?: string; until?: string; page?: number; per_page?: number }
+): Promise<ProjectActivity[]> => {
+  const { data } = await api.get('/api/projects/activities/all', { params });
+  return data as ProjectActivity[];
 };
 
 // Calendar
