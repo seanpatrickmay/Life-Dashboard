@@ -14,44 +14,56 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "claude_code_sync_cursor",
-        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column("user_id", sa.Integer, sa.ForeignKey("user.id"), nullable=False),
-        sa.Column("session_id", sa.String(64), nullable=False),
-        sa.Column("project_path", sa.Text, nullable=False),
-        sa.Column("entry_count", sa.Integer, nullable=False, server_default="0"),
-        sa.Column("file_mtime", sa.Float, nullable=False, server_default="0"),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.UniqueConstraint("user_id", "session_id", name="uq_cc_cursor_user_session"),
-    )
-    op.create_index("ix_cc_cursor_user_id", "claude_code_sync_cursor", ["user_id"])
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    tables = set(inspector.get_table_names())
 
-    op.create_table(
-        "project_activity",
-        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
-        sa.Column("user_id", sa.Integer, sa.ForeignKey("user.id"), nullable=False),
-        sa.Column("project_id", sa.Integer, sa.ForeignKey("project.id"), nullable=False),
-        sa.Column("local_date", sa.Date, nullable=False),
-        sa.Column("session_id", sa.String(64), nullable=False),
-        sa.Column("summary", sa.Text, nullable=False),
-        sa.Column("details_json", sa.JSON, nullable=True),
-        sa.Column("source_project_path", sa.Text, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.UniqueConstraint("user_id", "session_id", name="uq_project_activity_user_session"),
-    )
-    op.create_index("ix_project_activity_user_id", "project_activity", ["user_id"])
-    op.create_index(
-        "ix_project_activity_user_project_date",
-        "project_activity",
-        ["user_id", "project_id", "local_date"],
-    )
+    if "claude_code_sync_cursor" not in tables:
+        op.create_table(
+            "claude_code_sync_cursor",
+            sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+            sa.Column("user_id", sa.Integer, sa.ForeignKey("user.id"), nullable=False),
+            sa.Column("session_id", sa.String(64), nullable=False),
+            sa.Column("project_path", sa.Text, nullable=False),
+            sa.Column("entry_count", sa.Integer, nullable=False, server_default="0"),
+            sa.Column("file_mtime", sa.Float, nullable=False, server_default="0"),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+            sa.UniqueConstraint("user_id", "session_id", name="uq_cc_cursor_user_session"),
+        )
+        op.create_index("ix_cc_cursor_user_id", "claude_code_sync_cursor", ["user_id"])
 
-    op.add_column("project", sa.Column("state_summary_json", sa.JSON, nullable=True))
-    op.add_column("project", sa.Column("state_updated_at_utc", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("journal_entry", sa.Column("source", sa.String(32), nullable=True))
+    if "project_activity" not in tables:
+        op.create_table(
+            "project_activity",
+            sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+            sa.Column("user_id", sa.Integer, sa.ForeignKey("user.id"), nullable=False),
+            sa.Column("project_id", sa.Integer, sa.ForeignKey("project.id"), nullable=False),
+            sa.Column("local_date", sa.Date, nullable=False),
+            sa.Column("session_id", sa.String(64), nullable=False),
+            sa.Column("summary", sa.Text, nullable=False),
+            sa.Column("details_json", sa.JSON, nullable=True),
+            sa.Column("source_project_path", sa.Text, nullable=False),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+            sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+            sa.UniqueConstraint("user_id", "session_id", name="uq_project_activity_user_session"),
+        )
+        op.create_index("ix_project_activity_user_id", "project_activity", ["user_id"])
+        op.create_index(
+            "ix_project_activity_user_project_date",
+            "project_activity",
+            ["user_id", "project_id", "local_date"],
+        )
+
+    project_cols = {col["name"] for col in inspector.get_columns("project")}
+    if "state_summary_json" not in project_cols:
+        op.add_column("project", sa.Column("state_summary_json", sa.JSON, nullable=True))
+    if "state_updated_at_utc" not in project_cols:
+        op.add_column("project", sa.Column("state_updated_at_utc", sa.DateTime(timezone=True), nullable=True))
+
+    je_cols = {col["name"] for col in inspector.get_columns("journal_entry")}
+    if "source" not in je_cols:
+        op.add_column("journal_entry", sa.Column("source", sa.String(32), nullable=True))
 
 
 def downgrade() -> None:
