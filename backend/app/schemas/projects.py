@@ -20,6 +20,7 @@ class ProjectResponse(BaseModel):
   completed_count: int = 0
   state_summary_json: dict | None = None
   state_updated_at_utc: datetime | None = None
+  last_activity_date: date | None = None
 
   class Config:
     from_attributes = True
