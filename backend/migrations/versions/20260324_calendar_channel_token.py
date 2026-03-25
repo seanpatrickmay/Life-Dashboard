@@ -14,10 +14,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "google_calendar",
-        sa.Column("channel_token", sa.String(128), nullable=True),
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {col["name"] for col in inspector.get_columns("google_calendar")}
+    if "channel_token" not in columns:
+        op.add_column(
+            "google_calendar",
+            sa.Column("channel_token", sa.String(128), nullable=True),
+        )
 
 
 def downgrade() -> None:
