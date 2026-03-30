@@ -46,6 +46,9 @@ const queryClient = new QueryClient({
   },
   queryCache: new QueryCache({
     onError: (error, query) => {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 401) return;
+
       // Only toast if the query has no cached data (avoid spamming on
       // background refetch failures when stale data is still visible).
       if (query.state.data === undefined) {
@@ -54,7 +57,10 @@ const queryClient = new QueryClient({
     },
   }),
   mutationCache: new MutationCache({
-    onError: (error) => {
+    onError: (error, _variables, _context, mutation) => {
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      if (status === 401) return;
+      if ((mutation.options.meta as Record<string, unknown>)?.suppressToast) return;
       emitToast(extractErrorMessage(error), 'error');
     },
   }),

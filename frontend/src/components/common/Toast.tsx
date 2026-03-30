@@ -56,6 +56,7 @@ export function useToast(): { addToast: AddToastFn } {
 const DISMISS_MS = 5_000;
 const EXIT_MS = 280;
 const DEDUP_WINDOW_MS = 2_000;
+const MAX_TOASTS = 5;
 
 // ---------------------------------------------------------------------------
 // Provider
@@ -65,6 +66,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
   const nextId = useRef(0);
   const recentMessages = useRef<Map<string, number>>(new Map());
+  const timerIds = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   const addToast: AddToastFn = useCallback((message, type = 'error') => {
     const now = Date.now();
@@ -80,16 +82,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((prev) => [...prev, { id, message, type, exiting: false }]);
 
     // Auto-dismiss
-    setTimeout(() => {
+    const dismissTimer = setTimeout(() => {
       // Start exit animation
       setToasts((prev) =>
         prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)),
       );
+      timerIds.current.delete(dismissTimer);
       // Remove after animation completes
-      setTimeout(() => {
+      const removeTimer = setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
+        timerIds.current.delete(removeTimer);
       }, EXIT_MS);
+      timerIds.current.add(removeTimer);
     }, DISMISS_MS);
+    timerIds.current.add(dismissTimer);
   }, []);
 
   // Register/unregister module-level emitter
@@ -99,6 +105,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       _emitRef = null;
     };
   }, [addToast]);
+
+  // Clean up all timers on unmount
+  useEffect(() => {
+    const timers = timerIds.current;
+    return () => {
+      for (const id of timers) clearTimeout(id);
+      timers.clear();
+    };
+  }, []);
 
   // Prune old dedup entries periodically to avoid unbounded growth
   useEffect(() => {
@@ -116,9 +131,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={{ addToast }}>
       {children}
       {toasts.length > 0 && (
-        <ToastContainer>
-          {toasts.map((t) => (
-            <ToastItem key={t.id} $type={t.type} $exiting={t.exiting}>
+        <ToastContainer role="log" aria-live="assertive">
+          {toasts.slice(-MAX_TOASTS).map((t) => (
+            <ToastItem key={t.id} $type={t.type} $exiting={t.exiting} role="alert">
               {t.message}
             </ToastItem>
           ))}

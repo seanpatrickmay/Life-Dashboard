@@ -86,6 +86,7 @@ export function useProjectBoard() {
   });
 
   const deleteTodoMutation = useMutation({
+    meta: { suppressToast: true },
     mutationFn: (id: number) => deleteTodo(id),
     onMutate: async (id: number) => {
       await queryClient.cancelQueries({ queryKey: PROJECT_BOARD_QUERY_KEY });
