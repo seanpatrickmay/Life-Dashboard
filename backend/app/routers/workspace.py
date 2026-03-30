@@ -38,6 +38,7 @@ from app.services.workspace_service import WorkspaceService
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 ASSET_STORAGE_ROOT = Path("/tmp/life_dashboard_workspace_assets")
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
 @router.get("/bootstrap", response_model=WorkspaceBootstrapResponse)
@@ -373,6 +374,11 @@ async def upload_workspace_asset_content(
     suffix = Path(file.filename or asset.name).suffix
     path = ASSET_STORAGE_ROOT / f"{asset.id}{suffix}"
     content = await file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum upload size is {MAX_UPLOAD_SIZE // (1024 * 1024)} MB.",
+        )
     path.write_bytes(content)
     asset.storage_key = str(path)
     asset.public_url = f"{settings.api_prefix}/workspace/assets/{asset.id}/content"
