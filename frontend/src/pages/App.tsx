@@ -18,6 +18,7 @@ import { useVisitRefresh } from '../hooks/useVisitRefresh';
 import { useLocalMidnightInvalidation } from '../hooks/useLocalMidnightInvalidation';
 import { RequireAuth } from '../components/auth/RequireAuth';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
+import { ToastProvider } from '../components/common/Toast';
 
 // Simple loading component
 const PageLoader = () => (
@@ -59,22 +60,24 @@ function ShellLayout() {
 
 function App() {
   return (
-    <PageBackground className="flatten-textures">
-      <Routes>
-        <Route path="/login" element={
-          <Suspense fallback={<PageLoader />}>
-            <LoginPage />
-          </Suspense>
-        } />
-        <Route element={<RequireAuth />}>
-          <Route element={<ShellLayout />}>
-            {routes.map((route) => (
-              <Route key={route.path} path={route.path} element={route.element} />
-            ))}
+    <ToastProvider>
+      <PageBackground className="flatten-textures">
+        <Routes>
+          <Route path="/login" element={
+            <Suspense fallback={<PageLoader />}>
+              <LoginPage />
+            </Suspense>
+          } />
+          <Route element={<RequireAuth />}>
+            <Route element={<ShellLayout />}>
+              {routes.map((route) => (
+                <Route key={route.path} path={route.path} element={route.element} />
+              ))}
+            </Route>
           </Route>
-        </Route>
-      </Routes>
-    </PageBackground>
+        </Routes>
+      </PageBackground>
+    </ToastProvider>
   );
 }
 
