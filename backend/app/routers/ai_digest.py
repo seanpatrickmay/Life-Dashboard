@@ -29,11 +29,18 @@ async def get_today_digest(
     items = await service.get_today_items()
     last_refreshed = await service.get_latest_refresh_time()
 
+    # Check if any items need LLM enrichment
+    needs_llm = any(not item.llm_summary for item in items)
+    narrative = None
+    if items and not needs_llm:
+        narrative = await service.get_narrative()
+
     return DigestResponse(
         items=[DigestItemResponse.model_validate(item) for item in items],
         last_refreshed=last_refreshed,
         item_count=len(items),
         is_stale=is_stale,
+        narrative=narrative,
     )
 
 
@@ -44,3 +51,13 @@ async def refresh_digest(
     controller = get_digest_refresh_controller()
     status = await controller.request_refresh(force=True)
     return RefreshResponse(started=status.job_started, message=status.message or "")
+
+
+@router.post("/enrich", response_model=RefreshResponse)
+async def enrich_digest(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> RefreshResponse:
+    service = AIDigestService(session)
+    await service.enrich_with_llm()
+    return RefreshResponse(started=True, message="LLM enrichment complete.")
