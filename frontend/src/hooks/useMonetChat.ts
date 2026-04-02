@@ -195,6 +195,7 @@ export function useMonetChat() {
   }, [sessionId, history, storageKey, dayKey]);
 
   const mutation = useMutation({
+    meta: { suppressToast: true },
     mutationFn: ({
       message,
       sessionIdOverride

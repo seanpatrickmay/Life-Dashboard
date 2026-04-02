@@ -51,6 +51,7 @@ export function useTodos() {
   });
 
   const updateMutation = useMutation({
+    meta: { suppressToast: true },
     mutationFn: (payload: {
       id: number;
       text?: string;
@@ -140,6 +141,7 @@ export function useTodos() {
   });
 
   const deleteMutation = useMutation({
+    meta: { suppressToast: true },
     mutationFn: (id: number) => deleteTodo(id),
     onMutate: async (id: number) => {
       await queryClient.cancelQueries({ queryKey: TODOS_QUERY_KEY });
