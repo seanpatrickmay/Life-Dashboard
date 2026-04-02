@@ -1,10 +1,11 @@
 """AI Digest pipeline: fetch, normalize, deduplicate, store."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
-from datetime import datetime, timedelta
-from time import mktime
+from calendar import timegm
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 import feedparser
@@ -82,7 +83,7 @@ def _parse_published(entry: dict) -> datetime | None:
         parsed = entry.get(field)
         if parsed:
             try:
-                return datetime.fromtimestamp(mktime(parsed)).astimezone()
+                return datetime.fromtimestamp(timegm(parsed), tz=timezone.utc)
             except (TypeError, ValueError, OverflowError):
                 continue
     return None
@@ -176,8 +177,10 @@ class AIDigestService:
         now = eastern_now()
         all_items: list[dict] = []
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            import asyncio
+        async with httpx.AsyncClient(
+            timeout=15.0,
+            headers={"User-Agent": "LifeDashboard/1.0"},
+        ) as client:
             tasks = [fetch_single_feed(client, source) for source in FEED_SOURCES]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 

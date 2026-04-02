@@ -118,9 +118,11 @@ class DigestRefreshController:
         self._cooldown = cooldown
         self._lock = asyncio.Lock()
         self._running = False
+        self._last_started_at: datetime | None = None
         self._last_completed_at: datetime | None = None
         self._next_allowed_at: datetime | None = None
         self._last_error: str | None = None
+        self._task: asyncio.Task[None] | None = None
 
     async def request_refresh(self, *, force: bool = False) -> RefreshJobStatus:
         async with self._lock:
@@ -129,10 +131,11 @@ class DigestRefreshController:
                 return self._build_status(job_started=False, message="Digest refresh already running.")
             if not force and self._next_allowed_at and now < self._next_allowed_at:
                 return self._build_status(job_started=False, message="Waiting for cooldown window.")
+            self._last_started_at = now
             self._running = True
             self._last_error = None
             loop = asyncio.get_running_loop()
-            loop.create_task(self._run_pipeline())
+            self._task = loop.create_task(self._run_pipeline())
             return self._build_status(job_started=True, message="Digest refresh started.")
 
     async def _run_pipeline(self) -> None:
@@ -155,7 +158,7 @@ class DigestRefreshController:
         return RefreshJobStatus(
             job_started=job_started,
             running=self._running,
-            last_started_at=None,
+            last_started_at=self._last_started_at,
             last_completed_at=self._last_completed_at,
             next_allowed_at=self._next_allowed_at,
             cooldown_seconds=int(self._cooldown.total_seconds()),
