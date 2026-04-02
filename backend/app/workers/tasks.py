@@ -109,3 +109,66 @@ def get_visit_refresh_controller() -> VisitRefreshController:
     if _visit_refresh_controller is None:
         _visit_refresh_controller = VisitRefreshController(cooldown=timedelta(minutes=30))
     return _visit_refresh_controller
+
+
+class DigestRefreshController:
+    """Throttled refresh controller for the AI Digest pipeline."""
+
+    def __init__(self, *, cooldown: timedelta) -> None:
+        self._cooldown = cooldown
+        self._lock = asyncio.Lock()
+        self._running = False
+        self._last_completed_at: datetime | None = None
+        self._next_allowed_at: datetime | None = None
+        self._last_error: str | None = None
+
+    async def request_refresh(self, *, force: bool = False) -> RefreshJobStatus:
+        async with self._lock:
+            now = eastern_now()
+            if self._running:
+                return self._build_status(job_started=False, message="Digest refresh already running.")
+            if not force and self._next_allowed_at and now < self._next_allowed_at:
+                return self._build_status(job_started=False, message="Waiting for cooldown window.")
+            self._running = True
+            self._last_error = None
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._run_pipeline())
+            return self._build_status(job_started=True, message="Digest refresh started.")
+
+    async def _run_pipeline(self) -> None:
+        try:
+            async with AsyncSessionLocal() as session:
+                from app.services.ai_digest_service import AIDigestService
+                service = AIDigestService(session)
+                await service.run_pipeline()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Digest refresh failed: {}", exc)
+            async with self._lock:
+                self._last_error = str(exc)
+        finally:
+            async with self._lock:
+                self._running = False
+                self._last_completed_at = eastern_now()
+                self._next_allowed_at = eastern_now() + self._cooldown
+
+    def _build_status(self, *, job_started: bool, message: str) -> RefreshJobStatus:
+        return RefreshJobStatus(
+            job_started=job_started,
+            running=self._running,
+            last_started_at=None,
+            last_completed_at=self._last_completed_at,
+            next_allowed_at=self._next_allowed_at,
+            cooldown_seconds=int(self._cooldown.total_seconds()),
+            message=message,
+            last_error=self._last_error,
+        )
+
+
+_digest_refresh_controller: DigestRefreshController | None = None
+
+
+def get_digest_refresh_controller() -> DigestRefreshController:
+    global _digest_refresh_controller  # noqa: PLW0603
+    if _digest_refresh_controller is None:
+        _digest_refresh_controller = DigestRefreshController(cooldown=timedelta(hours=6))
+    return _digest_refresh_controller
