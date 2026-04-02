@@ -46,6 +46,7 @@ class BatchUpdateRequest(BaseModel):
 class BatchUpdateResponse(BaseModel):
     success: bool
     updated_count: int
+    skipped_ids: list[int] = []
 
 
 @router.patch("/batch", response_model=BatchUpdateResponse)
@@ -58,10 +59,12 @@ async def batch_update_todos(
     repo = TodoRepository(session)
     link_service = TodoCalendarLinkService(session)
     updated_count = 0
+    skipped_ids: list[int] = []
 
     for update_item in payload.updates:
         todo = await repo.get_for_user(current_user.id, update_item.id)
         if not todo:
+            skipped_ids.append(update_item.id)
             continue
 
         # Apply updates
@@ -109,4 +112,6 @@ async def batch_update_todos(
 
     await session.commit()
 
-    return BatchUpdateResponse(success=True, updated_count=updated_count)
+    return BatchUpdateResponse(
+        success=True, updated_count=updated_count, skipped_ids=skipped_ids
+    )
