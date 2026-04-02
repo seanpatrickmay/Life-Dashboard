@@ -9,6 +9,7 @@ const CalendarPage = lazy(() => import('./Calendar').then(m => ({ default: m.Cal
 const NutritionPage = lazy(() => import('./Nutrition').then(m => ({ default: m.NutritionPage })));
 const ProjectsPage = lazy(() => import('./Projects').then(m => ({ default: m.ProjectsPage })));
 const NewsPage = lazy(() => import('./News').then(m => ({ default: m.NewsPage })));
+const AIDigestPage = lazy(() => import('./AIDigest').then(m => ({ default: m.AIDigestPage })));
 const UserPage = lazy(() => import('./User').then(m => ({ default: m.UserPage })));
 const LoginPage = lazy(() => import('./Login').then(m => ({ default: m.LoginPage })));
 
@@ -40,6 +41,7 @@ const routes = [
   { path: '/calendar', element: <CalendarPage /> },
   { path: '/projects/*', element: <ProjectsPage /> },
   { path: '/news', element: <NewsPage /> },
+  { path: '/ai-digest', element: <AIDigestPage /> },
   { path: '/nutrition', element: <NutritionPage /> },
   { path: '/user', element: <UserPage /> }
 ];
