@@ -92,6 +92,62 @@ def normalize_url(raw_url: str) -> str:
     return urlunparse((scheme, host, path, "", query, ""))
 
 
+# ── Jaccard Title Dedup ───────────────────────────────────────────────
+
+_STOPWORDS = frozenset({
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
+    "has", "have", "had", "will", "would", "could", "should", "may", "can",
+    "this", "that", "these", "those", "it", "its", "new", "now",
+})
+
+_SOURCE_QUALITY: dict[str, int] = {
+    "Claude Code Releases": 10,
+    "OpenAI Blog": 9,
+    "Google DeepMind": 9,
+    "Anthropic News": 8,
+    "GitHub Copilot": 8,
+    "Cursor Changelog": 7,
+    "Cline Releases": 7,
+    "Import AI": 6,
+    "TLDR AI": 5,
+}
+
+JACCARD_THRESHOLD = 0.45
+
+
+def _extract_significant_words(title: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]+", title.lower())
+    return {w for w in words if len(w) >= 4 and w not in _STOPWORDS}
+
+
+def jaccard_title_similarity(title_a: str, title_b: str) -> float:
+    words_a = _extract_significant_words(title_a)
+    words_b = _extract_significant_words(title_b)
+    if not words_a or not words_b:
+        return 0.0
+    intersection = words_a & words_b
+    union = words_a | words_b
+    return len(intersection) / len(union)
+
+
+def deduplicate_by_title(items: list[dict]) -> list[dict]:
+    kept: list[dict] = []
+    for item in items:
+        is_dup = False
+        for i, existing in enumerate(kept):
+            if jaccard_title_similarity(item["title"], existing["title"]) >= JACCARD_THRESHOLD:
+                item_quality = _SOURCE_QUALITY.get(item["source_name"], 0)
+                existing_quality = _SOURCE_QUALITY.get(existing["source_name"], 0)
+                if item_quality > existing_quality:
+                    kept[i] = item
+                is_dup = True
+                break
+        if not is_dup:
+            kept.append(item)
+    return kept
+
+
 # ── Feed Parsing ──────────────────────────────────────────────────────
 
 def _content_hash(title: str, url: str) -> str:
@@ -220,6 +276,8 @@ class AIDigestService:
             if item["normalized_url"] not in seen_urls:
                 seen_urls.add(item["normalized_url"])
                 unique_items.append(item)
+
+        unique_items = deduplicate_by_title(unique_items)
 
         new_count = 0
         for item in unique_items:
