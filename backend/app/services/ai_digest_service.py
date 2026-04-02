@@ -46,6 +46,26 @@ FEED_SOURCES = [
         "name": "GitHub Copilot",
         "category": "developer-tools",
     },
+    {
+        "url": "https://raw.githubusercontent.com/taobojlen/anthropic-rss-feed/main/anthropic_news_rss.xml",
+        "name": "Anthropic News",
+        "category": "claude-anthropic",
+    },
+    {
+        "url": "https://deepmind.google/blog/rss.xml",
+        "name": "Google DeepMind",
+        "category": "google-ai",
+    },
+    {
+        "url": "https://api.cursor-changelog.com/api/versions/rss",
+        "name": "Cursor Changelog",
+        "category": "developer-tools",
+    },
+    {
+        "url": "https://github.com/cline/cline/releases.atom",
+        "name": "Cline Releases",
+        "category": "developer-tools",
+    },
 ]
 
 _TRACKING_PARAMS = frozenset({
