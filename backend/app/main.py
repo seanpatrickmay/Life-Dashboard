@@ -23,6 +23,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 from app.routers import (
   admin,
+  ai_digest,
   assistant,
   auth,
   calendar,
@@ -73,6 +74,7 @@ app.include_router(projects.router, prefix=settings.api_prefix)
 app.include_router(calendar.router, prefix=settings.api_prefix)
 app.include_router(assistant.router, prefix=settings.api_prefix)
 app.include_router(journal.router, prefix=settings.api_prefix)
+app.include_router(ai_digest.router, prefix=settings.api_prefix)
 
 
 @app.on_event("startup")
