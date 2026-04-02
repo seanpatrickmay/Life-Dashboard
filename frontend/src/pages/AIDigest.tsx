@@ -73,6 +73,26 @@ const Page = styled.div`
   ${reducedMotion}
 `;
 
+const NarrativeBanner = styled.div`
+  padding: clamp(14px, 2.5vw, 20px);
+  border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
+  background: ${({ theme }) => theme.colors.surfaceRaised};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  font-size: 0.82rem;
+  line-height: 1.65;
+  opacity: 0.75;
+  white-space: pre-wrap;
+`;
+
+const NarrativeLabel = styled.div`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.4;
+  margin-bottom: 8px;
+`;
+
 const TopBar = styled.div`
   display: flex;
   align-items: center;
@@ -329,6 +349,7 @@ export function AIDigestPage() {
   const data = digestQuery.data;
   const items = data?.items ?? [];
   const grouped = groupByCategory(items);
+  const narrative = data?.narrative ?? null;
 
   function toggleSection(category: string) {
     setCollapsed(prev => {
@@ -354,6 +375,13 @@ export function AIDigestPage() {
           </RefreshButton>
         </div>
       </TopBar>
+
+      {narrative && (
+        <NarrativeBanner>
+          <NarrativeLabel>Today's Overview</NarrativeLabel>
+          {narrative}
+        </NarrativeBanner>
+      )}
 
       {digestQuery.isLoading ? (
         <LoadingState>Fetching your AI briefing...</LoadingState>
@@ -388,7 +416,9 @@ export function AIDigestPage() {
                       <Dot $color={color} />
                       <ItemContent>
                         <ItemTitle data-halo="body">{item.title}</ItemTitle>
-                        {item.summary && <ItemSummary>{item.summary}</ItemSummary>}
+                        {(item.llm_summary || item.summary) && (
+                          <ItemSummary>{item.llm_summary || item.summary}</ItemSummary>
+                        )}
                       </ItemContent>
                       <ItemMeta>
                         <SourceBadge $color={color}>

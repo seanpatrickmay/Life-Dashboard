@@ -283,6 +283,37 @@ class AIDigestService:
         )
         return list(result.scalars().all())
 
+    async def enrich_with_llm(self) -> None:
+        """Run LLM summarization on items that don't have summaries yet."""
+        try:
+            from app.services.ai_digest_llm_service import AIDigestLLMService
+            llm = AIDigestLLMService()
+            items = await self.get_today_items()
+            summaries = await llm.summarize_items(items)
+            if summaries:
+                from sqlalchemy import update
+                for item_id, summary in summaries.items():
+                    await self._session.execute(
+                        update(DigestItem)
+                        .where(DigestItem.id == item_id)
+                        .values(llm_summary=summary)
+                    )
+                await self._session.commit()
+                logger.info("LLM enriched {} items with summaries", len(summaries))
+        except Exception as exc:
+            logger.warning("LLM enrichment failed (graceful degradation): {}", exc)
+
+    async def get_narrative(self) -> str | None:
+        """Generate a daily narrative for the current items."""
+        try:
+            from app.services.ai_digest_llm_service import AIDigestLLMService
+            llm = AIDigestLLMService()
+            items = await self.get_today_items()
+            return await llm.generate_narrative(items)
+        except Exception as exc:
+            logger.warning("Narrative generation failed: {}", exc)
+            return None
+
     async def run_pipeline(self) -> int:
         now = eastern_now()
         all_items: list[dict] = []
