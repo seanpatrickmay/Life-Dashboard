@@ -167,8 +167,10 @@ const LoadingState = styled.div`
 `;
 
 export function DashboardNewsFeed() {
-  const { feedQuery, markRead } = useNewsFeed();
-  const articles = feedQuery.data ?? [];
+  const { curatedQuery, markRead } = useNewsFeed();
+
+  // Show top 5 curated picks on the dashboard
+  const articles = curatedQuery.data?.picks?.slice(0, 5) ?? [];
   const getTitle = useShortTitles(articles);
 
   const handleArticleClick = (articleId: string) => {
@@ -178,11 +180,11 @@ export function DashboardNewsFeed() {
   return (
     <Panel>
       <HeadingRow>
-        <Heading data-halo="heading">Reading List</Heading>
+        <Heading data-halo="heading">Today's Briefing</Heading>
         <ViewAllLink to="/news">View All</ViewAllLink>
       </HeadingRow>
 
-      {feedQuery.isLoading ? (
+      {curatedQuery.isLoading ? (
         <LoadingState>Loading...</LoadingState>
       ) : !articles.length ? (
         <EmptyState>No articles yet</EmptyState>

@@ -3,7 +3,7 @@ import { describe, expect, it, beforeEach, vi, afterEach } from 'vitest';
 
 import {
   extractKeywordsFromContext,
-  scoreArticle,
+  keywordRelevance,
   getSources,
   saveSources,
   getUnsurfacedArticles,
@@ -58,41 +58,40 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-// ── scoreArticle ─────────────────────────────────────────────────────────
+// ── keywordRelevance ─────────────────────────────────────────────────────
 
-describe('scoreArticle', () => {
-  it('returns 0.1 base score when no keywords', () => {
-    const score = scoreArticle({ title: 'Anything', summary: 'whatever' }, []);
-    expect(score).toBe(0.1);
+describe('keywordRelevance', () => {
+  it('returns 0 when no keywords provided', () => {
+    const score = keywordRelevance({ title: 'Anything', summary: 'whatever' }, []);
+    expect(score).toBe(0);
   });
 
-  it('returns 0.1 when no keywords match', () => {
-    const score = scoreArticle(
+  it('returns 0 when no keywords match', () => {
+    const score = keywordRelevance(
       { title: 'Quantum physics breakthrough', summary: 'Scientists discover new particle' },
       ['cooking', 'recipes', 'baking']
     );
-    expect(score).toBe(0.1);
+    expect(score).toBe(0);
   });
 
-  it('scores higher when keywords match the title', () => {
-    const score = scoreArticle(
+  it('returns 1.0 when all keywords match', () => {
+    const score = keywordRelevance(
       { title: 'New machine learning framework released', summary: null },
       ['machine', 'learning', 'framework']
     );
-    expect(score).toBeGreaterThan(0.1);
     expect(score).toBe(1.0);
   });
 
   it('scores proportionally to fraction of keywords matched', () => {
-    const score = scoreArticle(
+    const score = keywordRelevance(
       { title: 'Python tutorial', summary: 'Learn python basics' },
       ['python', 'javascript', 'rust', 'golang']
     );
-    expect(score).toBeCloseTo(0.325, 2);
+    expect(score).toBeCloseTo(0.25, 2);
   });
 
   it('matches multi-word keywords as substring', () => {
-    const score = scoreArticle(
+    const score = keywordRelevance(
       { title: 'The rise of machine learning in healthcare', summary: null },
       ['machine learning']
     );
@@ -100,28 +99,28 @@ describe('scoreArticle', () => {
   });
 
   it('is case-insensitive', () => {
-    const score = scoreArticle(
+    const score = keywordRelevance(
       { title: 'PYTHON Release Notes', summary: null },
       ['python']
     );
-    expect(score).toBeGreaterThan(0.1);
+    expect(score).toBeGreaterThan(0);
   });
 
   it('uses both title and summary for matching', () => {
-    const scoreTitle = scoreArticle(
+    const score = keywordRelevance(
       { title: 'Breaking news', summary: 'A big python update was released today' },
       ['python']
     );
-    expect(scoreTitle).toBeGreaterThan(0.1);
+    expect(score).toBeGreaterThan(0);
   });
 
   it('handles null summary', () => {
-    const score = scoreArticle({ title: 'Test', summary: null }, ['test']);
-    expect(score).toBeGreaterThan(0.1);
+    const score = keywordRelevance({ title: 'Test', summary: null }, ['test']);
+    expect(score).toBeGreaterThan(0);
   });
 
   it('caps score at 1.0 even with many matches', () => {
-    const score = scoreArticle(
+    const score = keywordRelevance(
       { title: 'python rust', summary: 'python and rust are great' },
       ['python', 'rust']
     );
@@ -840,7 +839,7 @@ describe('refreshFeed', () => {
     expect(ids).toContain('recent');
   });
 
-  it('limits RSS items to 12 per feed', async () => {
+  it('limits RSS items to 8 per feed', async () => {
     const items = Array.from({ length: 20 }, (_, i) => ({
       title: `Item ${i}`,
       link: `https://example.com/item-${i}`,
@@ -852,6 +851,6 @@ describe('refreshFeed', () => {
 
     const result = await refreshFeed([]);
     const rssArticles = result.articles.filter(a => a.sourceType === 'rss');
-    expect(rssArticles.length).toBe(12);
+    expect(rssArticles.length).toBe(8);
   });
 });

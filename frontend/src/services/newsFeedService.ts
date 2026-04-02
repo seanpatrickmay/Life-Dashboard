@@ -1,3 +1,5 @@
+import { getAffinityScore, getCategoryDistribution, isDismissed } from './interestProfile';
+
 const STORAGE_KEY = 'ld_news_feed';
 const SOURCES_KEY = 'ld_news_sources';
 
@@ -56,23 +58,43 @@ type StoredState = {
   lastRefresh: string | null;
 };
 
+export type CuratedFeed = {
+  picks: NewsArticle[];
+  more: NewsArticle[];
+  saved: NewsArticle[];
+};
+
+/** Source quality tiers — higher = more reputable / signal-rich */
+const SOURCE_QUALITY: Record<string, number> = {
+  'Nature': 1.0,
+  'Hacker News': 0.9,
+  'Ars Technica': 0.85,
+  'NYT Science': 0.85,
+  'NYT World': 0.8,
+  'NYT Books': 0.8,
+  'NYT Arts': 0.75,
+  'NYT Business': 0.75,
+  'BBC World': 0.8,
+  'Wikipedia Featured': 0.9,
+  'On This Day': 0.7,
+  'Wikipedia Trending': 0.6,
+};
+
 const DEFAULT_SOURCES: FeedSource[] = [
-  // Tech
   { url: 'https://hnrss.org/best', name: 'Hacker News', category: 'tech', enabled: true },
   { url: 'https://feeds.arstechnica.com/arstechnica/index', name: 'Ars Technica', category: 'tech', enabled: true },
-  // Science
   { url: 'https://www.nature.com/nature.rss', name: 'Nature', category: 'science', enabled: true },
   { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Science.xml', name: 'NYT Science', category: 'science', enabled: true },
-  // World
   { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', name: 'NYT World', category: 'world', enabled: true },
   { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', name: 'BBC World', category: 'world', enabled: true },
-  // Culture & Arts
   { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Books.xml', name: 'NYT Books', category: 'culture', enabled: true },
   { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Arts.xml', name: 'NYT Arts', category: 'culture', enabled: true },
-  // Business
   { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml', name: 'NYT Business', category: 'business', enabled: true },
-  // History — sourced via Wikipedia below
 ];
+
+const ITEMS_PER_FEED = 8;
+const WIKI_ON_THIS_DAY = 3;
+const WIKI_TRENDING = 4;
 
 function hashUrl(url: string): string {
   let hash = 0;
@@ -129,7 +151,6 @@ export function saveSources(sources: FeedSource[]): void {
   localStorage.setItem(SOURCES_KEY, JSON.stringify(sources));
 }
 
-// Try rss2json first (more reliable CORS), fall back to allorigins
 async function fetchRssViaProxy(feedUrl: string): Promise<Array<{ title: string; url: string; summary: string | null; publishedAt: string | null }>> {
   // Strategy 1: rss2json API
   try {
@@ -138,7 +159,7 @@ async function fetchRssViaProxy(feedUrl: string): Promise<Array<{ title: string;
     if (resp.ok) {
       const data = await resp.json();
       if (data.status === 'ok' && data.items?.length) {
-        return data.items.slice(0, 12).map((item: Rss2JsonItem) => ({
+        return data.items.slice(0, ITEMS_PER_FEED).map((item: Rss2JsonItem) => ({
           title: stripHtml(item.title || ''),
           url: item.link || item.guid || '',
           summary: truncate(stripHtml(item.description || '')),
@@ -162,7 +183,7 @@ async function fetchRssViaProxy(feedUrl: string): Promise<Array<{ title: string;
     const entries = rssItems.length > 0 ? rssItems : atomEntries;
 
     entries.forEach((item, i) => {
-      if (i >= 12) return;
+      if (i >= ITEMS_PER_FEED) return;
       const title = item.querySelector('title')?.textContent?.trim();
       const link = item.querySelector('link')?.textContent?.trim()
         || item.querySelector('link')?.getAttribute('href')
@@ -202,7 +223,6 @@ async function fetchWikipediaArticles(): Promise<Array<{ title: string; url: str
     const data = await resp.json();
     const articles: Array<{ title: string; url: string; summary: string | null; sourceName: string; category: Category }> = [];
 
-    // Featured article
     const tfa = data.tfa;
     if (tfa) {
       const pageUrl = tfa.content_urls?.desktop?.page;
@@ -217,9 +237,8 @@ async function fetchWikipediaArticles(): Promise<Array<{ title: string; url: str
       }
     }
 
-    // On this day — history!
     const onThisDay = data.onthisday || [];
-    for (const event of onThisDay.slice(0, 4)) {
+    for (const event of onThisDay.slice(0, WIKI_ON_THIS_DAY)) {
       const page = event.pages?.[0];
       if (!page) continue;
       const pageUrl = page.content_urls?.desktop?.page;
@@ -234,9 +253,8 @@ async function fetchWikipediaArticles(): Promise<Array<{ title: string; url: str
       });
     }
 
-    // Most read (top 6)
     const mostread = data.mostread?.articles || [];
-    for (const article of mostread.slice(0, 6)) {
+    for (const article of mostread.slice(0, WIKI_TRENDING)) {
       const pageUrl = article.content_urls?.desktop?.page;
       if (!pageUrl) continue;
       articles.push({
@@ -254,34 +272,23 @@ async function fetchWikipediaArticles(): Promise<Array<{ title: string; url: str
   }
 }
 
-export function scoreArticle(article: { title: string; summary: string | null }, keywords: string[]): number {
-  if (!keywords.length) return 0.1;
-  const text = `${article.title} ${article.summary || ''}`.toLowerCase();
-  const tokens = new Set(text.split(/\W+/).filter(t => t.length > 2));
-  let matches = 0;
-  for (const kw of keywords) {
-    if (kw.includes(' ')) {
-      if (text.includes(kw)) matches++;
-    } else if (tokens.has(kw)) {
-      matches++;
-    }
-  }
-  return 0.1 + 0.9 * Math.min(matches / Math.max(keywords.length, 1), 1.0);
-}
+/* ─── Scoring ──────────────────────────────────── */
+
+const STOPWORDS = new Set([
+  'the', 'and', 'for', 'that', 'this', 'with', 'from', 'have', 'has',
+  'been', 'will', 'can', 'are', 'was', 'were', 'not', 'but', 'all',
+  'they', 'their', 'what', 'when', 'which', 'who', 'how', 'get', 'set',
+  'make', 'need', 'want', 'use', 'new', 'one', 'two', 'also', 'just',
+  'more', 'about', 'some', 'into', 'than', 'then', 'them', 'each',
+  'other', 'very', 'after', 'before', 'between', 'done', 'todo',
+  'check', 'look', 'work', 'start', 'finish', 'update', 'add',
+  'says', 'said', 'could', 'would', 'should', 'like', 'know',
+  'year', 'years', 'time', 'first', 'last', 'over', 'many',
+]);
 
 export function extractKeywordsFromContext(todos: string[], projects: string[]): string[] {
-  const stopWords = new Set([
-    'the', 'and', 'for', 'that', 'this', 'with', 'from', 'have', 'has',
-    'been', 'will', 'can', 'are', 'was', 'were', 'not', 'but', 'all',
-    'they', 'their', 'what', 'when', 'which', 'who', 'how', 'get', 'set',
-    'make', 'need', 'want', 'use', 'new', 'one', 'two', 'also', 'just',
-    'more', 'about', 'some', 'into', 'than', 'then', 'them', 'each',
-    'other', 'very', 'after', 'before', 'between', 'done', 'todo',
-    'check', 'look', 'work', 'start', 'finish', 'update', 'add',
-  ]);
-
   const allText = [...todos, ...projects].join(' ').toLowerCase();
-  const words = allText.split(/\W+/).filter(w => w.length > 2 && !stopWords.has(w));
+  const words = allText.split(/\W+/).filter(w => w.length > 2 && !STOPWORDS.has(w));
 
   const freq = new Map<string, number>();
   for (const w of words) {
@@ -294,10 +301,111 @@ export function extractKeywordsFromContext(todos: string[], projects: string[]):
     .map(([word]) => word);
 }
 
+/** Keyword relevance: how well the article matches user's todo keywords. */
+export function keywordRelevance(article: { title: string; summary: string | null }, keywords: string[]): number {
+  if (!keywords.length) return 0;
+  const text = `${article.title} ${article.summary || ''}`.toLowerCase();
+  const tokens = new Set(text.split(/\W+/).filter(t => t.length > 2));
+  let matches = 0;
+  for (const kw of keywords) {
+    if (kw.includes(' ')) {
+      if (text.includes(kw)) matches++;
+    } else if (tokens.has(kw)) {
+      matches++;
+    }
+  }
+  return Math.min(matches / Math.max(keywords.length, 1), 1.0);
+}
+
+/** Recency: exponential decay from publish time, 12-hour half-life. */
+function recencyScore(publishedAt: string | null, fetchedAt: string): number {
+  const ts = publishedAt ? new Date(publishedAt).getTime() : new Date(fetchedAt).getTime();
+  const hoursSince = (Date.now() - ts) / (1000 * 60 * 60);
+  return Math.pow(0.5, hoursSince / 12);
+}
+
+/** Source quality: reputation tier for the source. */
+function sourceQualityScore(sourceName: string): number {
+  return SOURCE_QUALITY[sourceName] ?? 0.5;
+}
+
+/**
+ * Multi-signal article scoring.
+ * Blends keyword relevance, interest affinity, recency, source quality, and diversity.
+ */
+export function scoreArticle(
+  article: { title: string; summary: string | null; category: string; sourceName: string; publishedAt: string | null; fetchedAt: string },
+  keywords: string[],
+  categoryDistribution?: Record<string, number>,
+): number {
+  const kw = keywordRelevance(article, keywords);
+  const affinity = getAffinityScore(article.category, article.sourceName);
+  const recency = recencyScore(article.publishedAt, article.fetchedAt);
+  const quality = sourceQualityScore(article.sourceName);
+
+  // Diversity bonus: boost categories that are underrepresented in reading history
+  let diversity = 0.5;
+  if (categoryDistribution) {
+    const catProportion = categoryDistribution[article.category] ?? 0;
+    // Lower proportion in history → higher diversity bonus
+    diversity = 1.0 - catProportion;
+  }
+
+  const score =
+    0.25 * kw +
+    0.30 * affinity +
+    0.20 * recency +
+    0.15 * quality +
+    0.10 * diversity;
+
+  return Math.max(0.05, Math.min(score, 1.0));
+}
+
+/* ─── Topic Deduplication ──────────────────────── */
+
+function significantWords(text: string): Set<string> {
+  return new Set(
+    text.toLowerCase()
+      .split(/\W+/)
+      .filter(w => w.length >= 4 && !STOPWORDS.has(w))
+  );
+}
+
+/** Jaccard similarity between two titles' significant words. */
+function titleSimilarity(a: string, b: string): number {
+  const wordsA = significantWords(a);
+  const wordsB = significantWords(b);
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+
+  let overlap = 0;
+  for (const w of wordsA) {
+    if (wordsB.has(w)) overlap++;
+  }
+  const union = wordsA.size + wordsB.size - overlap;
+  return overlap / union;
+}
+
+/** Remove articles whose titles are too similar, keeping the highest-scored one. */
+function deduplicateByTopic(articles: NewsArticle[]): NewsArticle[] {
+  const kept: NewsArticle[] = [];
+
+  for (const article of articles) {
+    const isDuplicate = kept.some(k => titleSimilarity(k.title, article.title) > 0.5);
+    if (!isDuplicate) {
+      kept.push(article);
+    }
+  }
+
+  return kept;
+}
+
+/* ─── Public API ───────────────────────────────── */
+
 export async function refreshFeed(keywords: string[]): Promise<{ articles: NewsArticle[]; newCount: number }> {
   const state = loadState();
   const existingUrls = new Set(state.articles.map(a => a.id));
   const now = new Date().toISOString();
+  const categoryDist = getCategoryDistribution();
   let newCount = 0;
 
   const sources = getSources().filter(s => s.enabled);
@@ -329,7 +437,11 @@ export async function refreshFeed(keywords: string[]): Promise<{ articles: NewsA
         imageUrl: null,
         publishedAt: item.publishedAt,
         fetchedAt: now,
-        relevanceScore: scoreArticle(item, keywords),
+        relevanceScore: scoreArticle(
+          { ...item, fetchedAt: now },
+          keywords,
+          categoryDist,
+        ),
         surfacedAt: null,
         readAt: null,
       });
@@ -353,7 +465,11 @@ export async function refreshFeed(keywords: string[]): Promise<{ articles: NewsA
       imageUrl: null,
       publishedAt: now,
       fetchedAt: now,
-      relevanceScore: scoreArticle(item, keywords),
+      relevanceScore: scoreArticle(
+        { ...item, publishedAt: now, fetchedAt: now },
+        keywords,
+        categoryDist,
+      ),
       surfacedAt: null,
       readAt: null,
     });
@@ -369,6 +485,52 @@ export async function refreshFeed(keywords: string[]): Promise<{ articles: NewsA
   saveState(state);
 
   return { articles: state.articles, newCount };
+}
+
+/**
+ * The core curation function. Produces a curated briefing:
+ * - `picks`: top 8 diversified articles (the "briefing")
+ * - `more`: next batch of articles beyond picks
+ * - `saved`: user's bookmarked articles
+ */
+export function getCuratedFeed(savedIds: string[]): CuratedFeed {
+  const state = loadState();
+
+  const savedSet = new Set(savedIds);
+  const saved = state.articles.filter(a => savedSet.has(a.id));
+
+  const candidates = state.articles
+    .filter(a => !a.readAt && !isDismissed(a.id))
+    .sort((a, b) => b.relevanceScore - a.relevanceScore || b.fetchedAt.localeCompare(a.fetchedAt));
+
+  // Deduplicate similar titles
+  const deduped = deduplicateByTopic(candidates);
+
+  // Apply source diversity: max 2 from any single source in picks
+  const picks: NewsArticle[] = [];
+  const sourceCount: Record<string, number> = {};
+  const overflow: NewsArticle[] = [];
+
+  for (const article of deduped) {
+    if (picks.length >= 8) {
+      overflow.push(article);
+      continue;
+    }
+
+    const count = sourceCount[article.sourceName] || 0;
+    if (count >= 2) {
+      overflow.push(article);
+      continue;
+    }
+
+    picks.push(article);
+    sourceCount[article.sourceName] = count + 1;
+  }
+
+  // "More stories" — next 20 articles beyond picks
+  const more = overflow.slice(0, 20);
+
+  return { picks, more, saved };
 }
 
 export function getUnsurfacedArticles(limit = 8): NewsArticle[] {
@@ -390,7 +552,6 @@ export function getUnsurfacedArticles(limit = 8): NewsArticle[] {
   return unsurfaced;
 }
 
-/** Get the top unread article per category for dashboard display. */
 export function getTopPerCategory(): NewsArticle[] {
   const state = loadState();
   const unread = state.articles
@@ -407,7 +568,6 @@ export function getTopPerCategory(): NewsArticle[] {
   return picks;
 }
 
-/** Get all unread articles grouped by category for the news page. */
 export function getAllByCategory(): Record<Category, NewsArticle[]> {
   const state = loadState();
   const result: Record<Category, NewsArticle[]> = {
@@ -433,6 +593,11 @@ export function markArticleRead(articleId: string): void {
   saveState(state);
 }
 
+export function getArticleById(articleId: string): NewsArticle | undefined {
+  const state = loadState();
+  return state.articles.find(a => a.id === articleId);
+}
+
 export function hasArticles(): boolean {
   const state = loadState();
   return state.articles.some(a => !a.readAt);
@@ -440,4 +605,17 @@ export function hasArticles(): boolean {
 
 export function getLastRefresh(): string | null {
   return loadState().lastRefresh;
+}
+
+/** Count articles read today (local midnight boundary). */
+export function getReadTodayCount(): number {
+  const state = loadState();
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayMs = todayStart.getTime();
+
+  return state.articles.filter(a => {
+    if (!a.readAt) return false;
+    return new Date(a.readAt).getTime() >= todayMs;
+  }).length;
 }

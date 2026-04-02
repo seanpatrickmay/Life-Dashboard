@@ -17,18 +17,30 @@ vi.mock('@tanstack/react-query', () => ({
 
 const getTopPerCategoryMock = vi.fn();
 const getAllByCategoryMock = vi.fn();
+const getCuratedFeedMock = vi.fn();
 const refreshFeedMock = vi.fn();
 const markArticleReadMock = vi.fn();
+const getArticleByIdMock = vi.fn();
 const extractKeywordsMock = vi.fn();
 const hasArticlesMock = vi.fn();
 
 vi.mock('../services/newsFeedService', () => ({
   getTopPerCategory: (...args: unknown[]) => getTopPerCategoryMock(...args),
   getAllByCategory: (...args: unknown[]) => getAllByCategoryMock(...args),
+  getCuratedFeed: (...args: unknown[]) => getCuratedFeedMock(...args),
   refreshFeed: (...args: unknown[]) => refreshFeedMock(...args),
   markArticleRead: (...args: unknown[]) => markArticleReadMock(...args),
+  getArticleById: (...args: unknown[]) => getArticleByIdMock(...args),
   extractKeywordsFromContext: (...args: unknown[]) => extractKeywordsMock(...args),
   hasArticles: () => hasArticlesMock(),
+}));
+
+vi.mock('../services/interestProfile', () => ({
+  recordRead: vi.fn(),
+  saveArticle: vi.fn(),
+  unsaveArticle: vi.fn(),
+  dismissArticle: vi.fn(),
+  getSavedArticleIds: vi.fn().mockReturnValue([]),
 }));
 
 const useTodosMock = vi.fn();
@@ -64,18 +76,20 @@ beforeEach(() => {
   hasArticlesMock.mockReturnValue(true);
   getTopPerCategoryMock.mockReturnValue([]);
   getAllByCategoryMock.mockReturnValue({ tech: [], science: [], world: [], culture: [], history: [], business: [], wikipedia: [] });
+  getCuratedFeedMock.mockReturnValue({ picks: [], more: [], saved: [] });
   refreshFeedMock.mockResolvedValue({ articles: [], newCount: 0 });
   extractKeywordsMock.mockReturnValue([]);
+  getArticleByIdMock.mockReturnValue(null);
 });
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
 describe('useNewsFeed', () => {
-  it('creates two queries: feedQuery and allQuery', () => {
+  it('creates three queries: feedQuery, allQuery, and curatedQuery', () => {
     render(<HookProbe />);
 
-    // Should call useQuery twice (once for feed, once for all)
-    expect(useQueryMock).toHaveBeenCalledTimes(2);
+    // Should call useQuery three times (feed, all, curated)
+    expect(useQueryMock).toHaveBeenCalledTimes(3);
   });
 
   it('feedQuery uses correct key and stale time', () => {
@@ -208,12 +222,13 @@ describe('useNewsFeed', () => {
     expect(hookResult.isRefreshing).toBe(false);
   });
 
-  it('exposes feedQuery and allQuery from useQuery', () => {
+  it('exposes feedQuery, allQuery, and curatedQuery from useQuery', () => {
     const mockResult = { data: [{ id: 'x' }], isLoading: false };
     useQueryMock.mockReturnValue(mockResult);
 
     render(<HookProbe />);
     expect(hookResult.feedQuery).toBe(mockResult);
     expect(hookResult.allQuery).toBe(mockResult);
+    expect(hookResult.curatedQuery).toBe(mockResult);
   });
 });
