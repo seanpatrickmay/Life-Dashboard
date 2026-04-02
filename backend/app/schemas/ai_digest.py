@@ -13,6 +13,7 @@ class DigestItemResponse(BaseModel):
     summary: str | None = None
     source_name: str
     category: str | None = None
+    llm_summary: str | None = None
     published_at: datetime | None = None
     fetched_at: datetime
 
@@ -24,6 +25,7 @@ class DigestResponse(BaseModel):
     last_refreshed: datetime | None = None
     item_count: int
     is_stale: bool
+    narrative: str | None = None
 
 
 class RefreshResponse(BaseModel):
