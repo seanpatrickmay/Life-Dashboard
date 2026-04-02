@@ -1190,3 +1190,38 @@ export const shortenTitles = async (titles: string[]): Promise<string[]> => {
   const { data } = await api.post('/api/news/shorten-titles', { titles });
   return data.short_titles;
 };
+
+// AI Digest
+
+export type DigestItem = {
+  id: number;
+  url: string;
+  title: string;
+  summary: string | null;
+  source_name: string;
+  category: string | null;
+  published_at: string | null;
+  fetched_at: string;
+};
+
+export type DigestResponse = {
+  items: DigestItem[];
+  last_refreshed: string | null;
+  item_count: number;
+  is_stale: boolean;
+};
+
+export type DigestRefreshResponse = {
+  started: boolean;
+  message: string;
+};
+
+export const fetchDigest = async (): Promise<DigestResponse> => {
+  const { data } = await api.get('/api/ai-digest/today');
+  return data;
+};
+
+export const refreshDigest = async (): Promise<DigestRefreshResponse> => {
+  const { data } = await api.post('/api/ai-digest/refresh');
+  return data;
+};
