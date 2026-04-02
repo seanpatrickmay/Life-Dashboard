@@ -1198,6 +1198,7 @@ export type DigestItem = {
   url: string;
   title: string;
   summary: string | null;
+  llm_summary: string | null;
   source_name: string;
   category: string | null;
   published_at: string | null;
@@ -1209,6 +1210,7 @@ export type DigestResponse = {
   last_refreshed: string | null;
   item_count: number;
   is_stale: boolean;
+  narrative: string | null;
 };
 
 export type DigestRefreshResponse = {
