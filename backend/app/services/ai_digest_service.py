@@ -148,6 +148,40 @@ def deduplicate_by_title(items: list[dict]) -> list[dict]:
     return kept
 
 
+# ── Topic Classification ──────────────────────────────────────────────
+
+_TOPIC_RULES: list[tuple[str, re.Pattern[str]]] = [
+    ("claude-anthropic", re.compile(r"claude|anthropic|sonnet|opus|haiku", re.I)),
+    ("openai", re.compile(r"openai|chatgpt|gpt-[45]|dall-e|whisper|sora", re.I)),
+    ("google-ai", re.compile(r"gemini|gemma|deepmind|notebooklm", re.I)),
+    ("open-source", re.compile(r"llama|mistral|phi-[34]|qwen|deepseek|ollama|llama\.cpp|vllm|gguf", re.I)),
+    ("developer-tools", re.compile(r"cursor|copilot|windsurf|aider|continue\.dev|cline|codex|devin", re.I)),
+    ("frameworks", re.compile(r"langchain|langgraph|llamaindex|semantic.kernel|autogen|crewai", re.I)),
+    ("research", re.compile(r"arxiv|paper|transformer|benchmark|fine.tun|rlhf|dpo|\brag\b", re.I)),
+    ("industry", re.compile(r"funding|acquisition|nvidia|hugging.face|\bgpu\b|semiconductor", re.I)),
+]
+
+_SOURCE_CATEGORY_OVERRIDE: dict[str, str] = {
+    "Claude Code Releases": "claude-anthropic",
+    "OpenAI Blog": "openai",
+    "Google DeepMind": "google-ai",
+    "GitHub Copilot": "developer-tools",
+    "Cursor Changelog": "developer-tools",
+    "Cline Releases": "developer-tools",
+    "Anthropic News": "claude-anthropic",
+}
+
+
+def classify_topic(title: str, source_name: str) -> str:
+    override = _SOURCE_CATEGORY_OVERRIDE.get(source_name)
+    if override:
+        return override
+    for category, pattern in _TOPIC_RULES:
+        if pattern.search(title):
+            return category
+    return "industry"
+
+
 # ── Feed Parsing ──────────────────────────────────────────────────────
 
 def _content_hash(title: str, url: str) -> str:
@@ -278,6 +312,10 @@ class AIDigestService:
                 unique_items.append(item)
 
         unique_items = deduplicate_by_title(unique_items)
+
+        # Reclassify topics using keyword rules
+        for item in unique_items:
+            item["category"] = classify_topic(item["title"], item["source_name"])
 
         new_count = 0
         for item in unique_items:

@@ -74,3 +74,24 @@ def test_jaccard_dedup_removes_near_duplicates():
     titles = [r["title"] for r in result]
     assert "Claude Code v2.1 Released" in titles
     assert "OpenAI Launches GPT-5" in titles
+
+
+def test_classify_topic_claude():
+    from app.services.ai_digest_service import classify_topic
+    assert classify_topic("Claude Code v2.1 Released with New Features", "Claude Code Releases") == "claude-anthropic"
+
+def test_classify_topic_openai():
+    from app.services.ai_digest_service import classify_topic
+    assert classify_topic("GPT-5 turbo is now available", "OpenAI Blog") == "openai"
+
+def test_classify_topic_open_source():
+    from app.services.ai_digest_service import classify_topic
+    assert classify_topic("Ollama 0.5.0 adds llama.cpp support for GGUF models", "TLDR AI") == "open-source"
+
+def test_classify_topic_developer_tools():
+    from app.services.ai_digest_service import classify_topic
+    assert classify_topic("Cursor 3.1 brings multi-file editing", "Cursor Changelog") == "developer-tools"
+
+def test_classify_topic_fallback():
+    from app.services.ai_digest_service import classify_topic
+    assert classify_topic("Tech industry sees record funding", "TLDR AI") == "industry"
