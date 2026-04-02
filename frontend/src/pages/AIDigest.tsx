@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import styled from 'styled-components';
 
 import { useAIDigest } from '../hooks/useAIDigest';
@@ -14,6 +15,9 @@ const CATEGORY_COLORS: Record<string, string> = {
   'analysis': 'rgba(220, 180, 120, 0.85)',
   'google-ai': 'rgba(130, 200, 220, 0.85)',
   'open-source': 'rgba(180, 220, 140, 0.85)',
+  'frameworks': 'rgba(200, 160, 180, 0.85)',
+  'research': 'rgba(160, 190, 220, 0.85)',
+  'industry': 'rgba(180, 180, 160, 0.85)',
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -24,7 +28,40 @@ const CATEGORY_LABELS: Record<string, string> = {
   'analysis': 'Analysis',
   'google-ai': 'Google AI',
   'open-source': 'Open Source',
+  'frameworks': 'Frameworks',
+  'research': 'Research',
+  'industry': 'Industry',
 };
+
+const CATEGORY_ORDER: string[] = [
+  'claude-anthropic', 'openai', 'google-ai', 'developer-tools',
+  'open-source', 'frameworks', 'aggregator', 'analysis', 'research', 'industry',
+];
+
+const COLLAPSE_STORAGE_KEY = 'ld_ai_digest_collapsed';
+
+function loadCollapsedState(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_STORAGE_KEY);
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch { return new Set(); }
+}
+
+function saveCollapsedState(collapsed: Set<string>): void {
+  localStorage.setItem(COLLAPSE_STORAGE_KEY, JSON.stringify([...collapsed]));
+}
+
+function groupByCategory(items: DigestItem[]): [string, DigestItem[]][] {
+  const groups: Record<string, DigestItem[]> = {};
+  for (const item of items) {
+    const cat = item.category || 'industry';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(item);
+  }
+  return CATEGORY_ORDER
+    .filter(cat => groups[cat]?.length)
+    .map(cat => [cat, groups[cat]]);
+}
 
 /* ─── Styled components ───────────────────────── */
 
@@ -85,12 +122,6 @@ const RefreshButton = styled.button`
     opacity: 0.4;
     cursor: default;
   }
-`;
-
-const ItemList = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 `;
 
 const ItemRow = styled.a`
@@ -220,6 +251,47 @@ const Footer = styled.div`
   padding-top: 8px;
 `;
 
+const SectionHeader = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  color: inherit;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: clamp(0.8rem, 1.6vw, 0.92rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+
+  &:hover { opacity: 1; }
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
+`;
+
+const Chevron = styled.span<{ $open: boolean }>`
+  display: inline-block;
+  transition: transform 0.2s ease;
+  transform: rotate(${({ $open }) => ($open ? '90deg' : '0deg')});
+  font-size: 0.7rem;
+`;
+
+const SectionCount = styled.span`
+  font-size: 0.6rem;
+  opacity: 0.4;
+`;
+
+const Section = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+`;
+
 /* ─── Helpers ──────────────────────────────────── */
 
 function formatTimeAgo(dateStr: string | null): string {
@@ -253,8 +325,20 @@ function getCategoryLabel(category: string | null): string {
 
 export function AIDigestPage() {
   const { digestQuery, refreshDigest: doRefresh, isRefreshing } = useAIDigest();
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsedState);
   const data = digestQuery.data;
   const items = data?.items ?? [];
+  const grouped = groupByCategory(items);
+
+  function toggleSection(category: string) {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      saveCollapsedState(next);
+      return next;
+    });
+  }
 
   return (
     <Page>
@@ -279,31 +363,46 @@ export function AIDigestPage() {
           <EmptySubtext>Hit refresh to fetch your first AI digest.</EmptySubtext>
         </EmptyState>
       ) : (
-        <ItemList>
-          {items.map((item: DigestItem) => {
-            const color = getCategoryColor(item.category);
-            return (
-              <ItemRow
-                key={item.id}
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
+        grouped.map(([category, categoryItems]) => {
+          const isOpen = !collapsed.has(category);
+          const color = getCategoryColor(category);
+          return (
+            <div key={category}>
+              <SectionHeader
+                onClick={() => toggleSection(category)}
+                aria-expanded={isOpen}
               >
-                <Dot $color={color} />
-                <ItemContent>
-                  <ItemTitle data-halo="body">{item.title}</ItemTitle>
-                  {item.summary && <ItemSummary>{item.summary}</ItemSummary>}
-                </ItemContent>
-                <ItemMeta>
-                  <SourceBadge $color={color}>
-                    {getCategoryLabel(item.category)}
-                  </SourceBadge>
-                  <TimeAgo>{formatTimeAgo(item.published_at || item.fetched_at)}</TimeAgo>
-                </ItemMeta>
-              </ItemRow>
-            );
-          })}
-        </ItemList>
+                <Chevron $open={isOpen}>›</Chevron>
+                {getCategoryLabel(category)}
+                <SectionCount>{categoryItems.length}</SectionCount>
+              </SectionHeader>
+              {isOpen && (
+                <Section>
+                  {categoryItems.map((item: DigestItem) => (
+                    <ItemRow
+                      key={item.id}
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Dot $color={color} />
+                      <ItemContent>
+                        <ItemTitle data-halo="body">{item.title}</ItemTitle>
+                        {item.summary && <ItemSummary>{item.summary}</ItemSummary>}
+                      </ItemContent>
+                      <ItemMeta>
+                        <SourceBadge $color={color}>
+                          {item.source_name}
+                        </SourceBadge>
+                        <TimeAgo>{formatTimeAgo(item.published_at || item.fetched_at)}</TimeAgo>
+                      </ItemMeta>
+                    </ItemRow>
+                  ))}
+                </Section>
+              )}
+            </div>
+          );
+        })
       )}
 
       {data?.last_refreshed && (

@@ -46,6 +46,26 @@ FEED_SOURCES = [
         "name": "GitHub Copilot",
         "category": "developer-tools",
     },
+    {
+        "url": "https://raw.githubusercontent.com/taobojlen/anthropic-rss-feed/main/anthropic_news_rss.xml",
+        "name": "Anthropic News",
+        "category": "claude-anthropic",
+    },
+    {
+        "url": "https://deepmind.google/blog/rss.xml",
+        "name": "Google DeepMind",
+        "category": "google-ai",
+    },
+    {
+        "url": "https://api.cursor-changelog.com/api/versions/rss",
+        "name": "Cursor Changelog",
+        "category": "developer-tools",
+    },
+    {
+        "url": "https://github.com/cline/cline/releases.atom",
+        "name": "Cline Releases",
+        "category": "developer-tools",
+    },
 ]
 
 _TRACKING_PARAMS = frozenset({
@@ -70,6 +90,96 @@ def normalize_url(raw_url: str) -> str:
     filtered = {k: v for k, v in query_params.items() if k.lower() not in _TRACKING_PARAMS}
     query = urlencode(filtered, doseq=True) if filtered else ""
     return urlunparse((scheme, host, path, "", query, ""))
+
+
+# ── Jaccard Title Dedup ───────────────────────────────────────────────
+
+_STOPWORDS = frozenset({
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "is", "are", "was", "were", "be", "been",
+    "has", "have", "had", "will", "would", "could", "should", "may", "can",
+    "this", "that", "these", "those", "it", "its", "new", "now",
+})
+
+_SOURCE_QUALITY: dict[str, int] = {
+    "Claude Code Releases": 10,
+    "OpenAI Blog": 9,
+    "Google DeepMind": 9,
+    "Anthropic News": 8,
+    "GitHub Copilot": 8,
+    "Cursor Changelog": 7,
+    "Cline Releases": 7,
+    "Import AI": 6,
+    "TLDR AI": 5,
+}
+
+JACCARD_THRESHOLD = 0.45
+
+
+def _extract_significant_words(title: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]+", title.lower())
+    return {w for w in words if len(w) >= 4 and w not in _STOPWORDS}
+
+
+def jaccard_title_similarity(title_a: str, title_b: str) -> float:
+    words_a = _extract_significant_words(title_a)
+    words_b = _extract_significant_words(title_b)
+    if not words_a or not words_b:
+        return 0.0
+    intersection = words_a & words_b
+    union = words_a | words_b
+    return len(intersection) / len(union)
+
+
+def deduplicate_by_title(items: list[dict]) -> list[dict]:
+    kept: list[dict] = []
+    for item in items:
+        is_dup = False
+        for i, existing in enumerate(kept):
+            if jaccard_title_similarity(item["title"], existing["title"]) >= JACCARD_THRESHOLD:
+                item_quality = _SOURCE_QUALITY.get(item["source_name"], 0)
+                existing_quality = _SOURCE_QUALITY.get(existing["source_name"], 0)
+                if item_quality > existing_quality:
+                    kept[i] = item
+                is_dup = True
+                break
+        if not is_dup:
+            kept.append(item)
+    return kept
+
+
+# ── Topic Classification ──────────────────────────────────────────────
+
+_TOPIC_RULES: list[tuple[str, re.Pattern[str]]] = [
+    ("claude-anthropic", re.compile(r"claude|anthropic|sonnet|opus|haiku", re.I)),
+    ("openai", re.compile(r"openai|chatgpt|gpt-[45]|dall-e|whisper|sora", re.I)),
+    ("google-ai", re.compile(r"gemini|gemma|deepmind|notebooklm", re.I)),
+    ("open-source", re.compile(r"llama|mistral|phi-[34]|qwen|deepseek|ollama|llama\.cpp|vllm|gguf", re.I)),
+    ("developer-tools", re.compile(r"cursor|copilot|windsurf|aider|continue\.dev|cline|codex|devin", re.I)),
+    ("frameworks", re.compile(r"langchain|langgraph|llamaindex|semantic.kernel|autogen|crewai", re.I)),
+    ("research", re.compile(r"arxiv|paper|transformer|benchmark|fine.tun|rlhf|dpo|\brag\b", re.I)),
+    ("industry", re.compile(r"funding|acquisition|nvidia|hugging.face|\bgpu\b|semiconductor", re.I)),
+]
+
+_SOURCE_CATEGORY_OVERRIDE: dict[str, str] = {
+    "Claude Code Releases": "claude-anthropic",
+    "OpenAI Blog": "openai",
+    "Google DeepMind": "google-ai",
+    "GitHub Copilot": "developer-tools",
+    "Cursor Changelog": "developer-tools",
+    "Cline Releases": "developer-tools",
+    "Anthropic News": "claude-anthropic",
+}
+
+
+def classify_topic(title: str, source_name: str) -> str:
+    override = _SOURCE_CATEGORY_OVERRIDE.get(source_name)
+    if override:
+        return override
+    for category, pattern in _TOPIC_RULES:
+        if pattern.search(title):
+            return category
+    return "industry"
 
 
 # ── Feed Parsing ──────────────────────────────────────────────────────
@@ -200,6 +310,12 @@ class AIDigestService:
             if item["normalized_url"] not in seen_urls:
                 seen_urls.add(item["normalized_url"])
                 unique_items.append(item)
+
+        unique_items = deduplicate_by_title(unique_items)
+
+        # Reclassify topics using keyword rules
+        for item in unique_items:
+            item["category"] = classify_topic(item["title"], item["source_name"])
 
         new_count = 0
         for item in unique_items:
