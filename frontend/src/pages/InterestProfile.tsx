@@ -4,6 +4,8 @@ import styled from 'styled-components';
 import { Card } from '../components/common/Card';
 import {
   loadProfile,
+  getExplorationSlots,
+  saveExplorationSlots,
   type InterestProfile,
 } from '../services/interestProfile';
 import { useNewsFeed } from '../hooks/useNewsFeed';
@@ -229,7 +231,7 @@ function getMaxReads(profile: InterestProfile): number {
 
 export function InterestProfilePage() {
   const { profileQuery } = useNewsFeed();
-  const [explorationSlots, setExplorationSlots] = useState(4);
+  const [explorationSlots, setExplorationSlots] = useState(() => getExplorationSlots());
   const [newTopic, setNewTopic] = useState('');
 
   const profile = useMemo(() => loadProfile(), []);
@@ -370,7 +372,7 @@ export function InterestProfilePage() {
             min={0}
             max={8}
             value={explorationSlots}
-            onChange={e => setExplorationSlots(Number(e.target.value))}
+            onChange={e => { const v = Number(e.target.value); setExplorationSlots(v); saveExplorationSlots(v); }}
           />
           <SliderValue>{explorationSlots} of 8</SliderValue>
         </SliderRow>

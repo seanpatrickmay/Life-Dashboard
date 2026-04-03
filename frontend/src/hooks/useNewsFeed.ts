@@ -21,6 +21,7 @@ import {
   dismissArticle,
   getSavedArticleIds,
   getCategoryDistribution,
+  getExplorationSlots,
 } from '../services/interestProfile';
 import {
   scoreArticles,
@@ -28,6 +29,11 @@ import {
   summarizeProfile,
   type ArticleAnnotationResult,
 } from '../services/api';
+import {
+  getProfileEmbedding,
+  getArticleEmbeddings,
+  cosineSimilarity,
+} from '../services/profileSummarizer';
 import { useTodos } from './useTodos';
 
 const NEWS_FEED_KEY = ['news', 'feed'];
@@ -153,7 +159,7 @@ export function useNewsFeed() {
         const keywords = getKeywords();
         await refreshFeed(keywords);
       }
-      const curated = getCuratedFeed(getSavedArticleIds(), 4);
+      const curated = getCuratedFeed(getSavedArticleIds(), getExplorationSlots());
 
       // Apply LLM scoring as a multiplier if profile is available
       const profile = profileQuery.data;
@@ -188,6 +194,33 @@ export function useNewsFeed() {
         } catch {
           // Graceful degradation: LLM scoring failed, use base scores
         }
+      }
+
+      // Apply embedding similarity as an additional boost
+      try {
+        const profileEmb = await getProfileEmbedding();
+        if (profileEmb) {
+          const allArticles = [...curated.picks, ...curated.more];
+          const articleEmbs = await getArticleEmbeddings(allArticles);
+
+          if (articleEmbs.size > 0) {
+            const boosted = allArticles.map(a => {
+              const emb = articleEmbs.get(a.id);
+              if (!emb) return a;
+              const sim = cosineSimilarity(profileEmb, emb);
+              // Embedding similarity as a gentle boost: ±10% of base score
+              return {
+                ...a,
+                relevanceScore: a.relevanceScore * (0.9 + 0.2 * sim),
+              };
+            });
+            boosted.sort((a, b) => b.relevanceScore - a.relevanceScore);
+            curated.picks = boosted.slice(0, 8);
+            curated.more = boosted.slice(8, 28);
+          }
+        }
+      } catch {
+        // Graceful degradation: embeddings failed, use existing scores
       }
 
       return curated;
