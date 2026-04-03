@@ -132,7 +132,7 @@ const HeroMeta = styled.div`
 `;
 
 const SourcePill = styled.span<{ $color: string }>`
-  font-size: 0.58rem;
+  font-size: 0.75rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 2px 8px;
@@ -143,7 +143,7 @@ const SourcePill = styled.span<{ $color: string }>`
 `;
 
 const HeroTimeAgo = styled.span`
-  font-size: 0.58rem;
+  font-size: 0.875rem;
   letter-spacing: 0.06em;
   opacity: 0.35;
   text-transform: uppercase;
@@ -235,14 +235,14 @@ const PickMeta = styled.div`
 `;
 
 const PickSource = styled.span`
-  font-size: 0.58rem;
+  font-size: 0.875rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   opacity: 0.35;
 `;
 
 const PickTimeAgo = styled.span`
-  font-size: 0.55rem;
+  font-size: 0.875rem;
   letter-spacing: 0.06em;
   opacity: 0.3;
 `;
@@ -252,7 +252,12 @@ const PickTimeAgo = styled.span`
 const IconButton = styled.button<{ $active?: boolean }>`
   background: none;
   border: none;
-  padding: 3px 6px;
+  padding: 10px 12px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   font-size: 0.72rem;
   opacity: ${({ $active }) => ($active ? 0.9 : 0.3)};
@@ -351,6 +356,18 @@ const Dot = styled.span<{ $color: string }>`
   border-radius: 50%;
   background: ${({ $color }) => $color};
   flex-shrink: 0;
+`;
+
+const DiscoveryLabel = styled.span`
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: ${({ theme }) => theme.palette?.lilac?.['100'] ?? '#E5E0FF'}33;
+  color: ${({ theme }) => theme.palette?.lilac?.['200'] ?? '#B1A7FF'};
+  white-space: nowrap;
 `;
 
 /* ─── Saved section ────────────────────────────── */
@@ -558,6 +575,7 @@ export function NewsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Dot $color={color} />
                         <PickSource>{article.sourceName}</PickSource>
+                        {article.isExploration && <DiscoveryLabel>Discovery</DiscoveryLabel>}
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <PickTimeAgo>
@@ -567,14 +585,12 @@ export function NewsPage() {
                           $active={isSaved(article.id)}
                           onClick={(e) => handleSaveToggle(e, article.id)}
                           aria-label={isSaved(article.id) ? 'Remove from saved' : 'Save for later'}
-                          style={{ fontSize: '0.65rem', padding: '2px 4px' }}
                         >
                           {isSaved(article.id) ? '★' : '☆'}
                         </IconButton>
                         <IconButton
                           onClick={(e) => handleDismiss(e, article.id)}
                           aria-label="Dismiss article"
-                          style={{ fontSize: '0.6rem', padding: '2px 4px' }}
                         >
                           ✕
                         </IconButton>
@@ -619,7 +635,6 @@ export function NewsPage() {
                           $active={isSaved(article.id)}
                           onClick={(e) => handleSaveToggle(e, article.id)}
                           aria-label={isSaved(article.id) ? 'Remove from saved' : 'Save for later'}
-                          style={{ fontSize: '0.6rem', padding: '2px' }}
                         >
                           {isSaved(article.id) ? '★' : '☆'}
                         </IconButton>
@@ -664,7 +679,6 @@ export function NewsPage() {
                           $active
                           onClick={(e) => handleSaveToggle(e, article.id)}
                           title="Unsave"
-                          style={{ fontSize: '0.6rem', padding: '2px' }}
                         >
                           ★
                         </IconButton>

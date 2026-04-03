@@ -15,6 +15,7 @@ import {
 } from '../services/newsFeedService';
 import {
   recordRead,
+  recordDismiss,
   saveArticle,
   unsaveArticle,
   dismissArticle,
@@ -35,8 +36,17 @@ export function useNewsFeed() {
     const todos = (todosQuery.data || [])
       .filter(t => !t.completed)
       .map(t => t.text);
-    return extractKeywordsFromContext(todos, []);
-  }, [todosQuery.data]);
+
+    // Pull project names from query cache if available
+    const projectsData = queryClient.getQueryData?.<any[]>(['projects']) || [];
+    const projectNames = projectsData.map((p: any) => p.name || '').filter(Boolean);
+
+    // Pull calendar event titles from query cache if available
+    const calendarData = queryClient.getQueryData?.<any[]>(['calendar', 'events']) || [];
+    const calendarTitles = calendarData.map((e: any) => e.summary || '').filter(Boolean);
+
+    return extractKeywordsFromContext(todos, projectNames, calendarTitles);
+  }, [todosQuery.data, queryClient]);
 
   // Dashboard: top article per category (legacy, still used by dashboard widget)
   const feedQuery = useQuery<NewsArticle[]>({
@@ -74,7 +84,7 @@ export function useNewsFeed() {
         const keywords = getKeywords();
         await refreshFeed(keywords);
       }
-      return getCuratedFeed(getSavedArticleIds());
+      return getCuratedFeed(getSavedArticleIds(), 4); // 50% exploration
     },
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -125,7 +135,12 @@ export function useNewsFeed() {
 
   const dismissMutation = useMutation({
     mutationFn: async (articleId: string) => {
-      dismissArticle(articleId);
+      const article = getArticleById(articleId);
+      if (article) {
+        recordDismiss(article.category, article.sourceName, articleId);
+      } else {
+        dismissArticle(articleId);
+      }
     },
     onSuccess: invalidateAll,
   });
