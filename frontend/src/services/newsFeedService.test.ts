@@ -605,6 +605,7 @@ describe('refreshFeed', () => {
         title: 'RSS Article Two',
         link: 'https://example.com/rss-2',
         description: 'Second article about rust language',
+        pubDate: 'Mon, 18 Mar 2026 12:00:00 GMT',
       },
     ],
   };

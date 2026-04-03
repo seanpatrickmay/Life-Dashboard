@@ -37,6 +37,7 @@ vi.mock('../services/newsFeedService', () => ({
 
 vi.mock('../services/interestProfile', () => ({
   recordRead: vi.fn(),
+  recordDismiss: vi.fn(),
   saveArticle: vi.fn(),
   unsaveArticle: vi.fn(),
   dismissArticle: vi.fn(),
@@ -196,7 +197,8 @@ describe('useNewsFeed', () => {
 
     expect(extractKeywordsMock).toHaveBeenCalledWith(
       ['Learn Python', 'Study machine learning'],
-      []
+      [],
+      [],
     );
   });
 

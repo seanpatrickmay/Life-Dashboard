@@ -1,4 +1,4 @@
-import { getAffinityScore, getCategoryDistribution, isDismissed } from './interestProfile';
+import { getAffinityScore, getCategoryDistribution, getDismissPenalty, getTopCategories, isDismissed } from './interestProfile';
 
 const STORAGE_KEY = 'ld_news_feed';
 const SOURCES_KEY = 'ld_news_sources';
@@ -36,6 +36,7 @@ export type NewsArticle = {
   relevanceScore: number;
   surfacedAt: string | null;
   readAt: string | null;
+  isExploration?: boolean;
 };
 
 export type FeedSource = {
@@ -78,6 +79,9 @@ const SOURCE_QUALITY: Record<string, number> = {
   'Wikipedia Featured': 0.9,
   'On This Day': 0.7,
   'Wikipedia Trending': 0.6,
+  'MIT Tech Review AI': 0.85,
+  'Carbon Brief': 0.85,
+  'Aeon': 0.8,
 };
 
 const DEFAULT_SOURCES: FeedSource[] = [
@@ -90,6 +94,9 @@ const DEFAULT_SOURCES: FeedSource[] = [
   { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Books.xml', name: 'NYT Books', category: 'culture', enabled: true },
   { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Arts.xml', name: 'NYT Arts', category: 'culture', enabled: true },
   { url: 'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml', name: 'NYT Business', category: 'business', enabled: true },
+  { url: 'https://www.technologyreview.com/topic/artificial-intelligence/feed', name: 'MIT Tech Review AI', category: 'tech', enabled: true },
+  { url: 'https://www.carbonbrief.org/feed', name: 'Carbon Brief', category: 'science', enabled: true },
+  { url: 'https://aeon.co/feed.rss', name: 'Aeon', category: 'culture', enabled: true },
 ];
 
 const ITEMS_PER_FEED = 8;
@@ -286,8 +293,13 @@ const STOPWORDS = new Set([
   'year', 'years', 'time', 'first', 'last', 'over', 'many',
 ]);
 
-export function extractKeywordsFromContext(todos: string[], projects: string[]): string[] {
-  const allText = [...todos, ...projects].join(' ').toLowerCase();
+export function extractKeywordsFromContext(
+  todos: string[],
+  projects: string[],
+  calendarEvents: string[] = [],
+  journalThemes: string[] = [],
+): string[] {
+  const allText = [...todos, ...projects, ...calendarEvents, ...journalThemes].join(' ').toLowerCase();
   const words = allText.split(/\W+/).filter(w => w.length > 2 && !STOPWORDS.has(w));
 
   const freq = new Map<string, number>();
@@ -330,8 +342,16 @@ function sourceQualityScore(sourceName: string): number {
 }
 
 /**
- * Multi-signal article scoring.
- * Blends keyword relevance, interest affinity, recency, source quality, and diversity.
+ * Multi-signal article scoring (5-signal formula).
+ *
+ * Signals:
+ * - semanticAffinity (0.25): keyword match + interest profile affinity combined
+ * - recency (0.25): exponential decay from publish time
+ * - sourceQuality (0.15): reputation tier
+ * - diversity (0.10): boost for underrepresented categories
+ * - negativePenalty (0.25): dismiss-based penalty (negative values reduce score)
+ *
+ * Weights sum to 1.0. Penalty signal allows dismissed topics to be suppressed.
  */
 export function scoreArticle(
   article: { title: string; summary: string | null; category: string; sourceName: string; publishedAt: string | null; fetchedAt: string },
@@ -342,21 +362,23 @@ export function scoreArticle(
   const affinity = getAffinityScore(article.category, article.sourceName);
   const recency = recencyScore(article.publishedAt, article.fetchedAt);
   const quality = sourceQualityScore(article.sourceName);
+  const penalty = getDismissPenalty(article.category, article.sourceName);
 
-  // Diversity bonus: boost categories that are underrepresented in reading history
+  // Combined semantic affinity: blend keyword match with profile affinity
+  const semanticAffinity = 0.5 * kw + 0.5 * affinity;
+
   let diversity = 0.5;
   if (categoryDistribution) {
     const catProportion = categoryDistribution[article.category] ?? 0;
-    // Lower proportion in history → higher diversity bonus
     diversity = 1.0 - catProportion;
   }
 
   const score =
-    0.25 * kw +
-    0.30 * affinity +
-    0.20 * recency +
+    0.25 * semanticAffinity +
+    0.25 * recency +
     0.15 * quality +
-    0.10 * diversity;
+    0.10 * diversity +
+    0.25 * penalty; // penalty is 0 or negative
 
   return Math.max(0.05, Math.min(score, 1.0));
 }
@@ -489,11 +511,13 @@ export async function refreshFeed(keywords: string[]): Promise<{ articles: NewsA
 
 /**
  * The core curation function. Produces a curated briefing:
- * - `picks`: top 8 diversified articles (the "briefing")
+ * - `picks`: top 8 articles with exploration slots for underrepresented categories
  * - `more`: next batch of articles beyond picks
  * - `saved`: user's bookmarked articles
+ *
+ * @param explorationSlots Number of picks reserved for non-top categories (default 4 = 50%)
  */
-export function getCuratedFeed(savedIds: string[]): CuratedFeed {
+export function getCuratedFeed(savedIds: string[], explorationSlots = 4): CuratedFeed {
   const state = loadState();
 
   const savedSet = new Set(savedIds);
@@ -503,32 +527,44 @@ export function getCuratedFeed(savedIds: string[]): CuratedFeed {
     .filter(a => !a.readAt && !isDismissed(a.id))
     .sort((a, b) => b.relevanceScore - a.relevanceScore || b.fetchedAt.localeCompare(a.fetchedAt));
 
-  // Deduplicate similar titles
   const deduped = deduplicateByTopic(candidates);
 
-  // Apply source diversity: max 2 from any single source in picks
-  const picks: NewsArticle[] = [];
+  // Source diversity: max 2 from any single source
+  const diversified: NewsArticle[] = [];
   const sourceCount: Record<string, number> = {};
-  const overflow: NewsArticle[] = [];
-
   for (const article of deduped) {
-    if (picks.length >= 8) {
-      overflow.push(article);
-      continue;
-    }
-
     const count = sourceCount[article.sourceName] || 0;
-    if (count >= 2) {
-      overflow.push(article);
-      continue;
-    }
-
-    picks.push(article);
+    if (count >= 2) continue;
+    diversified.push(article);
     sourceCount[article.sourceName] = count + 1;
   }
 
-  // "More stories" — next 20 articles beyond picks
-  const more = overflow.slice(0, 20);
+  // Split into main picks and exploration picks
+  const mainCount = Math.max(0, 8 - explorationSlots);
+  const topCategories = getTopCategories(3);
+
+  const mainPicks = diversified.slice(0, mainCount);
+  const mainIds = new Set(mainPicks.map(a => a.id));
+
+  // Exploration pool: articles from non-top categories
+  const explorationPool = diversified
+    .filter(a => !mainIds.has(a.id))
+    .filter(a => !topCategories.includes(a.category));
+
+  const explorationPicks = explorationPool
+    .slice(0, explorationSlots)
+    .map(a => ({ ...a, isExploration: true }));
+
+  // Fallback: if exploration pool doesn't fill all slots, use general pool
+  const filled = mainPicks.length + explorationPicks.length;
+  const fallbackIds = new Set([...mainIds, ...explorationPicks.map(a => a.id)]);
+  const fallbackPicks = filled < 8
+    ? diversified.filter(a => !fallbackIds.has(a.id)).slice(0, 8 - filled)
+    : [];
+
+  const picks = [...mainPicks, ...explorationPicks, ...fallbackPicks];
+  const picksSet = new Set(picks.map(a => a.id));
+  const more = diversified.filter(a => !picksSet.has(a.id)).slice(0, 20);
 
   return { picks, more, saved };
 }
