@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import styled from 'styled-components';
+import { Link } from 'react-router-dom';
 
 import { Card } from '../components/common/Card';
+import { QualityFeedback, shouldShowFeedback, recordFeedbackRead } from '../components/news/QualityFeedback';
 import { useNewsFeed } from '../hooks/useNewsFeed';
 import {
   CATEGORY_LABELS,
@@ -471,6 +473,8 @@ export function NewsPage() {
 
   const [moreOpen, setMoreOpen] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackArticle, setFeedbackArticle] = useState<NewsArticle | null>(null);
 
   const curated = curatedQuery.data;
   const picks = curated?.picks ?? [];
@@ -492,6 +496,15 @@ export function NewsPage() {
 
   function handleArticleClick(articleId: string) {
     markRead(articleId);
+    recordFeedbackRead();
+    // After reading, check if we should show feedback
+    if (shouldShowFeedback()) {
+      const article = picks.find(a => a.id !== articleId) ?? picks[0];
+      if (article) {
+        setFeedbackArticle(article);
+        setShowFeedback(true);
+      }
+    }
   }
 
   function handleSaveToggle(e: React.MouseEvent, articleId: string) {
@@ -528,8 +541,19 @@ export function NewsPage() {
           <RefreshButton onClick={refreshFeed} disabled={isRefreshing}>
             {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </RefreshButton>
+          <Link to="/news/profile" style={{ textDecoration: 'none', color: 'inherit', opacity: 0.4, fontSize: '0.68rem', letterSpacing: '0.1em', textTransform: 'uppercase' as const }}>
+            Profile
+          </Link>
         </ActionGroup>
       </TopBar>
+
+      {/* Quality Feedback */}
+      {showFeedback && feedbackArticle && (
+        <QualityFeedback
+          article={feedbackArticle}
+          onDismiss={() => setShowFeedback(false)}
+        />
+      )}
 
       {/* ─── Loading ────────────────────────────── */}
       {curatedQuery.isLoading ? (
