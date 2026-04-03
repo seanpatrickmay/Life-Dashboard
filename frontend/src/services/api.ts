@@ -1191,6 +1191,50 @@ export const shortenTitles = async (titles: string[]): Promise<string[]> => {
   return data.short_titles;
 };
 
+export type ProfileSummary = {
+  narrative: string;
+  topics: string[];
+};
+
+export const summarizeProfile = async (payload: {
+  projects: string[];
+  todos: string[];
+  calendar_events: string[];
+  reading_categories: Record<string, number>;
+}): Promise<ProfileSummary> => {
+  if (isGuestMode()) return { narrative: '', topics: [] };
+  const { data } = await api.post('/api/news/summarize-profile', payload);
+  return data;
+};
+
+export type ArticleScoreResult = { id: string; score: number };
+
+export const scoreArticles = async (
+  articles: Array<{ id: string; title: string; summary: string | null; category: string }>,
+  profileNarrative: string,
+): Promise<ArticleScoreResult[]> => {
+  if (isGuestMode() || articles.length === 0) return [];
+  const { data } = await api.post('/api/news/score', {
+    articles,
+    profile_narrative: profileNarrative,
+  });
+  return data.scores;
+};
+
+export type ArticleAnnotationResult = { id: string; annotation: string };
+
+export const annotateArticles = async (
+  articles: Array<{ id: string; title: string; summary: string | null; category: string }>,
+  profileNarrative: string,
+): Promise<ArticleAnnotationResult[]> => {
+  if (isGuestMode() || articles.length === 0) return [];
+  const { data } = await api.post('/api/news/annotate', {
+    articles,
+    profile_narrative: profileNarrative,
+  });
+  return data.annotations;
+};
+
 // AI Digest
 
 export type DigestItem = {

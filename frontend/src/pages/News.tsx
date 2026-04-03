@@ -358,6 +358,15 @@ const Dot = styled.span<{ $color: string }>`
   flex-shrink: 0;
 `;
 
+const Annotation = styled.div`
+  font-size: 0.75rem;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  opacity: 0.45;
+  line-height: 1.3;
+  margin-top: 2px;
+`;
+
 const DiscoveryLabel = styled.span`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 0.65rem;
@@ -438,6 +447,7 @@ function formatDate(): string {
 export function NewsPage() {
   const {
     curatedQuery,
+    annotationsQuery,
     refreshFeed,
     markRead,
     saveArticle: doSave,
@@ -445,6 +455,8 @@ export function NewsPage() {
     dismissArticle: doDismiss,
     isRefreshing,
   } = useNewsFeed();
+
+  const annotations = annotationsQuery.data ?? {};
 
   const [moreOpen, setMoreOpen] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
@@ -535,6 +547,7 @@ export function NewsPage() {
               </HeroTimeAgo>
             </HeroMeta>
             <HeroTitle data-halo="heading">{hero.title}</HeroTitle>
+            {annotations[hero.id] && <Annotation>{annotations[hero.id]}</Annotation>}
             {hero.summary && <HeroSummary>{hero.summary}</HeroSummary>}
             <HeroActions>
               <IconButton
@@ -568,6 +581,7 @@ export function NewsPage() {
                     onClick={() => handleArticleClick(article.id)}
                   >
                     <PickTitle data-halo="body">{article.title}</PickTitle>
+                    {annotations[article.id] && <Annotation>{annotations[article.id]}</Annotation>}
                     {article.summary && (
                       <PickSummary>{article.summary}</PickSummary>
                     )}

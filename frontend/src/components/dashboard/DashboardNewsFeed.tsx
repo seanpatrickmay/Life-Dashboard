@@ -149,6 +149,16 @@ const ArticleTitle = styled.div`
   text-overflow: ellipsis;
 `;
 
+const ArticleAnnotation = styled.div`
+  font-size: 0.65rem;
+  opacity: 0.45;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
 const EmptyState = styled.p`
   margin: 0;
   font-size: 0.82rem;
@@ -167,7 +177,8 @@ const LoadingState = styled.div`
 `;
 
 export function DashboardNewsFeed() {
-  const { curatedQuery, markRead } = useNewsFeed();
+  const { curatedQuery, annotationsQuery, markRead } = useNewsFeed();
+  const annotations = annotationsQuery.data ?? {};
 
   // Show top 5 curated picks on the dashboard
   const articles = curatedQuery.data?.picks?.slice(0, 5) ?? [];
@@ -201,6 +212,9 @@ export function DashboardNewsFeed() {
               <ArticleTitle data-halo="body">
                 {getTitle(article.id, article.title)}
               </ArticleTitle>
+              {annotations[article.id] && (
+                <ArticleAnnotation>{annotations[article.id]}</ArticleAnnotation>
+              )}
               <CategoryPill $color={CATEGORY_COLORS[article.category] || 'rgba(200,200,200,0.7)'}>
                 {CATEGORY_LABELS[article.category] || article.category}
               </CategoryPill>

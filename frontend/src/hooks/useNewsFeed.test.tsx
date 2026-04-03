@@ -42,6 +42,13 @@ vi.mock('../services/interestProfile', () => ({
   unsaveArticle: vi.fn(),
   dismissArticle: vi.fn(),
   getSavedArticleIds: vi.fn().mockReturnValue([]),
+  getCategoryDistribution: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock('../services/api', () => ({
+  scoreArticles: vi.fn().mockResolvedValue([]),
+  annotateArticles: vi.fn().mockResolvedValue([]),
+  summarizeProfile: vi.fn().mockResolvedValue({ narrative: '', topics: [] }),
 }));
 
 const useTodosMock = vi.fn();
@@ -89,8 +96,8 @@ describe('useNewsFeed', () => {
   it('creates three queries: feedQuery, allQuery, and curatedQuery', () => {
     render(<HookProbe />);
 
-    // Should call useQuery three times (feed, all, curated)
-    expect(useQueryMock).toHaveBeenCalledTimes(3);
+    // Should call useQuery five times (profile, feed, all, curated, annotations)
+    expect(useQueryMock).toHaveBeenCalledTimes(5);
   });
 
   it('feedQuery uses correct key and stale time', () => {
