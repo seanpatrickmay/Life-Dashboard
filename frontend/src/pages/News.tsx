@@ -308,6 +308,17 @@ const Chevron = styled.span<{ $open: boolean }>`
   font-size: 0.7rem;
 `;
 
+const CollapsibleSection = styled.div<{ $open: boolean }>`
+  display: grid;
+  grid-template-rows: ${({ $open }) => ($open ? '1fr' : '0fr')};
+  transition: grid-template-rows 0.25s ease-out;
+  ${reducedMotion}
+`;
+
+const CollapsibleInner = styled.div`
+  overflow: hidden;
+`;
+
 const MoreList = styled.div`
   display: flex;
   flex-direction: column;
@@ -630,33 +641,35 @@ export function NewsPage() {
                 </span>
               </SectionHeader>
 
-              {moreOpen && (
-                <MoreList>
-                  {more.map(article => {
-                    const color = CATEGORY_COLORS[article.category];
-                    return (
-                      <MoreRow
-                        key={article.id}
-                        href={article.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => handleArticleClick(article.id)}
-                      >
-                        <Dot $color={color} />
-                        <MoreTitle data-halo="body">{article.title}</MoreTitle>
-                        <MoreSource>{article.sourceName}</MoreSource>
-                        <IconButton
-                          $active={isSaved(article.id)}
-                          onClick={(e) => handleSaveToggle(e, article.id)}
-                          aria-label={isSaved(article.id) ? 'Remove from saved' : 'Save for later'}
+              <CollapsibleSection $open={moreOpen}>
+                <CollapsibleInner>
+                  <MoreList>
+                    {more.map(article => {
+                      const color = CATEGORY_COLORS[article.category];
+                      return (
+                        <MoreRow
+                          key={article.id}
+                          href={article.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => handleArticleClick(article.id)}
                         >
-                          {isSaved(article.id) ? '★' : '☆'}
-                        </IconButton>
-                      </MoreRow>
-                    );
-                  })}
-                </MoreList>
-              )}
+                          <Dot $color={color} />
+                          <MoreTitle data-halo="body">{article.title}</MoreTitle>
+                          <MoreSource>{article.sourceName}</MoreSource>
+                          <IconButton
+                            $active={isSaved(article.id)}
+                            onClick={(e) => handleSaveToggle(e, article.id)}
+                            aria-label={isSaved(article.id) ? 'Remove from saved' : 'Save for later'}
+                          >
+                            {isSaved(article.id) ? '★' : '☆'}
+                          </IconButton>
+                        </MoreRow>
+                      );
+                    })}
+                  </MoreList>
+                </CollapsibleInner>
+              </CollapsibleSection>
             </div>
           )}
 
@@ -674,33 +687,35 @@ export function NewsPage() {
                 </span>
               </SectionHeader>
 
-              {savedOpen && (
-                <SavedList>
-                  {saved.map(article => {
-                    const color = CATEGORY_COLORS[article.category];
-                    return (
-                      <MoreRow
-                        key={article.id}
-                        href={article.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => handleArticleClick(article.id)}
-                      >
-                        <Dot $color={color} />
-                        <MoreTitle data-halo="body">{article.title}</MoreTitle>
-                        <MoreSource>{article.sourceName}</MoreSource>
-                        <IconButton
-                          $active
-                          onClick={(e) => handleSaveToggle(e, article.id)}
-                          title="Unsave"
+              <CollapsibleSection $open={savedOpen}>
+                <CollapsibleInner>
+                  <SavedList>
+                    {saved.map(article => {
+                      const color = CATEGORY_COLORS[article.category];
+                      return (
+                        <MoreRow
+                          key={article.id}
+                          href={article.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => handleArticleClick(article.id)}
                         >
-                          ★
-                        </IconButton>
-                      </MoreRow>
+                          <Dot $color={color} />
+                          <MoreTitle data-halo="body">{article.title}</MoreTitle>
+                          <MoreSource>{article.sourceName}</MoreSource>
+                          <IconButton
+                            $active
+                            onClick={(e) => handleSaveToggle(e, article.id)}
+                            title="Unsave"
+                          >
+                            ★
+                          </IconButton>
+                        </MoreRow>
                     );
                   })}
-                </SavedList>
-              )}
+                  </SavedList>
+                </CollapsibleInner>
+              </CollapsibleSection>
             </div>
           )}
         </>

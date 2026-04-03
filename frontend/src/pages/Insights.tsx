@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { ReadinessCard } from '../components/insights/ReadinessCard';
 import { LifeContextPanel } from '../components/insights/LifeContextPanel';
 import { InsightHistory } from '../components/insights/InsightHistory';
+import { InsightRelatedArticle } from '../components/insights/InsightRelatedArticle';
 import { fadeUp, reducedMotion } from '../styles/animations';
 
 const Title = styled.h1`
@@ -27,6 +28,7 @@ export function InsightsPage() {
     <Page>
       <Title data-halo="heading">Insights</Title>
       <ReadinessCard />
+      <InsightRelatedArticle />
       <LifeContextPanel />
       <InsightHistory />
     </Page>
