@@ -14,10 +14,11 @@ function loadEmbeddingCache(): EmbeddingCache {
 }
 
 function saveEmbeddingCache(cache: EmbeddingCache): void {
-  // Cap at 500 entries to prevent localStorage bloat
+  // Cap at 150 entries (~1.8MB) to stay within localStorage 5MB quota
+  // Each entry is ~12KB (1536 floats × ~8 bytes in JSON)
   const entries = Object.entries(cache);
-  if (entries.length > 500) {
-    const trimmed = Object.fromEntries(entries.slice(-500));
+  if (entries.length > 150) {
+    const trimmed = Object.fromEntries(entries.slice(-150));
     localStorage.setItem(EMBEDDING_CACHE_KEY, JSON.stringify(trimmed));
   } else {
     localStorage.setItem(EMBEDDING_CACHE_KEY, JSON.stringify(cache));

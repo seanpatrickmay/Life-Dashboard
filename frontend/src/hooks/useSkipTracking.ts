@@ -13,19 +13,28 @@ export function useSkipTracking(
 ) {
   const observerRef = useRef<IntersectionObserver | null>(null);
   const visibleRef = useRef(new Set<string>());
+  // Stable ref for articles to avoid stale closures
+  const articlesRef = useRef(articles);
+  articlesRef.current = articles;
 
   const flushVisible = useCallback(() => {
     if (document.hidden) return;
     for (const id of visibleRef.current) {
-      const article = articles.find(a => a.id === id);
+      const article = articlesRef.current.find(a => a.id === id);
       if (article) {
         recordSurfaced(article.id, article.category);
       }
     }
-  }, [articles]);
+  }, []);
+
+  // Re-observe when articles change
+  const articleIds = articles.map(a => a.id).join(',');
 
   useEffect(() => {
     if (!containerRef.current) return;
+
+    observerRef.current?.disconnect();
+    visibleRef.current.clear();
 
     observerRef.current = new IntersectionObserver(
       (entries) => {
@@ -42,20 +51,17 @@ export function useSkipTracking(
       { root: null, threshold: 0.5 },
     );
 
-    // Observe all article elements with data-article-id
     const elements = containerRef.current.querySelectorAll('[data-article-id]');
     for (const el of elements) {
       observerRef.current.observe(el);
     }
 
-    // Flush on visibility change (tab becomes hidden = flush what was visible)
     const handleVisibilityChange = () => {
       if (!document.hidden) return;
       flushVisible();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Periodic flush every 60 seconds while visible
     const interval = setInterval(() => {
       if (!document.hidden) flushVisible();
     }, 60_000);
@@ -66,5 +72,5 @@ export function useSkipTracking(
       clearInterval(interval);
       flushVisible();
     };
-  }, [containerRef, flushVisible]);
+  }, [containerRef, flushVisible, articleIds]);
 }

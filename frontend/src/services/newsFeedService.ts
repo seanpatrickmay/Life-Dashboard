@@ -1,4 +1,4 @@
-import { getAffinityScore, getCategoryDistribution, getDismissPenalty, getTopCategories, isDismissed } from './interestProfile';
+import { getAffinityScore, getCategoryDistribution, getDismissPenalty, getSkipPenalty, getTopCategories, isDismissed } from './interestProfile';
 
 const STORAGE_KEY = 'ld_news_feed';
 const SOURCES_KEY = 'ld_news_sources';
@@ -349,20 +349,24 @@ function sourceQualityScore(sourceName: string): number {
  * - recency (0.25): exponential decay from publish time
  * - sourceQuality (0.15): reputation tier
  * - diversity (0.10): boost for underrepresented categories
- * - negativePenalty (0.25): dismiss-based penalty (negative values reduce score)
+ * - negativePenalty (0.25): dismiss + skip penalty (negative values reduce score)
  *
- * Weights sum to 1.0. Penalty signal allows dismissed topics to be suppressed.
+ * Weights sum to 1.0. Penalty signal allows dismissed/skipped topics to be suppressed.
  */
 export function scoreArticle(
   article: { title: string; summary: string | null; category: string; sourceName: string; publishedAt: string | null; fetchedAt: string },
   keywords: string[],
   categoryDistribution?: Record<string, number>,
+  readArticleIds?: Set<string>,
 ): number {
   const kw = keywordRelevance(article, keywords);
   const affinity = getAffinityScore(article.category, article.sourceName);
   const recency = recencyScore(article.publishedAt, article.fetchedAt);
   const quality = sourceQualityScore(article.sourceName);
-  const penalty = getDismissPenalty(article.category, article.sourceName);
+  const dismissPenalty = getDismissPenalty(article.category, article.sourceName);
+  const skipPenalty = readArticleIds
+    ? getSkipPenalty(article.category, readArticleIds)
+    : 0;
 
   // Combined semantic affinity: blend keyword match with profile affinity
   const semanticAffinity = 0.5 * kw + 0.5 * affinity;
@@ -373,12 +377,15 @@ export function scoreArticle(
     diversity = 1.0 - catProportion;
   }
 
+  // Combine dismiss and skip penalties (both negative), clamp to -1
+  const combinedPenalty = Math.max(dismissPenalty + skipPenalty, -1.0);
+
   const score =
     0.25 * semanticAffinity +
     0.25 * recency +
     0.15 * quality +
     0.10 * diversity +
-    0.25 * penalty; // penalty is 0 or negative
+    0.25 * combinedPenalty;
 
   return Math.max(0.05, Math.min(score, 1.0));
 }

@@ -43,6 +43,7 @@ vi.mock('../services/interestProfile', () => ({
   dismissArticle: vi.fn(),
   getSavedArticleIds: vi.fn().mockReturnValue([]),
   getCategoryDistribution: vi.fn().mockReturnValue({}),
+  getExplorationSlots: vi.fn().mockReturnValue(4),
 }));
 
 vi.mock('../services/api', () => ({
@@ -56,10 +57,6 @@ vi.mock('../services/profileSummarizer', () => ({
   getProfileEmbedding: vi.fn().mockResolvedValue(null),
   getArticleEmbeddings: vi.fn().mockResolvedValue(new Map()),
   cosineSimilarity: vi.fn().mockReturnValue(0),
-}));
-
-vi.mock('../pages/InterestProfile', () => ({
-  getExplorationSlots: vi.fn().mockReturnValue(4),
 }));
 
 const useTodosMock = vi.fn();

@@ -4,6 +4,8 @@ import styled from 'styled-components';
 import { Card } from '../components/common/Card';
 import {
   loadProfile,
+  getExplorationSlots,
+  saveExplorationSlots,
   type InterestProfile,
 } from '../services/interestProfile';
 import { useNewsFeed } from '../hooks/useNewsFeed';
@@ -216,20 +218,6 @@ const LAYER_NAMES = {
   contextual: { label: 'This Month', halfLife: '21-day half-life' },
   stable: { label: 'Enduring', halfLife: '120-day half-life' },
 } as const;
-
-const EXPLORATION_KEY = 'ld_exploration_slots';
-
-export function getExplorationSlots(): number {
-  try {
-    const raw = localStorage.getItem(EXPLORATION_KEY);
-    if (raw !== null) return Math.max(0, Math.min(8, Number(raw)));
-  } catch { /* ignore */ }
-  return 4;
-}
-
-function saveExplorationSlots(n: number): void {
-  localStorage.setItem(EXPLORATION_KEY, String(n));
-}
 
 function getMaxReads(profile: InterestProfile): number {
   let max = 1;

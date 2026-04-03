@@ -239,7 +239,7 @@ const PicksGrid = styled.div`
   gap: clamp(10px, 1.5vw, 16px);
 `;
 
-const PickCard = styled.a<{ $borderColor: string }>`
+const PickCard = styled.a<{ $borderColor: string; $dismissing?: boolean }>`
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -251,6 +251,8 @@ const PickCard = styled.a<{ $borderColor: string }>`
   text-decoration: none;
   color: inherit;
   cursor: pointer;
+  ${({ $dismissing }) => $dismissing ? `animation: ${dismissSlide} 0.2s ease-out forwards;` : ''}
+  ${reducedMotion}
 
   &:hover {
     border-color: ${({ $borderColor }) => $borderColor};
@@ -326,8 +328,11 @@ const IconButton = styled.button<{ $active?: boolean }>`
     $active ? (theme.palette?.pond?.['200'] ?? '#7ED7C4') : 'inherit'};
   transition: opacity 0.15s ease, color 0.15s ease;
   border-radius: 4px;
-  ${({ $active }) => $active ? `animation: ${saveSpring} 0.2s ease-out;` : ''}
   ${reducedMotion}
+
+  &.just-saved {
+    animation: ${saveSpring} 0.2s ease-out;
+  }
 
   &:hover {
     opacity: 0.8;
@@ -539,6 +544,7 @@ export function NewsPage() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackArticle, setFeedbackArticle] = useState<NewsArticle | null>(null);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  const [dismissingId, setDismissingId] = useState<string | null>(null);
   const pageRef = useRef<HTMLDivElement>(null);
 
   const curated = curatedQuery.data;
@@ -582,13 +588,21 @@ export function NewsPage() {
       doUnsave(articleId);
     } else {
       doSave(articleId);
+      // Trigger spring animation via class toggle
+      const btn = e.currentTarget as HTMLElement;
+      btn.classList.add('just-saved');
+      setTimeout(() => btn.classList.remove('just-saved'), 200);
     }
   }
 
   function handleDismiss(e: React.MouseEvent, articleId: string) {
     e.preventDefault();
     e.stopPropagation();
-    doDismiss(articleId);
+    setDismissingId(articleId);
+    setTimeout(() => {
+      doDismiss(articleId);
+      setDismissingId(null);
+    }, 200);
   }
 
   return (
@@ -683,6 +697,7 @@ export function NewsPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     $borderColor={color}
+                    $dismissing={dismissingId === article.id}
                     data-article-id={article.id}
                     onClick={() => handleArticleClick(article.id)}
                   >

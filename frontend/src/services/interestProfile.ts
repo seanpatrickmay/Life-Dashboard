@@ -304,6 +304,22 @@ export function getSkipPenalty(category: string, readArticleIds: Set<string>): n
   return Math.max(penalty, -1.0);
 }
 
+/* ─── Exploration Slots Persistence ────────────── */
+
+const EXPLORATION_KEY = 'ld_exploration_slots';
+
+export function getExplorationSlots(): number {
+  try {
+    const raw = localStorage.getItem(EXPLORATION_KEY);
+    if (raw !== null) return Math.max(0, Math.min(8, Number(raw)));
+  } catch { /* ignore */ }
+  return 4;
+}
+
+export function saveExplorationSlots(n: number): void {
+  localStorage.setItem(EXPLORATION_KEY, String(n));
+}
+
 export function getCategoryDistribution(): Record<string, number> {
   const profile = loadProfile();
   const total = profile.totalReadsAllTime || 1;

@@ -21,6 +21,7 @@ import {
   dismissArticle,
   getSavedArticleIds,
   getCategoryDistribution,
+  getExplorationSlots,
 } from '../services/interestProfile';
 import {
   scoreArticles,
@@ -33,7 +34,6 @@ import {
   getArticleEmbeddings,
   cosineSimilarity,
 } from '../services/profileSummarizer';
-import { getExplorationSlots } from '../pages/InterestProfile';
 import { useTodos } from './useTodos';
 
 const NEWS_FEED_KEY = ['news', 'feed'];

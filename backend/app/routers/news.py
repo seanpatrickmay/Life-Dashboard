@@ -280,9 +280,9 @@ async def embed_texts(
     if not payload.texts:
         return EmbedResponse(embeddings=[])
 
-    from app.clients.openai_client import build_openai_client
+    llm = OpenAIResponsesClient()
+    client = llm.client  # reuse the configured AsyncOpenAI client
 
-    client = build_openai_client()
     resp = await client.embeddings.create(
         model="text-embedding-3-small",
         input=payload.texts,
