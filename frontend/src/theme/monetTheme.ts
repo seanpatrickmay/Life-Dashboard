@@ -673,7 +673,7 @@ export const darkTheme = {
     overlay: 'rgba(246, 240, 232, 0.06)',
     overlayHover: 'rgba(246, 240, 232, 0.10)',
     overlayActive: 'rgba(246, 240, 232, 0.14)',
-    surfaceRaised: 'rgba(0, 0, 0, 0.18)',
+    surfaceRaised: 'rgba(246, 240, 232, 0.06)',
     surfaceInset: 'rgba(0, 0, 0, 0.12)',
     accent: palette.pond['200'],
     accentSubtle: 'rgba(126, 215, 196, 0.18)',

@@ -1235,6 +1235,12 @@ export const annotateArticles = async (
   return data.annotations;
 };
 
+export const embedTexts = async (texts: string[]): Promise<number[][]> => {
+  if (isGuestMode() || texts.length === 0) return [];
+  const { data } = await api.post('/api/news/embed', { texts });
+  return data.embeddings;
+};
+
 // AI Digest
 
 export type DigestItem = {

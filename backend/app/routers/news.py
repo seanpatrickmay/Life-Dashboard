@@ -259,3 +259,34 @@ async def annotate_articles(
     except (json.JSONDecodeError, KeyError, TypeError):
         logger.warning("Failed to parse annotation LLM response")
         return AnnotateResponse(annotations=[])
+
+
+# ── Embeddings ───────────────────────────────────────────────────────────
+
+class EmbedRequest(BaseModel):
+    texts: list[str]
+
+
+class EmbedResponse(BaseModel):
+    embeddings: list[list[float]]
+
+
+@router.post("/embed", response_model=EmbedResponse)
+async def embed_texts(
+    payload: EmbedRequest,
+    _current_user: User = Depends(get_current_user),
+) -> EmbedResponse:
+    """Generate embeddings using text-embedding-3-small."""
+    if not payload.texts:
+        return EmbedResponse(embeddings=[])
+
+    from app.clients.openai_client import build_openai_client
+
+    client = build_openai_client()
+    resp = await client.embeddings.create(
+        model="text-embedding-3-small",
+        input=payload.texts,
+    )
+
+    embeddings = [item.embedding for item in resp.data]
+    return EmbedResponse(embeddings=embeddings)

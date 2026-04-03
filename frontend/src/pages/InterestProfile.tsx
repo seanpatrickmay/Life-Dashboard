@@ -217,6 +217,20 @@ const LAYER_NAMES = {
   stable: { label: 'Enduring', halfLife: '120-day half-life' },
 } as const;
 
+const EXPLORATION_KEY = 'ld_exploration_slots';
+
+export function getExplorationSlots(): number {
+  try {
+    const raw = localStorage.getItem(EXPLORATION_KEY);
+    if (raw !== null) return Math.max(0, Math.min(8, Number(raw)));
+  } catch { /* ignore */ }
+  return 4;
+}
+
+function saveExplorationSlots(n: number): void {
+  localStorage.setItem(EXPLORATION_KEY, String(n));
+}
+
 function getMaxReads(profile: InterestProfile): number {
   let max = 1;
   for (const layer of [profile.ephemeral, profile.contextual, profile.stable]) {
@@ -229,7 +243,7 @@ function getMaxReads(profile: InterestProfile): number {
 
 export function InterestProfilePage() {
   const { profileQuery } = useNewsFeed();
-  const [explorationSlots, setExplorationSlots] = useState(4);
+  const [explorationSlots, setExplorationSlots] = useState(() => getExplorationSlots());
   const [newTopic, setNewTopic] = useState('');
 
   const profile = useMemo(() => loadProfile(), []);
@@ -370,7 +384,7 @@ export function InterestProfilePage() {
             min={0}
             max={8}
             value={explorationSlots}
-            onChange={e => setExplorationSlots(Number(e.target.value))}
+            onChange={e => { const v = Number(e.target.value); setExplorationSlots(v); saveExplorationSlots(v); }}
           />
           <SliderValue>{explorationSlots} of 8</SliderValue>
         </SliderRow>

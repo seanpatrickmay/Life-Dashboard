@@ -242,6 +242,68 @@ export function isDismissed(articleId: string): boolean {
  * Get the category distribution of reading history for diversity calculations.
  * Uses stable layer reads normalized by totalReadsAllTime.
  */
+/* ─── Skip Signal Tracking ─────────────────────── */
+
+type SkipRecord = {
+  articleId: string;
+  category: string;
+  surfacedAt: number; // timestamp
+};
+
+const SKIP_STORAGE_KEY = 'ld_skip_signals';
+const SKIP_SHORT_THRESHOLD = 60 * 60 * 1000;   // 1 hour
+const SKIP_LONG_THRESHOLD = 24 * 60 * 60 * 1000; // 24 hours
+
+function loadSkipRecords(): SkipRecord[] {
+  try {
+    const raw = localStorage.getItem(SKIP_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function saveSkipRecords(records: SkipRecord[]): void {
+  // Keep only last 7 days of records
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const trimmed = records.filter(r => r.surfacedAt > cutoff);
+  localStorage.setItem(SKIP_STORAGE_KEY, JSON.stringify(trimmed));
+}
+
+/** Record that an article was surfaced (visible in viewport). */
+export function recordSurfaced(articleId: string, category: string): void {
+  const records = loadSkipRecords();
+  if (records.some(r => r.articleId === articleId)) return;
+  records.push({ articleId, category, surfacedAt: Date.now() });
+  saveSkipRecords(records);
+}
+
+/**
+ * Get skip penalty for a category based on surfaced-but-not-clicked articles.
+ * - Surfaced > 1h without click: -0.2
+ * - Surfaced > 24h without click: -0.4
+ * Uses 7-day decay.
+ */
+export function getSkipPenalty(category: string, readArticleIds: Set<string>): number {
+  const records = loadSkipRecords();
+  const now = Date.now();
+  const SKIP_HALF_LIFE = 7;
+
+  let penalty = 0;
+  for (const r of records) {
+    if (r.category !== category) continue;
+    if (readArticleIds.has(r.articleId)) continue;
+
+    const elapsed = now - r.surfacedAt;
+    if (elapsed < SKIP_SHORT_THRESHOLD) continue;
+
+    const daysSince = elapsed / (1000 * 60 * 60 * 24);
+    const decay = Math.pow(0.5, daysSince / SKIP_HALF_LIFE);
+    const weight = elapsed > SKIP_LONG_THRESHOLD ? -0.4 : -0.2;
+    penalty += weight * decay;
+  }
+
+  return Math.max(penalty, -1.0);
+}
+
 export function getCategoryDistribution(): Record<string, number> {
   const profile = loadProfile();
   const total = profile.totalReadsAllTime || 1;

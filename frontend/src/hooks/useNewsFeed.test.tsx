@@ -49,6 +49,17 @@ vi.mock('../services/api', () => ({
   scoreArticles: vi.fn().mockResolvedValue([]),
   annotateArticles: vi.fn().mockResolvedValue([]),
   summarizeProfile: vi.fn().mockResolvedValue({ narrative: '', topics: [] }),
+  embedTexts: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../services/profileSummarizer', () => ({
+  getProfileEmbedding: vi.fn().mockResolvedValue(null),
+  getArticleEmbeddings: vi.fn().mockResolvedValue(new Map()),
+  cosineSimilarity: vi.fn().mockReturnValue(0),
+}));
+
+vi.mock('../pages/InterestProfile', () => ({
+  getExplorationSlots: vi.fn().mockReturnValue(4),
 }));
 
 const useTodosMock = vi.fn();

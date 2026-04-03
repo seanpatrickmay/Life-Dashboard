@@ -144,6 +144,9 @@ export function PageShell({ children }: PropsWithChildren) {
           <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/news">
             News
           </NavLink>
+          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/news/profile" style={{ opacity: 0.5, fontSize: '0.85em' }}>
+            Profile
+          </NavLink>
           <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/ai-digest">
             AI Digest
           </NavLink>

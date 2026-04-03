@@ -1,9 +1,10 @@
-import { useMemo, useState, useCallback } from 'react';
-import styled from 'styled-components';
+import { useMemo, useState, useCallback, useRef } from 'react';
+import styled, { keyframes, useTheme } from 'styled-components';
 import { Link } from 'react-router-dom';
 
 import { Card } from '../components/common/Card';
 import { QualityFeedback, shouldShowFeedback, recordFeedbackRead } from '../components/news/QualityFeedback';
+import { useSkipTracking } from '../hooks/useSkipTracking';
 import { useNewsFeed } from '../hooks/useNewsFeed';
 import {
   CATEGORY_LABELS,
@@ -27,7 +28,56 @@ const CATEGORY_COLORS: Record<Category, string> = {
   wikipedia: 'rgba(200, 200, 200, 0.85)',
 };
 
+// 15% desaturated for dark mode to reduce eye fatigue
+const CATEGORY_COLORS_DARK: Record<Category, string> = {
+  tech: 'rgba(140, 180, 235, 0.72)',
+  science: 'rgba(145, 205, 180, 0.72)',
+  world: 'rgba(235, 180, 140, 0.72)',
+  culture: 'rgba(205, 170, 235, 0.72)',
+  history: 'rgba(235, 205, 145, 0.72)',
+  business: 'rgba(180, 195, 220, 0.72)',
+  wikipedia: 'rgba(195, 195, 195, 0.72)',
+};
+
+/* ─── Helpers ─────────────────────────────────── */
+
+function BriefingSubtitle({ picks }: { picks: NewsArticle[] }) {
+  const topCategories = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const p of picks) {
+      counts[p.category] = (counts[p.category] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([cat]) => CATEGORY_LABELS[cat as Category] || cat);
+  }, [picks]);
+
+  if (topCategories.length === 0) return null;
+  return (
+    <SubtitleLine>Focused on {topCategories.join(' and ').toLowerCase()} today</SubtitleLine>
+  );
+}
+
 /* ─── Styled components ───────────────────────── */
+
+const saveSpring = keyframes`
+  0% { transform: scale(1); }
+  50% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+`;
+
+const dismissSlide = keyframes`
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(24px); }
+`;
+
+const SubtitleLine = styled.span`
+  font-size: 0.72rem;
+  font-style: italic;
+  letter-spacing: 0.04em;
+  opacity: 0.35;
+`;
 
 const Page = styled.div`
   display: flex;
@@ -121,6 +171,10 @@ const HeroCard = styled(Card)`
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   text-decoration: none;
   color: inherit;
+  ${({ theme }) => (theme as any).mode === 'dark' ? `
+    background: rgba(246, 240, 232, 0.08);
+    border-color: rgba(246, 240, 232, 0.12);
+  ` : ''}
 
   &:hover {
     transform: translateY(-2px);
@@ -218,14 +272,19 @@ const PickTitle = styled.div`
   overflow: hidden;
 `;
 
-const PickSummary = styled.div`
+const PickSummary = styled.div<{ $expanded?: boolean }>`
   font-size: 0.75rem;
   line-height: 1.45;
   opacity: 0.45;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  ${({ $expanded }) => $expanded ? '' : `
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  `}
+  cursor: pointer;
+  transition: max-height 0.25s ease-out;
+  ${reducedMotion}
 `;
 
 const PickMeta = styled.div`
@@ -267,6 +326,8 @@ const IconButton = styled.button<{ $active?: boolean }>`
     $active ? (theme.palette?.pond?.['200'] ?? '#7ED7C4') : 'inherit'};
   transition: opacity 0.15s ease, color 0.15s ease;
   border-radius: 4px;
+  ${({ $active }) => $active ? `animation: ${saveSpring} 0.2s ease-out;` : ''}
+  ${reducedMotion}
 
   &:hover {
     opacity: 0.8;
@@ -470,16 +531,23 @@ export function NewsPage() {
   } = useNewsFeed();
 
   const annotations = annotationsQuery.data ?? {};
+  const theme = useTheme();
+  const catColors = (theme as any).mode === 'dark' ? CATEGORY_COLORS_DARK : CATEGORY_COLORS;
 
   const [moreOpen, setMoreOpen] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackArticle, setFeedbackArticle] = useState<NewsArticle | null>(null);
+  const [expandedCard, setExpandedCard] = useState<string | null>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
 
   const curated = curatedQuery.data;
   const picks = curated?.picks ?? [];
   const more = curated?.more ?? [];
   const saved = curated?.saved ?? [];
+
+  // Track which articles are visible for skip signal detection
+  useSkipTracking(picks, pageRef);
 
   const hero = picks[0] ?? null;
   const restPicks = picks.slice(1);
@@ -524,11 +592,12 @@ export function NewsPage() {
   }
 
   return (
-    <Page>
+    <Page ref={pageRef}>
       {/* ─── Header ─────────────────────────────── */}
       <TopBar>
         <TitleGroup>
           <Title data-halo="heading">Today's Briefing</Title>
+          <BriefingSubtitle picks={picks} />
           <DateLine>{formatDate()}</DateLine>
         </TitleGroup>
         <ActionGroup>
@@ -571,10 +640,11 @@ export function NewsPage() {
             href={hero.url}
             target="_blank"
             rel="noopener noreferrer"
+            data-article-id={hero.id}
             onClick={() => handleArticleClick(hero.id)}
           >
             <HeroMeta>
-              <SourcePill $color={CATEGORY_COLORS[hero.category]}>
+              <SourcePill $color={catColors[hero.category]}>
                 {CATEGORY_LABELS[hero.category]}
               </SourcePill>
               <HeroTimeAgo>
@@ -605,7 +675,7 @@ export function NewsPage() {
           {restPicks.length > 0 && (
             <PicksGrid>
               {restPicks.map(article => {
-                const color = CATEGORY_COLORS[article.category];
+                const color = catColors[article.category];
                 return (
                   <PickCard
                     key={article.id}
@@ -613,12 +683,18 @@ export function NewsPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     $borderColor={color}
+                    data-article-id={article.id}
                     onClick={() => handleArticleClick(article.id)}
                   >
                     <PickTitle data-halo="body">{article.title}</PickTitle>
                     {annotations[article.id] && <Annotation>{annotations[article.id]}</Annotation>}
                     {article.summary && (
-                      <PickSummary>{article.summary}</PickSummary>
+                      <PickSummary
+                        $expanded={expandedCard === article.id}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setExpandedCard(prev => prev === article.id ? null : article.id); }}
+                      >
+                        {article.summary}
+                      </PickSummary>
                     )}
                     <PickMeta>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -669,7 +745,7 @@ export function NewsPage() {
                 <CollapsibleInner>
                   <MoreList>
                     {more.map(article => {
-                      const color = CATEGORY_COLORS[article.category];
+                      const color = catColors[article.category];
                       return (
                         <MoreRow
                           key={article.id}
@@ -715,7 +791,7 @@ export function NewsPage() {
                 <CollapsibleInner>
                   <SavedList>
                     {saved.map(article => {
-                      const color = CATEGORY_COLORS[article.category];
+                      const color = catColors[article.category];
                       return (
                         <MoreRow
                           key={article.id}
