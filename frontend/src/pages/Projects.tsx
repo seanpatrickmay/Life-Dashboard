@@ -14,6 +14,7 @@ import {
   type ProjectItem,
   type ProjectActivity,
 } from '../services/api';
+import { ProjectRelatedReading } from '../components/projects/ProjectRelatedReading';
 
 /* ═══════════════════════════════════════════════════════════════════════
    Animations
@@ -761,6 +762,15 @@ export function ProjectsPage() {
                   )}
                 </StateCard>
               </Section>
+            )}
+
+            {/* Related Reading */}
+            {activeProject && (
+              <ProjectRelatedReading
+                projectName={activeProject.display_name || activeProject.name}
+                recentFocus={state?.recent_focus}
+                todoTexts={openTodos.map(t => t.text)}
+              />
             )}
 
             {/* Todos */}
