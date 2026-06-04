@@ -1,0 +1,9 @@
+{
+  "name": "life-dashboard-infra",
+  "version": "1.0.0",
+  "description": "CDK infrastructure for Life Dashboard serverless migration",
+  "devDependencies": {
+    "aws-cdk": "^2",
+    "aws-cdk-local": "^2"
+  }
+}
