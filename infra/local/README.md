@@ -136,3 +136,147 @@ make local-down
 | `GARMIN_PASSWORD_ENCRYPTION_KEY` | API Lambda, migrate | required by Settings |
 | `OPENAI_API_KEY` | API Lambda (optional) | can be a dummy value for smoke |
 | `LD_RUNTIME` | bootstrap | omit (or set to `local`) to skip SQS validation |
+
+---
+
+## Task 5.7 — Frontend build + S3 static hosting + CloudFront-parity reverse proxy
+
+This section documents the local proof of the production hosting model: the React/Vite SPA
+is built as static files, served from S3, and `/api/*` is routed to the API — all
+same-origin.
+
+### API base URL — why `VITE_API_BASE_URL` must be empty (or unset)
+
+The axios client in `frontend/src/services/api.ts` uses `resolveApiBaseUrl()`:
+
+```ts
+const baseURL = resolveApiBaseUrl();   // reads VITE_API_BASE_URL at build time
+
+export const api = axios.create({ baseURL, ... });
+```
+
+Every API call in the file uses route paths that **already include the `/api` prefix**:
+
+```ts
+api.get('/api/auth/me')
+api.get('/api/garmin/status')
+api.post('/api/todos', payload)
+```
+
+Axios concatenates `baseURL + path`. For same-origin routing the result must be `/api/...`
+(relative). That requires `baseURL = ''`.
+
+`resolveApiBaseUrl()` returns `''` only when:
+- `VITE_API_BASE_URL` is unset or empty **and** `window.location.hostname` is NOT
+  `localhost`/`127.0.0.1` — in which case it returns `location.origin` (which yields
+  `https://myapp.com` + `/api/...` = same-origin). ✓ correct for prod.
+
+For the **local static build** (served via the Caddy proxy on `:8090`, not `localhost:4173`
+dev server), the same logic applies: when `VITE_API_BASE_URL` is empty and the page is
+accessed via a non-localhost origin (e.g. the proxy), Axios routes to `origin + /api/...`.
+
+**Build command:**
+
+```bash
+cd frontend && VITE_API_BASE_URL= npm run build
+```
+
+Or equivalently, omit `VITE_API_BASE_URL` entirely — the default code-path for
+non-localhost origins is identical.
+
+The built `dist/index.html` loads assets from absolute `/assets/...` paths — those are
+served correctly by any origin-preserving proxy (Caddy, CloudFront).
+
+### Step 1 — Build the frontend
+
+```bash
+# From repo root
+cd frontend && VITE_API_BASE_URL= npm run build
+# Produces frontend/dist/index.html + assets/
+```
+
+`frontend/dist` is gitignored and is never committed.
+
+### Step 2 — Upload to LocalStack S3
+
+Bring up LocalStack first:
+
+```bash
+make local-up
+```
+
+Create bucket, enable website hosting, upload:
+
+```bash
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION=us-east-1
+export AWS_ENDPOINT_URL=http://localhost:4566
+
+aws s3 mb s3://ld-frontend-test
+aws s3api put-bucket-website --bucket ld-frontend-test \
+  --website-configuration '{"IndexDocument":{"Suffix":"index.html"},"ErrorDocument":{"Key":"index.html"}}'
+aws s3api put-bucket-acl --bucket ld-frontend-test --acl public-read
+aws s3 sync frontend/dist s3://ld-frontend-test --acl public-read
+```
+
+Verify directly (S3 website endpoint — returns `index.html` 200):
+
+```bash
+curl -si "http://ld-frontend-test.s3-website.localhost.localstack.cloud:4566/" | head -5
+# → HTTP/1.1 200 OK  +  <!doctype html> ...
+```
+
+Path-style access also works:
+
+```bash
+curl -si "http://localhost:4566/ld-frontend-test/index.html" | head -5
+# → HTTP/1.1 200 OK
+```
+
+### Step 3 — CloudFront-parity reverse proxy (Caddy)
+
+`infra/local/Caddyfile.local` defines a Caddy server on `:8090` that mirrors the two
+EdgeStack CloudFront behaviors:
+
+| CloudFront behavior (prod) | Local proxy behavior |
+|---|---|
+| Default (`/*`) → S3 website origin | `/` → LocalStack S3 bucket website |
+| `/api/*` → API GW execute-api origin | `/api/*` → LocalStack API Gateway |
+
+Run the proxy (must be on the same Docker network as LocalStack):
+
+```bash
+docker run --rm -p 8090:8090 \
+  -v "$(pwd)/infra/local/Caddyfile.local:/etc/caddy/Caddyfile:ro" \
+  --network life-dashboard-local_default \
+  caddy:2
+```
+
+Test the static leg:
+
+```bash
+curl -si http://localhost:8090/
+# → HTTP/1.1 200 OK  Via: 1.1 Caddy  +  <!doctype html>...Life Dashboard
+```
+
+The `/api/*` leg routes to LocalStack API Gateway. After `make local-deploy` the Gateway
+URL can be passed via `APIGW_URL`:
+
+```bash
+docker run --rm -p 8090:8090 \
+  -e APIGW_URL=http://localstack:4566/restapis/<id>/local/_user_request_ \
+  -v "$(pwd)/infra/local/Caddyfile.local:/etc/caddy/Caddyfile:ro" \
+  --network life-dashboard-local_default \
+  caddy:2
+```
+
+The `/api/*` routing rule is the key parity claim; the Gateway → Lambda path was proven
+live in Task 5.1 (GET /health returned 200 via API GW → Lambda).
+
+### Teardown
+
+```bash
+docker rm -f ld_caddy_proxy  # if running named
+make local-down              # removes LocalStack + volumes
+```
