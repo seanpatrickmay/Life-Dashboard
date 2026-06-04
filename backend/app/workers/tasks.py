@@ -80,6 +80,22 @@ def _build_status(row: JobRun, *, job_started: bool, cooldown: timedelta, messag
 # Job handlers (registered with @job so InlineJobQueue and SqsJobQueue both run them)
 # ---------------------------------------------------------------------------
 
+async def run_metrics_refresh(session: AsyncSession, user_id: int, lookback_days: int) -> None:
+    """Core metrics/goals/insight pipeline shared by job handlers and scheduled Lambda.
+
+    Runs ingest → recompute_goals → commit → (conditional) refresh_daily_insight.
+    The *session* is managed by the caller; this function does NOT open or close it.
+    """
+    metrics = MetricsService(session)
+    insight = InsightService(session)
+    goals = NutritionGoalsService(session)
+    summary = await metrics.ingest(user_id=user_id, lookback_days=lookback_days)
+    await goals.recompute_goals(user_id=user_id)
+    await session.commit()
+    if _should_refresh_insight(summary):
+        await insight.refresh_daily_insight(user_id=user_id)
+
+
 @job("visit_refresh")
 async def _handle_visit_refresh(payload: dict) -> None:
     """Run the visit-triggered metrics/goals/insight pipeline."""
@@ -87,14 +103,7 @@ async def _handle_visit_refresh(payload: dict) -> None:
     error: str | None = None
     try:
         async with AsyncSessionLocal() as session:
-            metrics = MetricsService(session)
-            insight = InsightService(session)
-            goals = NutritionGoalsService(session)
-            summary = await metrics.ingest(user_id=user_id, lookback_days=14)
-            await goals.recompute_goals(user_id=user_id)
-            await session.commit()
-            if _should_refresh_insight(summary):
-                await insight.refresh_daily_insight(user_id=user_id)
+            await run_metrics_refresh(session, user_id=user_id, lookback_days=14)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Visit-triggered refresh failed: {}", exc)
         error = str(exc)
