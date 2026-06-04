@@ -232,13 +232,14 @@ def test_factory_dynamodb_when_selected(monkeypatch):
 def test_factory_dynamodb_uses_table_name(monkeypatch):
     """DynamoKVStore exposes the table name used to construct it.
 
-    pydantic-settings v2 reads DYNAMODB_KV_TABLE (the field name uppercased)
-    rather than the deprecated Field(env='LD_DDB_KV_TABLE') kwarg.
+    The correct env var is LD_DDB_KV_TABLE (mapped via validation_alias).
+    The old Field(env='LD_DDB_KV_TABLE') kwarg was silently ignored by
+    pydantic-settings v2 — that bug has been fixed.
     """
     from app.kv.kv_store import DynamoKVStore
 
     monkeypatch.setenv("LD_KV_STORE", "dynamodb")
-    monkeypatch.setenv("DYNAMODB_KV_TABLE", "my-kv-table")
+    monkeypatch.setenv("LD_DDB_KV_TABLE", "my-kv-table")
 
     store = get_kv_store()
     assert isinstance(store, DynamoKVStore)
