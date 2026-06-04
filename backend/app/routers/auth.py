@@ -53,6 +53,15 @@ OAUTH_REDIRECT_COOKIE = "ld_oauth_redirect"
 OAUTH_REMEMBER_COOKIE = "ld_oauth_remember"
 
 
+def _client_ip(request: Request) -> str:
+    # Behind API Gateway/CloudFront the viewer IP is in X-Forwarded-For (set by the edge).
+    # Leftmost is the original client. Best-effort for a single-user app; not a security boundary.
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def _safe_redirect(target: str | None) -> str:
     if not target:
         return settings.frontend_url
@@ -90,7 +99,7 @@ async def google_login(
     redirect: str | None = Query(None),
     remember_me: bool = Query(False),
 ) -> Response:
-    await _check_rate_limit(request.client.host if request.client else "unknown")
+    await _check_rate_limit(_client_ip(request))
     state = secrets.token_urlsafe(24)
     redirect_url = _safe_redirect(redirect)
     response = RedirectResponse(url=_google_auth_url(state))
@@ -208,7 +217,7 @@ async def google_callback(
     stored_redirect: str | None = Cookie(None, alias=OAUTH_REDIRECT_COOKIE),
     stored_remember: str | None = Cookie(None, alias=OAUTH_REMEMBER_COOKIE),
 ) -> Response:
-    await _check_rate_limit(request.client.host if request.client else "unknown")
+    await _check_rate_limit(_client_ip(request))
     redirect_url = _safe_redirect(stored_redirect)
     if error:
         return RedirectResponse(url=f"{redirect_url}?auth_error={error}")
