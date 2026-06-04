@@ -275,16 +275,12 @@ VITE_API_BASE_URL= npm run build
 # Produces frontend/dist/
 ```
 
-The `EdgeStack` `BucketDeployment` construct already syncs `frontend/dist` to the
-frontend S3 bucket and invalidates CloudFront on every `cdk deploy LifeDash-Edge`.
-You can re-run just the Edge stack:
-
-```bash
-cd infra
-npx cdk deploy LifeDash-Edge
-```
-
-Or manually sync and invalidate:
+**The frontend is uploaded out-of-band via `aws s3 sync` + a CloudFront invalidation** (NOT a
+CDK `BucketDeployment`). EdgeStack intentionally omits `BucketDeployment`: in aws-cdk-lib 2.150
+its custom-resource Lambda runs an AWS CLI layer whose `urllib3` uses PEP 604 `X | Y` typing,
+which crashes on the Lambda's Python<3.10 runtime
+(`TypeError: unsupported operand type(s) for |`). A plain `s3 sync` (run with your own creds, no
+Lambda) is more robust. Sync and invalidate:
 
 ```bash
 FRONTEND_BUCKET=$(aws cloudformation describe-stacks \

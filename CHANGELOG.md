@@ -209,6 +209,29 @@ account to complete criterion 3 live).
 
 ---
 
+## LIVE DEPLOYMENT — real AWS ✅ (2026-06-04)
+
+Deployed to AWS account **650516323474** (us-east-1) via the `seanmay` CLI profile. **App is live at
+https://d2txkslflj6cu8.cloudfront.net** and verified end-to-end.
+
+- `cdk bootstrap` (qualifier `lifedash`) + `cdk deploy --all` → Foundation, Compute, DataJobs succeeded;
+  the arm64 image built + pushed to ECR natively (Apple Silicon, no QEMU).
+- **EdgeStack fix:** the initial Edge deploy failed — CDK 2.150's `BucketDeployment` custom-resource
+  Lambda crashes (`urllib3` PEP 604 `X | Y` on its Python<3.10 runtime). **Removed `BucketDeployment`**;
+  frontend now uploaded via `aws s3 sync` + CloudFront invalidation (runbook updated). Edge redeployed OK.
+- Secrets Manager `life-dashboard/app` populated from `.env` (15 keys; `APP_ENV=prod`; `FRONTEND_URL` +
+  `GOOGLE_REDIRECT_URI_PROD` → the CloudFront domain).
+- **Fargate migrate task** ran against live Neon → `existing DB detected → upgrade head` (additive
+  `garmin_token` + `job_run`), admin seeded (`maypatricksean@gmail.com`). Exit 0.
+- **Verified:** `/health`→200, `/api/auth/me`→200 `{"user":null}` (via API GW AND via CloudFront `/api/*`);
+  `/`→200 SPA; hashed assets→200.
+- **REMAINING (user-only):** add `https://d2txkslflj6cu8.cloudfront.net/api/auth/google/callback` to the
+  Google Cloud Console OAuth authorized redirect URIs (Google login won't complete until then).
+- **Hardening reminders:** deployed with ROOT access keys (switch to a scoped IAM principal); rotate the
+  `.env`-sourced secrets if exposure is suspected; see the runbook "Hardening (post-MVP)" section.
+
+---
+
 ## Carry-forward / known issues (MUST address in later phases)
 
 1. **Migration chain is NOT replayable on a fresh DB** (pre-existing, discovered in Task 1.3).
