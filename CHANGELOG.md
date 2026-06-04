@@ -88,6 +88,25 @@ KVStore→DynamoDB, SecretsProvider, JobQueue→SQS, job_run throttle), defaults
 
 ---
 
+## Phase 3 — Container image ✅ (DONE)
+
+Commit `26f858a`. One Lambda-base image (`public.ecr.aws/lambda/python:3.11`), four entrypoints.
+
+**What was done:**
+- `backend/Dockerfile.lambda` (context=`backend/`): `poetry install --only main` into the base image, COPY `app`/`migrations`/`alembic.ini`, default `CMD ["app.aws.api_handler.handler"]`. `backend/.dockerignore` excludes tests/caches.
+- **Regenerated `backend/poetry.lock`** — it was stale vs pyproject (boto3/mangum/moto added in Phases 1-2 weren't locked); the first build silently skipped app packages until relocked.
+- Smoke-proven locally: (a) **RIE `/health` → `{"statusCode":200,"body":"{\"status\":\"ok\"}"}`** (cold start ~2.1s); (b) **migrate via `docker run --entrypoint python ... -m app.aws.migrate`** against local PG — fresh (create_all+stamp) then existing (upgrade no-op), both exit 0, `garmin_token`+`job_run` present. The entrypoint override is exactly what the Fargate task does.
+- Image size ~1.47 GB (well under Lambda's 10 GB container limit).
+- Entrypoint selection: API=default CMD; scheduled=`app.aws.scheduled_handler.{garmin_ingest,rss_digest}`; worker=`app.aws.worker_handler.handler`; migrate=entrypoint override `python -m app.aws.migrate`.
+
+**Carry-forward to Phase 4:** built arm64 on this Mac — CDK `DockerImageAsset`/`platform` must pin the target arch (Lambda `architecture` + Fargate `runtimePlatform` must match the image). The migrate task env must include `DATABASE_URL`, `FRONTEND_URL`, `GARMIN_PASSWORD_ENCRYPTION_KEY` (Settings requires them) in addition to `DATABASE_URL_MIGRATIONS`.
+
+**Gate:** image builds; RIE smoke 200; migrate docker both paths; 589 tests green.
+
+**Next:** Phase 4 — CDK stacks (Foundation, Compute, Edge, DataJobs) + cdk-nag.
+
+---
+
 ## Carry-forward / known issues (MUST address in later phases)
 
 1. **Migration chain is NOT replayable on a fresh DB** (pre-existing, discovered in Task 1.3).
