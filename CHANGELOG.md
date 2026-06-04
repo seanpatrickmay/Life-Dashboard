@@ -38,3 +38,59 @@ Baseline at start: **417 passed, 64 deselected** (live tests), 0 failures.
 
 **Next:** Phase 1 — stateless-ify the app behind runtime-agnostic adapters (BlobStore→S3, GarminTokenStore→DB,
 KVStore→DynamoDB, SecretsProvider, JobQueue→SQS, job_run throttle), defaults preserving EC2 behavior.
+
+---
+
+## Phase 1 — Stateless-ify the app (adapters) ✅ (DONE)
+
+**Tests: 417 → 531 passing** (114 added across the phase), 0 failures.
+
+**What was done (commits):**
+- 1.1 `7a6cb5b` BlobStore (local + S3), path-traversal guarded.
+- 1.2 `e27025d` workspace assets served via BlobStore (local bytes / S3 307 presigned), `storage_key` now a portable relative key.
+- 1.3 `a09d367` + fix `1a4584d` GarminToken DB model + encrypted store; **migration drift-guard test pattern** established (apply real migration, assert column parity). Hardened `env.py` (VARCHAR(64) alembic_version).
+- 1.4 `67fe1d1` GarminClient hydrates/persists tokens via DB through `get_client_ctx()`; legacy `dir` mode preserved; removes `/data/garmin` dependency.
+- 1.5 `bc15497` KVStore (memory + DynamoDB, TTL, fixed-window incr).
+- config fix `a74c896` **`validation_alias`** so `LD_*` env vars actually map (pydantic-settings v2 ignored `env=`).
+- 1.6 `47fbf9b` metrics cache + auth rate-limit backed by KVStore (found+fixed: old rate-limiter was a silent no-op).
+- 1.7 `cb460fb` SecretsProvider (env + Secrets Manager), env-wins, cold-start loader (wired in Phase 2).
+- 1.8 `c6e2b50` JobQueue (inline + SQS) + handler registry.
+- 1.9 `6366f0a` durable throttle `job_run` table; refresh/digest controllers DB-backed + queue-dispatched; reused drift-guard.
+- 1.10 `d53aaf5` all `BackgroundTasks`/`asyncio.create_task` sites (todos, journal, insights, workspace×4, projects) → JobQueue with JSON payloads; handlers in `app/jobs/handlers.py` (imported in main.py).
+- hardening `239410f` review fixes: tar `filter="data"`, `dispatch()` poison-msg handling, `is_relative_to` path guard, atomic DynamoDB `incr` (ConditionExpression), presigned `no-store`, **job_run stale-lock timeout (30min)**, Garmin persist-failure non-fatal, `populate_by_name=True`, DynamoKVStore singleton, `Settings()` consistency, +tests.
+
+**Reviews run (3 parallel agents):** security-reviewer, devils-advocate, architecture-checker. Genuine findings fixed in `239410f`. Dismissed as false positive: "models missing created_at" (they inherit from Base; drift-guard tests prove parity). Deferred (single-user-acceptable): concurrent-Garmin token clobber, pre-existing metrics aggregation in handlers, cosmetic tz defaults.
+
+**Gate:** 531 tests green; ruff 73 errors (baseline was 75 — net −2, project never ruff-clean, no CI lint gate); residual local-disk writes only the intended fallbacks (LocalBlobStore default root, legacy `garmin_tokens_dir`).
+
+**Next:** Phase 2 — AWS handlers (`app/aws/`: lazy DB engine, Mangum api_handler, scheduled_handler, worker_handler, migrate).
+
+---
+
+## Carry-forward / known issues (MUST address in later phases)
+
+1. **Migration chain is NOT replayable on a fresh DB** (pre-existing, discovered in Task 1.3).
+   `migrations/versions/20251217_initial_reset` calls `Base.metadata.create_all()` using *current*
+   models, so a clean `alembic upgrade head` later fails at `20260323_todo_time_horizon`
+   (`DuplicateColumn time_horizon`). Production Neon is unaffected (advanced incrementally), but the
+   **Fargate migration runner (Task 2.5)** and **LocalStack e2e (Phase 5)** target FRESH DBs.
+   **Decision for `app/aws/migrate.py`:** detect DB state — if `alembic_version` is empty/absent and no
+   app tables exist → `Base.metadata.create_all()` + `alembic stamp head`; if an existing revision is
+   present → `alembic upgrade head`. Do NOT rewrite the historical chain.
+2. **`env.py` was extended** in Task 1.3 to pre-create `alembic_version` as `VARCHAR(64)` +
+   `version_num_type=String(64)` (hardening for long revision ids / fresh-DB bootstrap). Keep; revisit
+   if it interacts with the migrate runner.
+3. **Model/migration drift guard pattern** (from Task 1.3 fix): new tables get a test that applies the
+   real migration (not `create_all`) and asserts column parity with the model. Reuse for `job_run`
+   (Task 1.9). ✅ done for both garmin_token and job_run.
+4. **Auth rate-limit client IP behind API Gateway/CloudFront** (from Phase 1 review). `request.client.host`
+   is the TCP peer = the API GW/CloudFront internal IP, not the real client → rate-limit becomes
+   all-one-IP. **Phase 2 (`api_handler`/`auth.py`):** derive client IP from the API GW event
+   (`requestContext.http.sourceIp`) or trusted `X-Forwarded-For` (leftmost is client-spoofable; the
+   correct value is N-from-right behind N trusted proxies). For single-user this is low-severity but wire
+   it when the API GW context is concrete.
+5. **`LD_RUNTIME=aws ⇒ LD_JOB_QUEUE=sqs` assertion** (from Phase 1 review — BLOCKING risk). InlineJobQueue
+   uses `asyncio.create_task` (fire-and-forget) which is silently dropped under Lambda. **Phase 2
+   `bootstrap.cold_start()`:** if `LD_RUNTIME=="aws"` and `LD_JOB_QUEUE!="sqs"`, raise at cold start
+   (convert silent data-loss into a loud deploy failure). Likewise consider asserting `LD_BLOB_STORE=s3`,
+   `LD_KV_STORE=dynamodb`, `LD_SECRETS=secretsmanager` under aws runtime. CDK must set all of these.
