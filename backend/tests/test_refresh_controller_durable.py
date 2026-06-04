@@ -98,6 +98,9 @@ def session():
 # 1. VisitRefreshController: running → already running → cooldown → allowed again
 # ---------------------------------------------------------------------------
 
+# NOTE: with_for_update() is a no-op on SQLite; the pessimistic-lock semantics are
+# exercised only against Postgres in the Phase 5 integration tests. These tests
+# verify the check-and-set logic, not the DB lock.
 class TestVisitRefreshControllerDurability:
     def test_first_request_starts_job(
         self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
@@ -181,6 +184,93 @@ class TestVisitRefreshControllerDurability:
 
         status4: RefreshJobStatus = run(ctrl.request_refresh(session, user_id=1))
         assert status4.job_started is True
+
+
+# ---------------------------------------------------------------------------
+# 1b. Stale-lock recovery
+# ---------------------------------------------------------------------------
+
+class TestStaleLockRecovery:
+    def test_visit_stale_lock_proceeds_after_31_minutes(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """visit_refresh: running=True with last_started_at > 30 min ago is treated as stale.
+
+        The lock should be cleared and the job re-enqueued rather than returning
+        'already running'.
+        """
+        fake_queue = FakeJobQueue()
+        monkeypatch.setattr("app.workers.tasks.get_job_queue", lambda: fake_queue)
+
+        ctrl = VisitRefreshController()
+
+        # Manually seed a stale running row
+        async def _seed_stale():
+            from app.utils.timezone import eastern_now as _en
+            stale_started_at = _en() - timedelta(minutes=31)
+            row = JobRun(id="visit_refresh", running=True, last_started_at=stale_started_at)
+            session.add(row)
+            await session.commit()
+
+        run(_seed_stale())
+
+        status = run(ctrl.request_refresh(session, user_id=1))
+
+        # Should have cleared the stale lock and started a new job
+        assert status.job_started is True, (
+            f"Expected job_started=True for stale lock recovery, got: {status}"
+        )
+        assert len(fake_queue.calls) == 1
+        assert fake_queue.calls[0] == ("visit_refresh", {"user_id": 1})
+
+    def test_visit_fresh_running_lock_is_not_cleared(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """visit_refresh: running=True with recent last_started_at must NOT be cleared."""
+        fake_queue = FakeJobQueue()
+        monkeypatch.setattr("app.workers.tasks.get_job_queue", lambda: fake_queue)
+
+        ctrl = VisitRefreshController()
+
+        # Seed a running row with a very recent start time (1 minute ago)
+        async def _seed_fresh():
+            from app.utils.timezone import eastern_now as _en
+            recent_started_at = _en() - timedelta(minutes=1)
+            row = JobRun(id="visit_refresh", running=True, last_started_at=recent_started_at)
+            session.add(row)
+            await session.commit()
+
+        run(_seed_fresh())
+
+        status = run(ctrl.request_refresh(session, user_id=1))
+
+        assert status.job_started is False
+        assert "already running" in (status.message or "").lower()
+        assert len(fake_queue.calls) == 0
+
+    def test_digest_stale_lock_proceeds_after_31_minutes(
+        self, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """digest_refresh: running=True with last_started_at > 30 min ago is treated as stale."""
+        fake_queue = FakeJobQueue()
+        monkeypatch.setattr("app.workers.tasks.get_job_queue", lambda: fake_queue)
+
+        ctrl = DigestRefreshController()
+
+        async def _seed_stale():
+            from app.utils.timezone import eastern_now as _en
+            stale_started_at = _en() - timedelta(minutes=31)
+            row = JobRun(id="digest_refresh", running=True, last_started_at=stale_started_at)
+            session.add(row)
+            await session.commit()
+
+        run(_seed_stale())
+
+        status = run(ctrl.request_refresh(session))
+
+        assert status.job_started is True
+        assert len(fake_queue.calls) == 1
+        assert fake_queue.calls[0][0] == "digest_refresh"
 
 
 # ---------------------------------------------------------------------------

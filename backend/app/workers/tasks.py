@@ -28,6 +28,11 @@ INSIGHT_FIELDS = {"hrv_avg_ms", "rhr_bpm", "sleep_seconds"}
 _VISIT_COOLDOWN = timedelta(minutes=30)
 _DIGEST_COOLDOWN = timedelta(hours=6)
 
+# Maximum time a job is expected to run. If running=True but last_started_at is
+# older than this threshold the lock is assumed stale (worker crashed before
+# finalizing). Lambda max execution time is 15 min; this is intentionally larger.
+STALE_LOCK_TIMEOUT = timedelta(minutes=30)
+
 
 @dataclass
 class RefreshJobStatus:
@@ -160,8 +165,18 @@ class VisitRefreshController:
         row = await _get_or_create_job_run(session, "visit_refresh")
 
         if row.running:
-            await session.commit()
-            return _build_status(row, job_started=False, cooldown=self._cooldown, message="Refresh already running.")
+            # Stale-lock recovery: if the worker crashed without finalizing, clear the lock.
+            stale = (
+                row.last_started_at is not None
+                and now - ensure_eastern(row.last_started_at) > STALE_LOCK_TIMEOUT
+            )
+            if not stale:
+                await session.commit()
+                return _build_status(row, job_started=False, cooldown=self._cooldown, message="Refresh already running.")
+            # Stale lock — fall through and reschedule
+            logger.warning("visit_refresh stale lock detected (started {}); clearing.", row.last_started_at)
+            row.running = False
+
         next_allowed = ensure_eastern(row.next_allowed_at) if row.next_allowed_at else None
         if next_allowed and now < next_allowed:
             await session.commit()
@@ -187,8 +202,18 @@ class DigestRefreshController:
         row = await _get_or_create_job_run(session, "digest_refresh")
 
         if row.running:
-            await session.commit()
-            return _build_status(row, job_started=False, cooldown=self._cooldown, message="Digest refresh already running.")
+            # Stale-lock recovery: if the worker crashed without finalizing, clear the lock.
+            stale = (
+                row.last_started_at is not None
+                and now - ensure_eastern(row.last_started_at) > STALE_LOCK_TIMEOUT
+            )
+            if not stale:
+                await session.commit()
+                return _build_status(row, job_started=False, cooldown=self._cooldown, message="Digest refresh already running.")
+            # Stale lock — fall through and reschedule
+            logger.warning("digest_refresh stale lock detected (started {}); clearing.", row.last_started_at)
+            row.running = False
+
         next_allowed = ensure_eastern(row.next_allowed_at) if row.next_allowed_at else None
         if not force and next_allowed and now < next_allowed:
             await session.commit()

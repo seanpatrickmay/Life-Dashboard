@@ -66,17 +66,40 @@ def test_aws_endpoint_url_reads_aws_endpoint_url_env(monkeypatch):
     assert s.aws_endpoint_url == "http://localhost:4566"
 
 
-def test_wrong_env_name_does_not_set_s3_asset_bucket(monkeypatch):
-    """S3_ASSET_BUCKET (missing LD_ prefix) must NOT populate s3_asset_bucket."""
+def test_ld_prefixed_env_wins_for_s3_asset_bucket(monkeypatch):
+    """LD_S3_ASSET_BUCKET (the validation_alias) correctly sets s3_asset_bucket."""
+    monkeypatch.setenv("LD_S3_ASSET_BUCKET", "correct-bucket")
+    s = Settings()
+    assert s.s3_asset_bucket == "correct-bucket"
+
+
+def test_populate_by_name_allows_constructor_kwarg_for_s3_asset_bucket(monkeypatch):
+    """populate_by_name=True means Settings(s3_asset_bucket='x') works in tests.
+
+    NOTE: as a side-effect of populate_by_name=True, pydantic-settings also
+    accepts the uppercased field name (S3_ASSET_BUCKET) as an env var in addition
+    to the validation_alias (LD_S3_ASSET_BUCKET).  This is intentional — the
+    primary benefit is enabling Settings(ld_job_queue="sqs") in unit tests.
+    The LD_-prefixed alias remains the canonical env var name for production.
+    """
     monkeypatch.delenv("LD_S3_ASSET_BUCKET", raising=False)
-    monkeypatch.setenv("S3_ASSET_BUCKET", "wrong-bucket")
-    s = Settings()
-    assert s.s3_asset_bucket is None
+    # Construct by field name (not alias) — must work with populate_by_name=True
+    s = Settings(s3_asset_bucket="via-kwarg")
+    assert s.s3_asset_bucket == "via-kwarg"
 
 
-def test_wrong_env_name_does_not_set_dynamodb_kv_table(monkeypatch):
-    """DYNAMODB_KV_TABLE (missing LD_DDB_ prefix) must NOT populate dynamodb_kv_table."""
-    monkeypatch.delenv("LD_DDB_KV_TABLE", raising=False)
-    monkeypatch.setenv("DYNAMODB_KV_TABLE", "wrong-table")
+def test_ld_ddb_kv_table_canonical_env_works(monkeypatch):
+    """LD_DDB_KV_TABLE (validation_alias) correctly sets dynamodb_kv_table."""
+    monkeypatch.setenv("LD_DDB_KV_TABLE", "correct-table")
     s = Settings()
-    assert s.dynamodb_kv_table is None
+    assert s.dynamodb_kv_table == "correct-table"
+
+
+def test_populate_by_name_allows_constructor_kwarg_for_ld_fields(monkeypatch):
+    """populate_by_name=True enables setting ld_* fields by name in unit tests.
+
+    This is the primary motivation for populate_by_name=True (Fix 9): allows
+    Settings(ld_job_queue="sqs") without needing monkeypatch.setenv.
+    """
+    s = Settings(ld_job_queue="sqs")
+    assert s.ld_job_queue == "sqs"

@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 
 import boto3
 import pytest
@@ -185,9 +184,40 @@ async def test_dispatch_missing_payload_defaults_to_empty(isolated_registry):
 
 
 @pytest.mark.asyncio
-async def test_dispatch_unknown_name_raises(isolated_registry):
-    with pytest.raises(KeyError):
-        await dispatch({"name": "dispatch_test_unknown_xyz", "payload": {}})
+async def test_dispatch_unknown_name_no_ops(isolated_registry):
+    """dispatch() with an unknown job name discards the message (no exception).
+
+    Poison-message handling: unknown job names must not cause infinite SQS retry
+    loops.  The error is logged but the call returns normally.
+    """
+    # Must NOT raise — the message is discarded (logged) so SQS won't retry forever
+    result = await dispatch({"name": "dispatch_test_unknown_xyz", "payload": {}})
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_dispatch_missing_name_no_ops(isolated_registry):
+    """dispatch() with no 'name' key discards the message (no exception)."""
+    result = await dispatch({"payload": {"k": 1}})
+    assert result is None
+
+    result2 = await dispatch({})
+    assert result2 is None
+
+
+@pytest.mark.asyncio
+async def test_dispatch_handler_exception_propagates(isolated_registry):
+    """dispatch() must re-raise exceptions from the handler itself.
+
+    Handler errors should propagate so SQS can retry / route to DLQ.
+    """
+
+    @job("dispatch_test_raises")
+    async def _explode(payload: dict) -> None:
+        raise ValueError("handler exploded")
+
+    with pytest.raises(ValueError, match="handler exploded"):
+        await dispatch({"name": "dispatch_test_raises", "payload": {}})
 
 
 # ---------------------------------------------------------------------------

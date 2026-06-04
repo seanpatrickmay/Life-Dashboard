@@ -33,12 +33,14 @@ every read, treating items whose ``expires_at <= int(_now())`` as absent.
 Native TTL is present on items only for eventual storage cleanup — never for
 correctness.
 
-Race note (DynamoDB incr)
---------------------------
+Race note (DynamoDB incr — fresh-window path)
+---------------------------------------------
 ``DynamoKVStore.incr`` uses a read-then-write pattern: read to decide if the
 window expired, then either ``put_item`` (fresh window) or ``update_item ADD``
-(existing window).  A small TOCTOU race exists for concurrent callers; this is
-acceptable for a single-user application.
+(existing window).  The fresh-window ``put_item`` uses
+``ConditionExpression="attribute_not_exists(pk)"`` to close the TOCTOU race:
+if two callers simultaneously decide the window is new, only one write wins;
+the loser falls through to the atomic ``update_item ADD`` path.
 """
 from __future__ import annotations
 
@@ -47,6 +49,8 @@ import asyncio
 import functools
 import time
 from typing import TYPE_CHECKING
+
+from botocore.exceptions import ClientError
 
 from app.core.config import Settings
 
@@ -221,11 +225,15 @@ class DynamoKVStore(KVStore):
 
         Strategy:
         1. Read the current item.
-        2. If missing or expired → put_item with count=1 and a fresh expires_at.
-        3. If active → update_item with ADD to increment atomically.
+        2. If missing or expired → put_item with count=1 and a fresh expires_at,
+           using ``ConditionExpression="attribute_not_exists(pk)"`` to close the
+           TOCTOU race atomically.  If the condition fails (another caller won the
+           race), fall through to step 3.
+        3. If active (or race-lost on fresh window) → update_item with ADD to
+           increment atomically, preserving the existing expires_at (fixed window).
 
-        A small TOCTOU race exists between the read and write (step 2→3).
-        Acceptable for a single-user application.
+        Expiry is always checked explicitly (``expires_at <= now``) because
+        DynamoDB's native TTL deletion is eventually consistent.
         """
         response = await self._run(
             self._table.get_item,
@@ -237,15 +245,21 @@ class DynamoKVStore(KVStore):
         if item is None or (
             item.get("expires_at") is not None and now_int >= int(item["expires_at"])
         ):
-            # Fresh window
+            # Fresh window — write atomically to avoid TOCTOU race
             new_expires_at = now_int + ttl_seconds
-            await self._run(
-                self._table.put_item,
-                Item={"pk": key, "value": "1", "expires_at": new_expires_at},
-            )
-            return 1
+            try:
+                await self._run(
+                    self._table.put_item,
+                    Item={"pk": key, "value": "1", "expires_at": new_expires_at},
+                    ConditionExpression="attribute_not_exists(pk)",
+                )
+                return 1
+            except ClientError as exc:
+                if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                    raise
+                # Another caller won the race — fall through to ADD below
 
-        # Active window — increment atomically, preserving expires_at
+        # Active window (or race-lost fresh window) — increment atomically, preserving expires_at
         result = await self._run(
             self._table.update_item,
             Key={"pk": key},
@@ -259,10 +273,11 @@ class DynamoKVStore(KVStore):
 
 
 # ---------------------------------------------------------------------------
-# Singleton for MemoryKVStore (process-wide in-proc cache/rate-limiter state)
+# Singletons for process-wide cache/rate-limiter state
 # ---------------------------------------------------------------------------
 
 _memory_instance: MemoryKVStore | None = None
+_dynamo_instance: DynamoKVStore | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -277,15 +292,17 @@ def get_kv_store() -> KVStore:
     in tests is honoured (the module-level ``settings`` singleton is
     ``lru_cache``'d and would not see env changes applied after import).
 
-    In ``memory`` mode (the default) the same ``MemoryKVStore`` instance is
-    returned on every call within a process so that the metrics cache and
-    rate-limiter accumulate state correctly across requests.
+    In both ``memory`` and ``dynamodb`` modes the same instance is returned on
+    every call within a process so that the metrics cache and rate-limiter
+    accumulate state correctly across requests.
     """
-    global _memory_instance
+    global _memory_instance, _dynamo_instance
 
     s = Settings()
     if s.ld_kv_store == "dynamodb":
-        return DynamoKVStore(s.dynamodb_kv_table or "")
+        if _dynamo_instance is None:
+            _dynamo_instance = DynamoKVStore(s.dynamodb_kv_table or "")
+        return _dynamo_instance
 
     # Memory mode — return (or create) the process-wide singleton
     if _memory_instance is None:

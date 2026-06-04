@@ -27,7 +27,9 @@ import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from app.core.config import settings
+from loguru import logger
+
+from app.core.config import Settings
 from app.core.crypto import decrypt_secret, encrypt_secret
 from app.db.models.garmin_token import GarminToken
 
@@ -66,7 +68,7 @@ async def hydrate_dir(session: object, user_id: int) -> str | None:
     raw = base64.b64decode(decrypt_secret(row.encrypted_blob))
     out = tempfile.mkdtemp(prefix="garmin_tok_")
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r") as tar:
-        tar.extractall(out)  # noqa: S202 — archive is our own encrypted data
+        tar.extractall(out, filter="data")  # noqa: S202 — archive is our own encrypted data
     return out
 
 
@@ -80,7 +82,7 @@ async def garmin_token_dir(session: object, user_id: int):
     dir mode (legacy): yield None so GarminClient uses its filesystem
     auto-discovery path.
     """
-    if settings.ld_garmin_tokens != "db":
+    if Settings().ld_garmin_tokens != "db":
         yield None
         return
 
@@ -90,6 +92,11 @@ async def garmin_token_dir(session: object, user_id: int):
     try:
         yield token_dir
         # persist whatever the client wrote/refreshed (idempotent re-encrypt+upsert)
-        await save_dir(session, user_id, token_dir)
+        try:
+            await save_dir(session, user_id, token_dir)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to persist Garmin tokens for user {}: {}", user_id, exc)
+            # Do NOT re-raise: a token-persist failure must not fail the already-successful caller.
+            # garth will re-auth on the next run.
     finally:
         shutil.rmtree(token_dir, ignore_errors=True)

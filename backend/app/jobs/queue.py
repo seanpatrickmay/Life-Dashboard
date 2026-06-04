@@ -28,6 +28,8 @@ import asyncio
 import functools
 import json
 
+from loguru import logger
+
 from app.core.config import Settings
 from app.jobs.registry import get_handler
 
@@ -73,8 +75,21 @@ async def dispatch(body: dict) -> None:
     """Run the registered handler for a ``{name, payload}`` message.
 
     Used as the entry-point for the worker Lambda when it receives an SQS event.
+
+    Malformed or unknown messages are discarded (logged, not re-raised) to avoid
+    infinite SQS retry loops.  Genuine handler exceptions DO propagate so SQS can
+    retry / route to the DLQ.
     """
-    await get_handler(body["name"])(body.get("payload", {}))
+    name = body.get("name")
+    if not name:
+        logger.error("Job message missing 'name'; discarding: {}", body)
+        return
+    try:
+        handler = get_handler(name)
+    except KeyError:
+        logger.error("No handler registered for job {!r}; discarding", name)
+        return
+    await handler(body.get("payload", {}))   # real handler errors propagate (SQS retry/DLQ)
 
 
 def get_job_queue() -> JobQueue:

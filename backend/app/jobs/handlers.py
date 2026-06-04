@@ -48,6 +48,8 @@ async def _handle_todo_accomplishment(payload: dict) -> None:
     todo_id: int = payload["todo_id"]
     user_id: int = payload["user_id"]
     todo_text: str = payload["todo_text"]
+    if len(todo_text) > 10_000:
+        todo_text = todo_text[:10_000]
     try:
         from app.services.async_ai_service import AsyncAIService  # noqa: PLC0415
 

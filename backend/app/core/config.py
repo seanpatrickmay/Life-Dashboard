@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings pulled from environment variables."""
 
-    model_config = SettingsConfigDict(env_prefix="", case_sensitive=False)
+    model_config = SettingsConfigDict(env_prefix="", case_sensitive=False, populate_by_name=True)
 
     app_name: str = "Life Dashboard API"
     api_prefix: str = "/api"

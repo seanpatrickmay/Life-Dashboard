@@ -53,15 +53,13 @@ for key, value in _ENV_DEFAULTS.items():
 
 @pytest.fixture(autouse=True)
 def reset_kv_store_singleton() -> None:
-    """Reset the MemoryKVStore singleton before each test.
+    """Reset the KVStore singletons before each test.
 
-    The MemoryKVStore is a process-wide singleton returned by get_kv_store().
-    Without this fixture, rate-limit counters and cache entries written by one
-    test would bleed into the next test, causing flaky results.
-
-    We reset by setting ``app.kv.kv_store._memory_instance`` to ``None`` before
-    each test, which forces get_kv_store() to create a fresh MemoryKVStore on
-    its next call.
+    Both MemoryKVStore and DynamoKVStore are process-wide singletons returned
+    by get_kv_store().  Without this fixture, rate-limit counters, cache entries,
+    and DynamoDB table names written by one test would bleed into the next,
+    causing flaky results.
     """
     import app.kv.kv_store as kv_module
     kv_module._memory_instance = None
+    kv_module._dynamo_instance = None

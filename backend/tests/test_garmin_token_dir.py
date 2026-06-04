@@ -113,9 +113,13 @@ def test_db_mode_round_trip(session: AsyncSession, monkeypatch: pytest.MonkeyPat
       5. Assert the temp dir was cleaned up.
     """
     _patch_settings_crypto(monkeypatch)
+    # garmin_token_store now calls Settings() at call time; patch the class
+    # so that Settings() returns a fake with ld_garmin_tokens="db".
+    import app.services.garmin_token_store as _gts
     monkeypatch.setattr(
-        "app.services.garmin_token_store.settings",
-        type("S", (), {"ld_garmin_tokens": "db"})(),
+        _gts,
+        "Settings",
+        lambda: type("S", (), {"ld_garmin_tokens": "db"})(),
     )
 
     original_token = b'{"access_token":"original","refresh_token":"orig_rt"}'
@@ -166,9 +170,11 @@ def test_db_mode_no_existing_row(session: AsyncSession, monkeypatch: pytest.Monk
       4. After exit, hydrate and assert the file was stored.
     """
     _patch_settings_crypto(monkeypatch)
+    import app.services.garmin_token_store as _gts
     monkeypatch.setattr(
-        "app.services.garmin_token_store.settings",
-        type("S", (), {"ld_garmin_tokens": "db"})(),
+        _gts,
+        "Settings",
+        lambda: type("S", (), {"ld_garmin_tokens": "db"})(),
     )
 
     initial_token = b'{"access_token":"brand_new","refresh_token":"new_rt"}'
@@ -211,9 +217,11 @@ def test_dir_mode_yields_none_no_db_interaction(
     completely untouched.
     """
     _patch_settings_crypto(monkeypatch)
+    import app.services.garmin_token_store as _gts
     monkeypatch.setattr(
-        "app.services.garmin_token_store.settings",
-        type("S", (), {"ld_garmin_tokens": "dir"})(),
+        _gts,
+        "Settings",
+        lambda: type("S", (), {"ld_garmin_tokens": "dir"})(),
     )
 
     # Pre-seed a row for user 30 so we can confirm it is NOT modified.
@@ -242,4 +250,60 @@ def test_dir_mode_yields_none_no_db_interaction(
     still_there = run(_verify())
     assert still_there == b"original_dir_mode_token", (
         "dir mode must not modify the DB row"
+    )
+
+
+def test_exception_inside_context_propagates_and_does_not_persist(
+    session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exception raised inside garmin_token_dir: propagates, no persist, temp dir cleaned up.
+
+    This documents the contract: if the caller raises inside the context block,
+      (a) the exception propagates out of the context manager,
+      (b) the temp directory is cleaned up (finally: shutil.rmtree),
+      (c) save_dir is NOT called (the exception bypassed the save step),
+      (d) the DB row is UNCHANGED — partial/failed token state is never persisted.
+    """
+    _patch_settings_crypto(monkeypatch)
+    import app.services.garmin_token_store as _gts
+    monkeypatch.setattr(
+        _gts,
+        "Settings",
+        lambda: type("S", (), {"ld_garmin_tokens": "db"})(),
+    )
+
+    # Seed an existing token row for user 40
+    original_token = b'{"access_token":"original_40"}'
+    src_dir = _make_token_dir({"oauth2_token.json": original_token})
+    run(save_dir(session, user_id=40, token_dir=src_dir))
+
+    captured_dir: list[str] = []
+
+    async def _raise_inside() -> None:
+        async with garmin_token_dir(session, 40) as tok_dir:
+            assert tok_dir is not None
+            captured_dir.append(tok_dir)
+            # Modify the file (but this should NOT be persisted because we raise)
+            (Path(tok_dir) / "oauth2_token.json").write_bytes(b"partial-modified")
+            raise RuntimeError("deliberate test error")
+
+    # (a) exception propagates
+    with pytest.raises(RuntimeError, match="deliberate test error"):
+        run(_raise_inside())
+
+    # (b) temp dir is cleaned up
+    assert len(captured_dir) == 1
+    assert not Path(captured_dir[0]).exists(), "Temp dir must be deleted even when an exception occurred"
+
+    # (c)+(d) DB row is UNCHANGED — the original token is still there
+    async def _verify_unchanged() -> bytes | None:
+        restored = await hydrate_dir(session, 40)
+        if restored is None:
+            return None
+        return (Path(restored) / "oauth2_token.json").read_bytes()
+
+    persisted = run(_verify_unchanged())
+    assert persisted == original_token, (
+        "DB row must not be updated when an exception is raised inside garmin_token_dir"
     )

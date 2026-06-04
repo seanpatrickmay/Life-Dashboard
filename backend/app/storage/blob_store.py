@@ -29,7 +29,7 @@ class LocalBlobStore(BlobStore):
 
     def _p(self, key: str) -> Path:
         p = (self.root / key).resolve()
-        if not str(p).startswith(str(self.root.resolve())):
+        if not p.is_relative_to(self.root.resolve()):
             raise ValueError("invalid key (path traversal)")
         return p
 

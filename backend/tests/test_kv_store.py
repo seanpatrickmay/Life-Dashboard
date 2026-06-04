@@ -244,3 +244,16 @@ def test_factory_dynamodb_uses_table_name(monkeypatch):
     store = get_kv_store()
     assert isinstance(store, DynamoKVStore)
     assert store.table_name == "my-kv-table"
+
+
+def test_factory_dynamodb_singleton_same_instance(monkeypatch):
+    """Two calls to get_kv_store() in dynamodb mode must return the SAME object."""
+    from app.kv.kv_store import DynamoKVStore
+
+    monkeypatch.setenv("LD_KV_STORE", "dynamodb")
+    monkeypatch.setenv("LD_DDB_KV_TABLE", "singleton-table")
+
+    a = get_kv_store()
+    b = get_kv_store()
+    assert a is b
+    assert isinstance(a, DynamoKVStore)

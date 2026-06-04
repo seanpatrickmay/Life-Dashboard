@@ -412,7 +412,11 @@ async def get_workspace_asset_content(
     store = get_blob_store()
     presigned_url = await store.presigned_get(asset.storage_key)
     if presigned_url is not None:
-        return RedirectResponse(url=presigned_url, status_code=307)
+        return RedirectResponse(
+            url=presigned_url,
+            status_code=307,
+            headers={"Cache-Control": "private, no-store"},
+        )
     data = await store.get(asset.storage_key)
     if data is None:
         raise HTTPException(status_code=404, detail="Workspace asset file missing")
