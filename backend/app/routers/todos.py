@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -11,7 +11,8 @@ from app.db.repositories.project_repository import ProjectRepository, TodoProjec
 from app.db.repositories.todo_repository import TodoRepository
 from app.db.session import get_session
 from app.db.models.entities import User
-from app.routers._shared import build_todo_response, run_project_suggestions
+from app.jobs.queue import get_job_queue
+from app.routers._shared import build_todo_response
 from app.schemas.todos import (
   TodoCreateRequest,
   TodoAssistantMessageRequest,
@@ -51,7 +52,6 @@ async def list_todos(
 @router.post("", response_model=TodoItemResponse)
 async def create_todo(
   payload: TodoCreateRequest,
-  background_tasks: BackgroundTasks,
   current_user: User = Depends(get_current_user),
   session: AsyncSession = Depends(get_session),
 ) -> TodoItemResponse:
@@ -75,7 +75,7 @@ async def create_todo(
     link_service = TodoCalendarLinkService(session)
     await link_service.upsert_event_for_todo(todo, time_zone=payload.time_zone)
   await session.commit()
-  background_tasks.add_task(run_project_suggestions, current_user.id, [todo.id])
+  await get_job_queue().enqueue("project_suggestions", {"user_id": current_user.id, "todo_ids": [todo.id]})
   now_utc = datetime.now(timezone.utc)
   return build_todo_response(todo, now_utc)
 
@@ -84,7 +84,6 @@ async def create_todo(
 async def update_todo(
   todo_id: int,
   payload: TodoUpdateRequest,
-  background_tasks: BackgroundTasks,
   current_user: User = Depends(get_current_user),
   session: AsyncSession = Depends(get_session),
 ) -> TodoItemResponse:
@@ -134,10 +133,12 @@ async def update_todo(
           todo.accomplishment_text = cached_accomplishment
           todo.accomplishment_generated_at_utc = datetime.now(timezone.utc)
         else:
-          # Set a placeholder and generate async
+          # Set a placeholder and generate async via job queue
           todo.accomplishment_text = f"Completed {todo.text}".strip()
-          # Schedule async generation in background
-          AsyncAIService.schedule_accomplishment_generation(todo.id, current_user.id, todo.text)
+          await get_job_queue().enqueue(
+            "todo_accomplishment",
+            {"todo_id": todo.id, "user_id": current_user.id, "todo_text": todo.text},
+          )
     elif not update_data["completed"]:
       todo.completed_local_date = None
       todo.completed_time_zone = None
@@ -157,7 +158,7 @@ async def update_todo(
     await link_service.unlink_todo(todo, delete_event=True)
   await session.commit()
   if "text" in update_data and update_data["text"] is not None:
-    background_tasks.add_task(run_project_suggestions, current_user.id, [todo.id])
+    await get_job_queue().enqueue("project_suggestions", {"user_id": current_user.id, "todo_ids": [todo.id]})
   now_utc = datetime.now(timezone.utc)
   return build_todo_response(todo, now_utc)
 
@@ -181,17 +182,17 @@ async def delete_todo(
 
 async def _assistant_todo_message(
   payload: TodoAssistantMessageRequest,
-  background_tasks: BackgroundTasks,
-  current_user: User = Depends(enforce_chat_quota),
-  session: AsyncSession = Depends(get_session),
+  current_user: User,
+  session: AsyncSession,
 ) -> TodoAssistantMessageResponse:
   agent = TodoAssistantAgent(session)
   response = await agent.respond(current_user.id, payload.message, payload.session_id)
   now_utc = datetime.now(timezone.utc)
   created_items = [build_todo_response(item, now_utc) for item in response.items]
   if response.items:
-    background_tasks.add_task(
-      run_project_suggestions, current_user.id, [item.id for item in response.items]
+    await get_job_queue().enqueue(
+      "project_suggestions",
+      {"user_id": current_user.id, "todo_ids": [item.id for item in response.items]},
     )
   return TodoAssistantMessageResponse(
     session_id=response.session_id,
@@ -204,10 +205,9 @@ async def _assistant_todo_message(
 @router.post("/assistant/message", response_model=TodoAssistantMessageResponse)
 async def todo_assistant_message(
   payload: TodoAssistantMessageRequest,
-  background_tasks: BackgroundTasks,
   current_user: User = Depends(enforce_chat_quota),
   session: AsyncSession = Depends(get_session),
 ) -> TodoAssistantMessageResponse:
-  return await _assistant_todo_message(payload, background_tasks, current_user, session)
+  return await _assistant_todo_message(payload, current_user, session)
 
 

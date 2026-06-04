@@ -40,6 +40,7 @@ from app.routers import (
   todos,
   todos_batch,
 )
+import app.jobs.handlers  # noqa: E402,F401 — registers @job handlers before any enqueue call
 
 configure_logging(settings.debug)
 
