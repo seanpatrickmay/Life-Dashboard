@@ -81,21 +81,23 @@ async def reauth_garmin(
     if not connection:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Garmin not connected.")
     try:
-        client = await service.get_client(current_user.id)
+        # Release any read-only transaction before the external Garmin login call.
+        await session.rollback()
+        async with service.get_client_ctx(current_user.id) as client:
+            try:
+                await asyncio.to_thread(client.authenticate)
+            except Exception as exc:  # noqa: BLE001
+                await service.mark_reauth_required(current_user.id, True)
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Garmin re-authentication failed.",
+                ) from exc
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Stored Garmin credentials could not be decrypted.",
-        ) from exc
-    try:
-        # Release any read-only transaction before the external Garmin login call.
-        await session.rollback()
-        await asyncio.to_thread(client.authenticate)
-    except Exception as exc:  # noqa: BLE001
-        await service.mark_reauth_required(current_user.id, True)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Garmin re-authentication failed.",
         ) from exc
     connection.last_sync_at = eastern_now()
     connection.requires_reauth = False
