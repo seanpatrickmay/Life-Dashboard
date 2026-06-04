@@ -39,6 +39,7 @@ mypy = "^1.8"
 ruff = "^0.4.0"
 pytest = "^8.3"
 aiosqlite = "^0.22.1"
+moto = {version = "^5.0.0", extras = ["secretsmanager"]}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
