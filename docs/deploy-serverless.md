@@ -162,7 +162,8 @@ aws secretsmanager put-secret-value \
     "GOOGLE_REDIRECT_URI_PROD":        "https://REPLACE_AFTER_EDGE_DEPLOY.cloudfront.net/api/auth/google/callback",
     "GOOGLE_CALENDAR_REDIRECT_URI_PROD": "https://REPLACE_AFTER_EDGE_DEPLOY.cloudfront.net/api/calendar/google/callback",
     "GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY": "<Fernet key for calendar tokens — generate separately from the Garmin key>",
-    "APP_ENV":                         "prod"
+    "APP_ENV":                         "prod",
+    "ENVIRONMENT":                     "prod"
   }'
 ```
 
@@ -182,7 +183,8 @@ aws secretsmanager put-secret-value \
 | `GOOGLE_REDIRECT_URI_PROD` | Yes | Must match Google Cloud Console. Set to `https://<cloudfront>/api/auth/google/callback`. |
 | `GOOGLE_CALENDAR_REDIRECT_URI_PROD` | No | Google Calendar OAuth redirect. Defaults to `<FRONTEND_URL>/api/calendar/google/callback` if omitted. |
 | `GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY` | No | Fernet key for Calendar token encryption. Required if Calendar integration is used. |
-| `APP_ENV` | No | Set to `prod` so the app selects `*_PROD` OAuth credentials. Defaults to `local`. |
+| `ENVIRONMENT` | **Yes (for OAuth)** | Set to `prod` so the app selects `*_PROD` OAuth credentials. The `Settings.environment` field is what the OAuth selector reads — and due to a pydantic-settings v2 quirk it binds to the env var **`ENVIRONMENT`** (the field name), NOT `APP_ENV`. Without `ENVIRONMENT=prod`, login returns 500 (`GOOGLE_CLIENT_ID is required for local environment`). |
+| `APP_ENV` | No | Legacy/intended name for the environment selector; currently **inert** (see `ENVIRONMENT` above). Set both to `prod` for safety. |
 | `GARMIN_EMAIL` / `GARMIN_PASSWORD` | No | Garmin account credentials (CLI fallback for manual ingest). |
 | `GARMIN_PASSWORD_ENCRYPTION_KEY_ID` | No | Key ID for key rotation. Omit unless rotating keys. |
 | `GARMIN_PASSWORD_ENCRYPTION_KEY_FALLBACKS` | No | Comma-separated fallback Fernet keys for rotation. |
