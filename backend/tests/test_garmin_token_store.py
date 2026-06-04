@@ -9,11 +9,15 @@ supply their own key before importing crypto-using modules).
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import os
 import tempfile
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from cryptography.fernet import Fernet
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -23,7 +27,16 @@ os.environ["GARMIN_PASSWORD_ENCRYPTION_KEY"] = _VALID_KEY
 
 from app.db.models.base import Base  # noqa: E402  (after env set)
 from app.db.models import garmin_token as _garmin_token_module  # noqa: E402 (registers model)
+from app.db.models.garmin_token import GarminToken  # noqa: E402
 from app.services.garmin_token_store import hydrate_dir, save_dir  # noqa: E402
+
+# Path to the migration file under test — resolved relative to this test file.
+_MIGRATION_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "migrations"
+    / "versions"
+    / "20260604_garmin_token_store.py"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -201,3 +214,104 @@ def test_overwrite_upsert(session: AsyncSession, monkeypatch: pytest.MonkeyPatch
     out_dir = run(hydrate_dir(session, user_id=3))
     assert out_dir is not None
     assert (Path(out_dir) / "token.json").read_bytes() == b"second-token"
+
+
+# ---------------------------------------------------------------------------
+# Migration drift regression tests
+# ---------------------------------------------------------------------------
+
+def _load_migration_module():
+    """Load the garmin_token_store migration as a module."""
+    spec = importlib.util.spec_from_file_location(
+        "migration_20260604_garmin_token_store",
+        _MIGRATION_PATH,
+    )
+    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+def _apply_migration_to_sqlite() -> sa.engine.Engine:
+    """Create a fresh SQLite engine, apply only the garmin_token migration, and return it."""
+    mod = _load_migration_module()
+    engine = sa.create_engine("sqlite:///:memory:")
+    with engine.begin() as conn:
+        ctx = MigrationContext.configure(conn)
+        op_proxy = Operations(ctx)
+        op_proxy._install_proxy()
+        try:
+            mod.upgrade()
+        finally:
+            op_proxy._remove_proxy()
+    return engine
+
+
+def test_migration_creates_all_model_columns() -> None:
+    """The garmin_token migration must create exactly the columns that GarminToken declares.
+
+    This test applies the migration DDL (NOT Base.metadata.create_all) against a fresh
+    SQLite database and asserts column parity with the ORM model.  It would FAIL if
+    created_at were missing from the migration's create_table call.
+    """
+    engine = _apply_migration_to_sqlite()
+
+    with engine.connect() as conn:
+        inspector = sa.inspect(conn)
+        migrated_cols = {c["name"] for c in inspector.get_columns("garmin_token")}
+
+    model_cols = {c.name for c in GarminToken.__table__.columns}
+
+    assert migrated_cols == model_cols, (
+        f"Migration column drift detected!\n"
+        f"  Migration created: {sorted(migrated_cols)}\n"
+        f"  Model declares:    {sorted(model_cols)}\n"
+        f"  Missing in migration: {sorted(model_cols - migrated_cols)}\n"
+        f"  Extra in migration:   {sorted(migrated_cols - model_cols)}"
+    )
+
+
+def test_migration_schema_supports_orm_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Insert a GarminToken via the ORM against the *migrated* schema and read it back.
+
+    This proves the Alembic-migrated schema is compatible with the ORM model,
+    catching any column the migration forgot to create (e.g. created_at).
+    The schema is built ONLY via the migration's upgrade() — not create_all.
+    """
+    import base64
+    import io
+    import tarfile
+    from datetime import datetime, timezone
+    from sqlalchemy.orm import Session
+    from app.core import crypto
+
+    monkeypatch.setattr(
+        "app.core.crypto.settings",
+        type("S", (), {
+            "garmin_password_encryption_key": _VALID_KEY,
+            "garmin_password_encryption_key_fallbacks": "",
+            "garmin_password_encryption_key_id": None,
+        })(),
+    )
+
+    engine = _apply_migration_to_sqlite()
+
+    # Build an encrypted_blob the same way save_dir does:
+    # tar the directory → base64 → encrypt_secret
+    src_dir = _make_token_dir({"oauth1_token.json": b'{"oauth_token":"tok1"}'})
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        tar.add(src_dir, arcname=".")
+    encrypted = crypto.encrypt_secret(base64.b64encode(buf.getvalue()).decode("ascii"))
+
+    now = datetime.now(tz=timezone.utc)
+    row = GarminToken(id=42, encrypted_blob=encrypted, created_at=now, updated_at=now)
+
+    with Session(engine) as sync_session:
+        sync_session.add(row)
+        sync_session.commit()
+
+        fetched = sync_session.get(GarminToken, 42)
+        assert fetched is not None, "ORM read returned None — schema/model mismatch"
+        assert fetched.user_id == 42
+        assert fetched.encrypted_blob == encrypted
+        assert fetched.created_at is not None, "created_at was None — column missing from migrated schema"

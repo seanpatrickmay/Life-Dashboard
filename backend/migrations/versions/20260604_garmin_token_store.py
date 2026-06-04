@@ -27,6 +27,12 @@ def upgrade() -> None:
             sa.Column("user_id", sa.Integer, primary_key=True, autoincrement=False),
             sa.Column("encrypted_blob", sa.Text, nullable=False),
             sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.text("now()"),
+            ),
+            sa.Column(
                 "updated_at",
                 sa.DateTime(timezone=True),
                 nullable=False,
