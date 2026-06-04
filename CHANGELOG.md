@@ -160,6 +160,55 @@ container stacks needs LocalStack Pro.
 
 ---
 
+## Phase 6 — Docs, runbook, cost, cleanup ✅ (DONE)
+
+- 6.1–6.4 `217b8ff` **docs**: `docs/deploy-serverless.md` (8-step real-AWS runbook with the exact Secrets Manager key list
+  derived from `config.py`, incl. `APP_ENV=prod`→`*_PROD` OAuth, verified `/api/auth/google/callback`),
+  `docs/serverless-cost-estimate.md` (~$1–4/mo single-user vs ~$10–15/mo EC2; no-NAT savings),
+  `docs/serverless-rollback.md`; README "Deployment Paths" (serverless default + EC2 deprecated fallback); deprecation
+  headers on `docker/docker-compose.prod.yml` + `deploy/deploy_prod.sh` (kept, not deleted); `deploy-serverless.yml`
+  (`workflow_dispatch`-only; `deploy-prod.yml` untouched).
+- 6.5 **final whole-system review** (security-reviewer + devils-advocate over the full `44fa789..HEAD` diff) → fixes
+  `7bcb6ad`:
+  - **CRITICAL: worker Lambda cold-start ordering** — `worker_handler.py` imported `app.jobs.handlers`/`app.workers.tasks`
+    (→ `config.py` module-level `Settings()` requiring `DATABASE_URL`) BEFORE `cold_start()` loaded the secret → would
+    crash every worker invocation on real AWS. Fixed by calling `cold_start()` at module level before those imports
+    (mirrors api_handler). Regression test: subprocess + moto secret, `DATABASE_URL` removed from env → imports cleanly.
+  - CI arm64: added QEMU + buildx to `deploy-serverless.yml` (ubuntu x86_64 runner builds the arm64 image).
+  - Runbook env-wipe: removed the destructive `update-function-configuration --environment` (replaced whole env);
+    moved `ADMIN_EMAIL`/`FRONTEND_URL` out of the CDK placeholder env INTO the Secrets Manager secret.
+  - SQS `SQS_MANAGED` encryption (queue + DLQ); Fargate egress-only SG (443/5432) + output + runbook run-task update.
+  - Health check → `/api/auth/me` (CloudFront rewrites `/health` + API 4xx to index.html — documented limitation).
+  - HSTS header added; `Dockerfile.lambda` arch comment corrected (arm64); runbook "Hardening (post-MVP)" section.
+  - **Security advisory (not a code defect):** the user's pre-existing `.env` (copied into the worktree in Phase 0)
+    holds LIVE secrets (Neon pw, OpenAI key, Google OAuth secrets, Garmin pw + Fernet key). It is gitignored and was
+    NEVER committed; the redundant worktree copy was deleted. Recommend rotating those values if any exposure is
+    suspected (independent of this migration).
+
+**Final state:** **590 unit tests + 23 LocalStack integration tests** pass; `cdk synth` all 4 stacks + cdk-nag clean;
+one container image runs all 4 runtimes (RIE + docker-run + LocalStack ZIP smoke proven); frontend builds + serves;
+runbook/cost/rollback complete; EC2 path intact as fallback.
+
+---
+
+## Success Criteria scorecard (spec §11)
+
+1. **Baseline tests pass + adapter/handler tests** — ✅ MET (417 → **590** unit, +23 integration).
+2. **`cdk synth` all 4 stacks + cdk-nag** — ✅ MET (clean, suppressions justified).
+3. **`cdklocal` deploys stacks + integration suite e2e** — ⚠️ PARTIAL (documented): LocalStack **Community** can't deploy
+   container-image Lambda / HTTP API v2 / ECR / ECS / CloudFront (all Pro). Proven instead: API+DB live via ZIP smoke,
+   4 adapters via 23 live integration tests, frontend via Caddy proxy; CDK confirmed real-AWS-ready.
+4. **One image runs all 4 runtimes** — ✅ MET (API via RIE 200; migrate via docker-run both paths; scheduled+worker
+   handlers unit-tested + worker cold-start bug fixed; all via per-function CMD / entrypoint override).
+5. **Frontend served via local CloudFront/S3 path, `/api/*` routed** — ✅ MET (build + S3 + Caddy parity).
+6. **Deploy runbook + cost + rollback** — ✅ MET.
+7. **EC2 path still works** — ✅ MET (untouched; deprecated-but-functional fallback).
+
+**Verdict: deploy-ready for real AWS**, modulo the documented LocalStack-Pro fidelity caveats (run the runbook on a real
+account to complete criterion 3 live).
+
+---
+
 ## Carry-forward / known issues (MUST address in later phases)
 
 1. **Migration chain is NOT replayable on a fresh DB** (pre-existing, discovered in Task 1.3).
