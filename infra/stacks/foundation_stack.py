@@ -1,4 +1,5 @@
 import aws_cdk as cdk
+import cdk_nag
 from aws_cdk import (
     aws_s3 as s3,
     aws_dynamodb as ddb,
@@ -79,3 +80,50 @@ class FoundationStack(cdk.Stack):
         cdk.CfnOutput(self, "JobQueueUrl", value=self.job_queue.queue_url)
         cdk.CfnOutput(self, "AppSecretArn", value=self.app_secret.secret_arn)
         cdk.CfnOutput(self, "ImageUri", value=self.image_asset.image_uri)
+
+        # --- cdk-nag suppressions ---
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            self.asset_bucket,
+            [cdk_nag.NagPackSuppression(
+                id="AwsSolutions-S1",
+                reason=(
+                    "Asset bucket access logging omitted for this single-user personal dashboard. "
+                    "S3 request logs add storage cost and operational overhead with no meaningful "
+                    "security benefit for a private presigned-URL bucket. Tracked as runbook hardening."
+                ),
+            )],
+        )
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            self.frontend_bucket,
+            [cdk_nag.NagPackSuppression(
+                id="AwsSolutions-S1",
+                reason=(
+                    "Frontend bucket access logging omitted. This bucket is private (CloudFront OAI "
+                    "only) and is a single-user static site; logging is a runbook hardening item, not "
+                    "a security requirement for this deployment."
+                ),
+            )],
+        )
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            self.kv_table,
+            [cdk_nag.NagPackSuppression(
+                id="AwsSolutions-DDB3",
+                reason=(
+                    "DynamoDB PITR disabled. This table is an ephemeral KV cache (rate-limit counters, "
+                    "session tokens) with a TTL; all durable data lives in the Neon Postgres database. "
+                    "Losing this table is a cold-cache event, not data loss. Runbook hardening."
+                ),
+            )],
+        )
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            self.app_secret,
+            [cdk_nag.NagPackSuppression(
+                id="AwsSolutions-SMG4",
+                reason=(
+                    "Secret holds third-party API keys (OpenAI, Garmin) and a Neon Postgres URL; "
+                    "there is no AWS-managed rotation Lambda for these credential types. "
+                    "Rotation is a manual runbook step performed out-of-band. "
+                    "Auto-rotation is not applicable here."
+                ),
+            )],
+        )

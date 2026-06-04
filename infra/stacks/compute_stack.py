@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import aws_cdk as cdk
+import cdk_nag
 from aws_cdk import (
     Duration,
     aws_lambda as _lambda,
@@ -124,3 +125,85 @@ class ComputeStack(cdk.Stack):
         cdk.CfnOutput(self, "GarminFnName", value=garmin_fn.function_name)
         cdk.CfnOutput(self, "DigestFnName", value=digest_fn.function_name)
         cdk.CfnOutput(self, "WorkerFnName", value=worker_fn.function_name)
+
+        # --- cdk-nag suppressions ---
+
+        # IAM4: AWSLambdaBasicExecutionRole is the standard CDK-attached managed policy for all
+        # Lambda functions. It grants only CloudWatch Logs write access. Writing a custom policy
+        # to replace it would grant identical permissions with no security benefit. Suppressed for
+        # all four function roles.
+        _iam4_lambda_reason = (
+            "AWSLambdaBasicExecutionRole grants CloudWatch Logs write-only access. "
+            "It is the minimal standard policy attached by CDK to every Lambda execution role. "
+            "Replacing it with a customer-managed policy of identical scope adds no security value."
+        )
+        for fn_construct in [self.api_fn, garmin_fn, digest_fn, worker_fn]:
+            cdk_nag.NagSuppressions.add_resource_suppressions(
+                fn_construct,
+                [cdk_nag.NagPackSuppression(
+                    id="AwsSolutions-IAM4",
+                    reason=_iam4_lambda_reason,
+                    applies_to=["Policy::arn:<AWS::Partition>:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"],
+                )],
+                apply_to_children=True,
+            )
+
+        # IAM5: Wildcard actions/resources in the CDK L2 grant_* policies.
+        # CDK's grant_read_write(S3), grant_read_write_data(DynamoDB), grant_send/consume_messages(SQS),
+        # and grant_read(SecretsManager) all emit wildcard sub-actions (e.g. s3:GetObject*)
+        # scoped to the specific resource ARN. The Resource::<Bucket.Arn>/* wildcard covers all
+        # object keys within a single named bucket — this is accepted least-privilege for object stores.
+        _iam5_s3_reason = (
+            "CDK L2 grant_read_write on a single named S3 bucket. Wildcard actions "
+            "(s3:GetObject*, s3:DeleteObject*, etc.) and the Resource::<bucket>/* are "
+            "scoped to that one bucket ARN; this is standard CDK least-privilege for S3."
+        )
+        for fn_construct in [self.api_fn, worker_fn]:
+            cdk_nag.NagSuppressions.add_resource_suppressions(
+                fn_construct,
+                [cdk_nag.NagPackSuppression(
+                    id="AwsSolutions-IAM5",
+                    reason=_iam5_s3_reason,
+                    applies_to=[
+                        "Action::s3:GetObject*",
+                        "Action::s3:GetBucket*",
+                        "Action::s3:List*",
+                        "Action::s3:DeleteObject*",
+                        "Action::s3:Abort*",
+                        "Resource::<AssetBucket1D025086.Arn>/*",
+                    ],
+                )],
+                apply_to_children=True,
+            )
+
+        # APIG4: The HTTP API has no authorization configured at the route level.
+        # This is intentional: the FastAPI application itself implements JWT bearer authentication
+        # on every protected endpoint. Authorization is enforced in-app, not at the API Gateway layer.
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            self.http_api,
+            [cdk_nag.NagPackSuppression(
+                id="AwsSolutions-APIG4",
+                reason=(
+                    "Authorization is implemented by the FastAPI application via JWT bearer tokens "
+                    "on every protected endpoint. API Gateway-level authorization (IAM/Cognito/Lambda "
+                    "authorizer) is redundant and not warranted for this single-user personal dashboard."
+                ),
+            )],
+            apply_to_children=True,
+        )
+
+        # APIG1: HTTP API access logging disabled.
+        # This is a single-user personal dashboard; Lambda CloudWatch Logs provide sufficient
+        # observability. API Gateway access logs add cost without meaningful benefit here.
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            self.http_api,
+            [cdk_nag.NagPackSuppression(
+                id="AwsSolutions-APIG1",
+                reason=(
+                    "API Gateway access logging omitted for this single-user personal dashboard. "
+                    "Lambda CloudWatch Logs capture all invocation details. Access logging is a "
+                    "runbook hardening item."
+                ),
+            )],
+            apply_to_children=True,
+        )
