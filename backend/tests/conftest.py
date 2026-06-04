@@ -3,6 +3,7 @@
 This conftest provides:
 - Centralized environment defaults so individual test files don't need to repeat them.
 - sys.path setup so ``app`` imports work when running from the repo root.
+- KVStore singleton reset to prevent state leakage between tests.
 
 Environment values use ``setdefault`` intentionally: test files that need non-standard
 values (e.g. a specific DATABASE_URL or GARMIN_PASSWORD_ENCRYPTION_KEY) can still set
@@ -18,6 +19,8 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+
+import pytest
 
 # ---------------------------------------------------------------------------
 # sys.path: ensure the backend package root is importable
@@ -41,3 +44,22 @@ _ENV_DEFAULTS: dict[str, str] = {
 
 for key, value in _ENV_DEFAULTS.items():
     os.environ.setdefault(key, value)
+
+
+# ---------------------------------------------------------------------------
+# KVStore singleton reset — prevents cache/rate-limit state from leaking
+# between tests when the MemoryKVStore process-wide singleton is in use.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def reset_kv_store_singleton() -> None:
+    """Reset the KVStore singletons before each test.
+
+    Both MemoryKVStore and DynamoKVStore are process-wide singletons returned
+    by get_kv_store().  Without this fixture, rate-limit counters, cache entries,
+    and DynamoDB table names written by one test would bleed into the next,
+    causing flaky results.
+    """
+    import app.kv.kv_store as kv_module
+    kv_module._memory_instance = None
+    kv_module._dynamo_instance = None

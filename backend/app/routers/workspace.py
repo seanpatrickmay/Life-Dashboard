@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -32,12 +32,12 @@ from app.schemas.workspace import (
     WorkspaceUpdateViewRequest,
     WorkspaceViewResponse,
 )
-from app.routers._shared import run_project_suggestions
+from app.jobs.queue import get_job_queue
 from app.services.workspace_service import WorkspaceService
+from app.storage.blob_store import get_blob_store
 
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
-ASSET_STORAGE_ROOT = Path("/tmp/life_dashboard_workspace_assets")
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
@@ -84,7 +84,6 @@ async def mark_workspace_page_recent(
 @router.post("/pages", response_model=WorkspacePageDetailResponse)
 async def create_workspace_page(
     payload: WorkspaceCreatePageRequest,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> WorkspacePageDetailResponse:
@@ -104,7 +103,10 @@ async def create_workspace_page(
         template_id=payload.template_id,
     )
     if page.legacy_todo_id:
-        background_tasks.add_task(run_project_suggestions, current_user.id, [page.legacy_todo_id])
+        await get_job_queue().enqueue(
+            "project_suggestions",
+            {"user_id": current_user.id, "todo_ids": [page.legacy_todo_id]},
+        )
     return await service.get_page_detail(current_user.id, page.id)
 
 
@@ -112,7 +114,6 @@ async def create_workspace_page(
 async def update_workspace_page(
     page_id: int,
     payload: WorkspaceUpdatePageRequest,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> WorkspacePageDetailResponse:
@@ -124,7 +125,10 @@ async def update_workspace_page(
         **updates,
     )
     if "title" in updates and page.legacy_todo_id:
-        background_tasks.add_task(run_project_suggestions, current_user.id, [page.legacy_todo_id])
+        await get_job_queue().enqueue(
+            "project_suggestions",
+            {"user_id": current_user.id, "todo_ids": [page.legacy_todo_id]},
+        )
     return await service.get_page_detail(current_user.id, page.id)
 
 
@@ -224,7 +228,6 @@ async def get_workspace_database_rows(
 async def create_workspace_database_row(
     database_id: int,
     payload: WorkspaceCreateRowRequest,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> WorkspacePageDetailResponse:
@@ -237,7 +240,10 @@ async def create_workspace_database_row(
         template_id=payload.template_id,
     )
     if page.legacy_todo_id:
-        background_tasks.add_task(run_project_suggestions, current_user.id, [page.legacy_todo_id])
+        await get_job_queue().enqueue(
+            "project_suggestions",
+            {"user_id": current_user.id, "todo_ids": [page.legacy_todo_id]},
+        )
     return await service.get_page_detail(current_user.id, page.id)
 
 
@@ -245,14 +251,16 @@ async def create_workspace_database_row(
 async def update_workspace_page_properties(
     page_id: int,
     payload: WorkspaceUpdatePropertyValuesRequest,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> WorkspacePageDetailResponse:
     service = WorkspaceService(session)
     page = await service.update_property_values(current_user.id, page_id, values=payload.values)
     if page.legacy_todo_id and "title" in payload.values:
-        background_tasks.add_task(run_project_suggestions, current_user.id, [page.legacy_todo_id])
+        await get_job_queue().enqueue(
+            "project_suggestions",
+            {"user_id": current_user.id, "todo_ids": [page.legacy_todo_id]},
+        )
     return await service.get_page_detail(current_user.id, page.id)
 
 
@@ -370,9 +378,8 @@ async def upload_workspace_asset_content(
     asset = await session.get(WorkspaceAsset, asset_id)
     if asset is None or asset.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Workspace asset not found")
-    ASSET_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
     suffix = Path(file.filename or asset.name).suffix
-    path = ASSET_STORAGE_ROOT / f"{asset.id}{suffix}"
+    storage_key = f"{asset.id}{suffix}"
     chunks: list[bytes] = []
     bytes_read = 0
     while chunk := await file.read(8192):
@@ -384,8 +391,9 @@ async def upload_workspace_asset_content(
             )
         chunks.append(chunk)
     content = b"".join(chunks)
-    path.write_bytes(content)
-    asset.storage_key = str(path)
+    store = get_blob_store()
+    await store.put(storage_key, content, content_type=asset.mime_type)
+    asset.storage_key = storage_key
     asset.public_url = f"{settings.api_prefix}/workspace/assets/{asset.id}/content"
     asset.status = "uploaded"
     await session.commit()
@@ -397,11 +405,19 @@ async def get_workspace_asset_content(
     asset_id: int,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
-) -> FileResponse:
+) -> Response:
     asset = await session.get(WorkspaceAsset, asset_id)
     if asset is None or asset.user_id != current_user.id or not asset.storage_key:
         raise HTTPException(status_code=404, detail="Workspace asset not found")
-    path = Path(asset.storage_key)
-    if not path.exists():
+    store = get_blob_store()
+    presigned_url = await store.presigned_get(asset.storage_key)
+    if presigned_url is not None:
+        return RedirectResponse(
+            url=presigned_url,
+            status_code=307,
+            headers={"Cache-Control": "private, no-store"},
+        )
+    data = await store.get(asset.storage_key)
+    if data is None:
         raise HTTPException(status_code=404, detail="Workspace asset file missing")
-    return FileResponse(path, media_type=asset.mime_type, filename=asset.name)
+    return Response(content=data, media_type=asset.mime_type or "application/octet-stream")

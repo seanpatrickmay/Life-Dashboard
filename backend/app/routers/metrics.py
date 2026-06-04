@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from collections import OrderedDict
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +9,7 @@ from app.core.auth import get_current_user
 from app.db.repositories.metrics_repository import MetricsRepository
 from app.db.session import get_session
 from app.db.models.entities import User
+from app.kv.kv_store import get_kv_store
 from app.schemas.metrics import (
     DailyMetricResponse,
     MetricsOverviewResponse,
@@ -22,9 +21,6 @@ from app.utils.timezone import eastern_midnight, eastern_now, eastern_today
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
-# Simple bounded in-memory cache for personal use (LRU eviction at _CACHE_MAX_SIZE)
-_CACHE_MAX_SIZE = 64
-_cache: OrderedDict[str, tuple[Any, datetime]] = OrderedDict()
 CACHE_TTL = 300  # 5 minutes
 
 
@@ -34,15 +30,12 @@ async def metrics_overview(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> MetricsOverviewResponse:
-    # Check cache first
+    store = get_kv_store()
     cache_key = f"metrics_overview:{current_user.id}:{range_days}"
-    if cache_key in _cache:
-        cached_data, cached_time = _cache[cache_key]
-        if (datetime.now(timezone.utc) - cached_time).total_seconds() < CACHE_TTL:
-            _cache.move_to_end(cache_key)
-            return cached_data
-        else:
-            del _cache[cache_key]
+
+    raw = await store.get(cache_key)
+    if raw is not None:
+        return MetricsOverviewResponse.model_validate_json(raw)
 
     cutoff = eastern_today() - timedelta(days=range_days - 1)
     repo = MetricsRepository(session)
@@ -84,11 +77,7 @@ async def metrics_overview(
         sleep_trend_hours=sleep_series,
     )
 
-    # Cache the response (bounded LRU)
-    _cache[cache_key] = (response, datetime.now(timezone.utc))
-    _cache.move_to_end(cache_key)
-    while len(_cache) > _CACHE_MAX_SIZE:
-        _cache.popitem(last=False)
+    await store.set(cache_key, response.model_dump_json(), ttl_seconds=CACHE_TTL)
     return response
 
 

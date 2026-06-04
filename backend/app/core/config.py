@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings pulled from environment variables."""
 
-    model_config = SettingsConfigDict(env_prefix="", case_sensitive=False)
+    model_config = SettingsConfigDict(env_prefix="", case_sensitive=False, populate_by_name=True)
 
     app_name: str = "Life Dashboard API"
     api_prefix: str = "/api"
@@ -78,6 +78,22 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str | None = Field(None, env="OPENAI_API_KEY")
     openai_model_name: str = Field("gpt-5-mini", env="OPENAI_MODEL_NAME")
+
+    # Runtime / backend selection (serverless migration)
+    # NOTE: pydantic-settings v2 silently ignores Field(..., env="X").
+    # Use validation_alias so the intended env var name is authoritative.
+    ld_runtime: str = Field("local", validation_alias="LD_RUNTIME")
+    ld_blob_store: str = Field("local", validation_alias="LD_BLOB_STORE")
+    ld_job_queue: str = Field("inline", validation_alias="LD_JOB_QUEUE")
+    ld_kv_store: str = Field("memory", validation_alias="LD_KV_STORE")
+    ld_secrets: str = Field("env", validation_alias="LD_SECRETS")
+    ld_garmin_tokens: str = Field("db", validation_alias="LD_GARMIN_TOKENS")
+    aws_region: str | None = Field(None, validation_alias="AWS_REGION")
+    s3_asset_bucket: str | None = Field(None, validation_alias="LD_S3_ASSET_BUCKET")
+    sqs_queue_url: str | None = Field(None, validation_alias="LD_SQS_QUEUE_URL")
+    dynamodb_kv_table: str | None = Field(None, validation_alias="LD_DDB_KV_TABLE")
+    secrets_name: str | None = Field(None, validation_alias="LD_SECRETS_NAME")
+    aws_endpoint_url: str | None = Field(None, validation_alias="AWS_ENDPOINT_URL")
 
     def _select_google_value(
         self,
