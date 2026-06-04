@@ -44,3 +44,4 @@ scripts/debug_output/
 
 # Playwright artifacts
 .playwright-cli/
+*.db
