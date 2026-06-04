@@ -1,4 +1,4 @@
-.PHONY: dev build compose-up compose-down ingest
+.PHONY: dev build compose-up compose-down ingest local-up local-down local-bootstrap local-deploy local-test
 
 dev:
 	cd frontend && npm run dev
@@ -18,3 +18,18 @@ ingest:
 	#   make ingest SESSION_COOKIE=<value>
 	curl -X POST http://localhost:8000/api/admin/ingest \
 		-H "Cookie: session=$${SESSION_COOKIE}"
+
+local-up:
+	docker compose -f infra/local/docker-compose.localstack.yml up -d
+
+local-down:
+	docker compose -f infra/local/docker-compose.localstack.yml down -v
+
+local-bootstrap:
+	bash infra/local/bootstrap.sh
+
+local-deploy:
+	cd infra && npx cdklocal deploy --all --require-approval never
+
+local-test:
+	cd backend && python3 -m pytest tests/integration -q
