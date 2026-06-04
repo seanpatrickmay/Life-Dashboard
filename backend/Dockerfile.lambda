@@ -1,0 +1,32 @@
+FROM public.ecr.aws/lambda/python:3.11
+
+# Install runtime deps only (no dev deps).
+# Strategy: install poetry, disable virtualenvs so it installs into system site-packages,
+# then poetry install --only main --no-root.  This avoids the export step and keeps the
+# layer as lean as possible (no dev tools, no test packages).
+COPY pyproject.toml poetry.lock* ./
+
+RUN pip install --no-cache-dir poetry \
+ && poetry config virtualenvs.create false \
+ && poetry install --only main --no-root --no-interaction --no-ansi \
+ && pip uninstall -y poetry || true
+
+# App code, migrations, and alembic config into the Lambda task root
+COPY app ${LAMBDA_TASK_ROOT}/app
+COPY migrations ${LAMBDA_TASK_ROOT}/migrations
+COPY alembic.ini ${LAMBDA_TASK_ROOT}/
+
+# Default handler = API (Mangum).
+# Scheduled/worker Lambdas override CMD at the function level:
+#   garmin_ingest: CMD ["app.aws.scheduled_handler.garmin_ingest"]
+#   rss_digest:    CMD ["app.aws.scheduled_handler.rss_digest"]
+#   sqs_worker:    CMD ["app.aws.worker_handler.handler"]
+#
+# Fargate migrate task overrides the entrypoint entirely:
+#   ENTRYPOINT ["python", "-m", "app.aws.migrate"]   (CMD not used)
+#   -- or via docker run: --entrypoint python ... -m app.aws.migrate
+#
+# NOTE: this image is built for the host architecture (arm64 on Apple Silicon).
+# The real Lambda/Fargate deploy should pin --platform linux/amd64 (or arm64 if
+# using Graviton) in the Phase 4 runbook / CI build command.
+CMD ["app.aws.api_handler.handler"]
