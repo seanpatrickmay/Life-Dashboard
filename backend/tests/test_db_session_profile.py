@@ -259,8 +259,8 @@ async def test_get_session_can_be_used_as_dependency(monkeypatch):
 
 # ---------------------------------------------------------------------------
 # 5. Monkeypatching compat — setattr on the module still works
-#    (critical for test_jobs_handlers.py which does
-#     monkeypatch.setattr(session_mod, "AsyncSessionLocal", FakeSessionCtx))
+#    (AsyncSessionLocal is still a valid backward-compat alias via __getattr__;
+#     direct setattr on the module attribute overrides __getattr__ as expected)
 # ---------------------------------------------------------------------------
 
 def test_monkeypatch_setattr_overrides_getattr():

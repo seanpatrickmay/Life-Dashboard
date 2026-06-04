@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.job_run import JobRun
-from app.db.session import AsyncSessionLocal
+from app.db.session import get_sessionmaker
 from app.jobs.queue import get_job_queue
 from app.jobs.registry import job
 from app.services.insight_service import InsightService
@@ -102,7 +102,7 @@ async def _handle_visit_refresh(payload: dict) -> None:
     user_id: int = payload["user_id"]
     error: str | None = None
     try:
-        async with AsyncSessionLocal() as session:
+        async with get_sessionmaker()() as session:
             await run_metrics_refresh(session, user_id=user_id, lookback_days=14)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Visit-triggered refresh failed: {}", exc)
@@ -116,7 +116,7 @@ async def _handle_digest_refresh(payload: dict) -> None:  # noqa: ARG001
     """Run the AI Digest pipeline."""
     error: str | None = None
     try:
-        async with AsyncSessionLocal() as session:
+        async with get_sessionmaker()() as session:
             from app.services.ai_digest_service import AIDigestService
             service = AIDigestService(session)
             await service.run_pipeline()
@@ -130,7 +130,7 @@ async def _handle_digest_refresh(payload: dict) -> None:  # noqa: ARG001
 async def _finalize_job_run(job_name: str, *, error: str | None, cooldown: timedelta) -> None:
     """Mark the JobRun as complete (or failed) and advance next_allowed_at."""
     try:
-        async with AsyncSessionLocal() as session:
+        async with get_sessionmaker()() as session:
             row = await _get_or_create_job_run(session, job_name)
             row.running = False
             row.last_completed_at = eastern_now()

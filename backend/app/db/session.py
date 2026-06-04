@@ -28,7 +28,6 @@ def _engine_kwargs(s: Settings) -> dict:
             echo=False,
             future=True,
             poolclass=NullPool,
-            pool_pre_ping=s.database_pool_pre_ping,
             connect_args=connect_args,
         )
     return dict(

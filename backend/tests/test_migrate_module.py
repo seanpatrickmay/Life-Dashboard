@@ -109,6 +109,39 @@ def test_fresh_db_calls_create_all_and_stamp(
 
 
 # ---------------------------------------------------------------------------
+# 1b. Half-initialized DB guard (tables present, no alembic_version)
+# ---------------------------------------------------------------------------
+
+
+def test_half_initialized_db_raises_runtime_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """run_migrations must raise RuntimeError when app tables exist but alembic_version is absent.
+
+    This guards against silently stamping a DB that was partially set up
+    outside of the migration toolchain.
+    """
+    db_file = tmp_path / "half_init.db"
+    db_url = f"sqlite:///{db_file}"
+    monkeypatch.setenv("DATABASE_URL_MIGRATIONS", db_url)
+
+    # Pre-create a non-alembic table to simulate a half-initialised DB
+    engine = sa.create_engine(db_url, poolclass=sa.pool.NullPool)
+    try:
+        with engine.begin() as conn:
+            conn.execute(sa.text(
+                "CREATE TABLE some_app_table (id INTEGER PRIMARY KEY, name VARCHAR)"
+            ))
+    finally:
+        engine.dispose()
+
+    migrate = _reload_migrate()
+
+    with pytest.raises(RuntimeError, match="alembic_version"):
+        migrate.run_migrations()
+
+
+# ---------------------------------------------------------------------------
 # 2. Existing DB path detection
 # ---------------------------------------------------------------------------
 

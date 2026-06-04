@@ -112,6 +112,13 @@ def run_migrations() -> str:
             command.upgrade(cfg, "head")
             return "upgraded"
         else:
+            inspector = sa.inspect(engine)
+            existing = set(inspector.get_table_names()) - {"alembic_version"}
+            if existing:
+                raise RuntimeError(
+                    f"DB has tables {sorted(existing)!r} but no alembic_version; refusing to stamp. "
+                    "Resolve migration state manually (alembic stamp) before deploying."
+                )
             logger.info("migrate: fresh DB detected (no alembic_version) → create_all + stamp head")
             # Import here so all model tables are registered against Base.metadata
             from app.db.models import Base  # noqa: PLC0415

@@ -3,7 +3,8 @@
 Each handler is decorated with ``@job("<name>")`` so it is registered in the
 global handler registry.  Handlers receive a **JSON-serializable payload dict**
 (ids / primitives only — never ORM objects or sessions) and open their own
-``AsyncSessionLocal`` session to perform the work.
+session via ``get_sessionmaker()()`` to perform the work (resolved at call time
+so cold_start / init_engine have already run before any connection is made).
 
 Import order note: to avoid circular imports the heavy service modules are
 imported lazily inside each handler function (same pattern as
@@ -15,7 +16,7 @@ from datetime import date
 
 from loguru import logger
 
-from app.db.session import AsyncSessionLocal
+from app.db.session import get_sessionmaker
 from app.jobs.registry import job
 
 
@@ -32,7 +33,7 @@ async def _handle_project_suggestions(payload: dict) -> None:
     try:
         from app.services.todo_project_suggestion_service import TodoProjectSuggestionService  # noqa: PLC0415
 
-        async with AsyncSessionLocal() as session:
+        async with get_sessionmaker()() as session:
             service = TodoProjectSuggestionService(session)
             await service.process_todo_ids(user_id=user_id, todo_ids=todo_ids)
     except Exception as exc:  # noqa: BLE001
@@ -70,7 +71,7 @@ async def _handle_journal_summary(payload: dict) -> None:
     try:
         from app.services.journal_service import JournalService  # noqa: PLC0415
 
-        async with AsyncSessionLocal() as session:
+        async with get_sessionmaker()() as session:
             service = JournalService(session)
             await service._ensure_summary(user_id=user_id, local_date=local_date, time_zone=time_zone)
             await session.commit()
@@ -88,7 +89,7 @@ async def _handle_insight_refresh(payload: dict) -> None:
     try:
         from app.services.insight_service import InsightService  # noqa: PLC0415
 
-        async with AsyncSessionLocal() as session:
+        async with get_sessionmaker()() as session:
             service = InsightService(session)
             await service.refresh_daily_insight(user_id=user_id)
     except Exception as exc:  # noqa: BLE001

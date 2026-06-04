@@ -79,8 +79,9 @@ async def test_project_suggestions_inline_runs(monkeypatch):
     from app.services import todo_project_suggestion_service as svc_mod
     monkeypatch.setattr(svc_mod.TodoProjectSuggestionService, "process_todo_ids", fake_process)
 
-    # Patch AsyncSessionLocal to return a no-op context manager
-    from app.db import session as session_mod
+    # Patch get_sessionmaker so that get_sessionmaker()() returns a no-op context manager.
+    # handlers.py calls `async with get_sessionmaker()() as session:` at call time
+    # (lazy resolution), so we must patch the factory, not AsyncSessionLocal.
     fake_session = SimpleNamespace(commit=AsyncMock())
 
     class FakeSessionCtx:
@@ -89,7 +90,11 @@ async def test_project_suggestions_inline_runs(monkeypatch):
         async def __aexit__(self, *args):
             pass
 
-    monkeypatch.setattr(session_mod, "AsyncSessionLocal", FakeSessionCtx)
+    def fake_get_sessionmaker():
+        return FakeSessionCtx
+
+    import app.jobs.handlers as handlers_mod
+    monkeypatch.setattr(handlers_mod, "get_sessionmaker", fake_get_sessionmaker)
 
     queue = InlineJobQueue()
     await queue.enqueue("project_suggestions", {"user_id": 1, "todo_ids": [10, 20]})
@@ -115,7 +120,6 @@ async def test_journal_summary_inline_runs(monkeypatch):
     from app.services import journal_service as js_mod
     monkeypatch.setattr(js_mod.JournalService, "_ensure_summary", fake_ensure_summary)
 
-    from app.db import session as session_mod
     fake_session = SimpleNamespace(commit=AsyncMock())
 
     class FakeSessionCtx:
@@ -124,7 +128,11 @@ async def test_journal_summary_inline_runs(monkeypatch):
         async def __aexit__(self, *args):
             pass
 
-    monkeypatch.setattr(session_mod, "AsyncSessionLocal", FakeSessionCtx)
+    def fake_get_sessionmaker():
+        return FakeSessionCtx
+
+    import app.jobs.handlers as handlers_mod
+    monkeypatch.setattr(handlers_mod, "get_sessionmaker", fake_get_sessionmaker)
 
     queue = InlineJobQueue()
     await queue.enqueue("journal_summary", {"user_id": 5, "date": "2026-01-15", "time_zone": "UTC"})
@@ -152,15 +160,17 @@ async def test_insight_refresh_inline_runs(monkeypatch):
     from app.services import insight_service as is_mod
     monkeypatch.setattr(is_mod.InsightService, "refresh_daily_insight", fake_refresh)
 
-    from app.db import session as session_mod
-
     class FakeSessionCtx:
         async def __aenter__(self):
             return SimpleNamespace()
         async def __aexit__(self, *args):
             pass
 
-    monkeypatch.setattr(session_mod, "AsyncSessionLocal", FakeSessionCtx)
+    def fake_get_sessionmaker():
+        return FakeSessionCtx
+
+    import app.jobs.handlers as handlers_mod
+    monkeypatch.setattr(handlers_mod, "get_sessionmaker", fake_get_sessionmaker)
 
     queue = InlineJobQueue()
     await queue.enqueue("insight_refresh", {"user_id": 3})
