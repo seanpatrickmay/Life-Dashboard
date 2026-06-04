@@ -79,6 +79,20 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(None, env="OPENAI_API_KEY")
     openai_model_name: str = Field("gpt-5-mini", env="OPENAI_MODEL_NAME")
 
+    # Runtime / backend selection (serverless migration)
+    ld_runtime: str = Field("local", env="LD_RUNTIME")
+    ld_blob_store: str = Field("local", env="LD_BLOB_STORE")
+    ld_job_queue: str = Field("inline", env="LD_JOB_QUEUE")
+    ld_kv_store: str = Field("memory", env="LD_KV_STORE")
+    ld_secrets: str = Field("env", env="LD_SECRETS")
+    ld_garmin_tokens: str = Field("db", env="LD_GARMIN_TOKENS")
+    aws_region: str | None = Field(None, env="AWS_REGION")
+    s3_asset_bucket: str | None = Field(None, env="LD_S3_ASSET_BUCKET")
+    sqs_queue_url: str | None = Field(None, env="LD_SQS_QUEUE_URL")
+    dynamodb_kv_table: str | None = Field(None, env="LD_DDB_KV_TABLE")
+    secrets_name: str | None = Field(None, env="LD_SECRETS_NAME")
+    aws_endpoint_url: str | None = Field(None, env="AWS_ENDPOINT_URL")
+
     def _select_google_value(
         self,
         *,
