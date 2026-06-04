@@ -107,6 +107,22 @@ Commit `26f858a`. One Lambda-base image (`public.ecr.aws/lambda/python:3.11`), f
 
 ---
 
+## Phase 4 — CDK stacks ✅ (DONE)
+
+All four stacks synthesize; cdk-nag clean (suppressed with justifications). ARM64/Graviton throughout.
+
+- 4.1 `f5e8174` **FoundationStack**: asset S3 bucket (RETAIN, CORS GET), frontend S3 bucket (DESTROY+autodelete, OAI target), DynamoDB KV (PAY_PER_REQUEST, TTL `expires_at`), SQS queue (960s visibility) + DLQ (maxReceiveCount 5), Secrets Manager `life-dashboard/app` (placeholder; runbook populates), `DockerImageAsset` (`../backend`/`Dockerfile.lambda`, LINUX_ARM64). All exposed as `self.*`.
+- 4.2 `7b63b37` **ComputeStack**: 4 `DockerImageFunction`s sharing the image via `from_ecr(repo, tag, cmd=[...])` (api 30s/512, garmin 300s/1024, digest 300s/512, worker 900s/1024); `HttpApi` ($default → api_fn); EventBridge crons (garmin daily 09:00 UTC, digest every 6h); `SqsEventSource(report_batch_item_failures=True, batch_size=10)`; least-priv IAM grants; full `LD_*` env (secrets via Secrets Manager at cold-start, NOT plaintext env; no reserved `AWS_REGION`).
+- 4.3 `12c567b` **EdgeStack**: single CloudFront dist — default→S3 SPA (OAI; 2.150 predates L2 OAC), `/api/*`→API GW (`HttpOrigin`, CACHING_DISABLED, ALL_VIEWER_EXCEPT_HOST_HEADER); SPA fallback (403/404→/index.html); `BucketDeployment` with placeholder-source fallback when `frontend/dist` absent.
+- 4.4 `4ac4e75` **DataJobsStack**: ECS Fargate migrate task (shared image, entrypoint override `python -m app.aws.migrate`), ARM64, no-NAT public VPC (Fargate reaches Neon via public IP). Synth-validated only (LocalStack Community has no ECS; Fargate proven via docker run in Phase 3).
+- 4.5 `91e5e3b` **cdk-nag** `AwsSolutionsChecks`: 40 findings, all suppressed with specific reasons (WAF/flow-logs/rotation/OAC/access-logging = runbook hardening for a single-user app; IAM4/5 = CDK framework/grant wildcards scoped to single resources; APIG4 = auth is in-app). `synth` exits 0.
+
+**Gate:** `cdk synth --all` OK; cdk-nag 0 unsuppressed errors.
+
+**Next:** Phase 5 — deploy Foundation+Compute to LocalStack via `cdklocal`; integration suite (API via APIGW, asset→S3, enqueue→SQS→worker→DB, scheduled→DB, secrets); frontend build+S3+reverse-proxy. (Edge CloudFront + DataJobs ECS are Pro-only on LocalStack → synth-validated, runbook-deployed.)
+
+---
+
 ## Carry-forward / known issues (MUST address in later phases)
 
 1. **Migration chain is NOT replayable on a fresh DB** (pre-existing, discovered in Task 1.3).
