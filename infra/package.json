@@ -4,6 +4,6 @@
   "description": "CDK infrastructure for Life Dashboard serverless migration",
   "devDependencies": {
     "aws-cdk": "^2",
-    "aws-cdk-local": "^2"
+    "aws-cdk-local": "^3.0.4"
   }
 }

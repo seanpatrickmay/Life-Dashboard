@@ -1,15 +1,20 @@
 name: life-dashboard-local
 
+networks:
+  default:
+    name: life-dashboard-local_default
+
 services:
   localstack:
     image: localstack/localstack:3
     ports:
       - "4566:4566"
     environment:
-      SERVICES: lambda,apigateway,sqs,s3,events,secretsmanager,dynamodb,cloudformation,iam,sts,logs,ecr
+      SERVICES: lambda,apigateway,sqs,s3,events,secretsmanager,dynamodb,cloudformation,iam,sts,logs,ecr,ssm
       DEBUG: "0"
       LAMBDA_RUNTIME_EXECUTOR: docker
       DOCKER_HOST: unix:///var/run/docker.sock
+      LAMBDA_DOCKER_NETWORK: life-dashboard-local_default
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - localstack_data:/var/lib/localstack
