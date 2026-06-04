@@ -39,12 +39,14 @@ isort = "^5.13"
 mypy = "^1.8"
 ruff = "^0.4.0"
 pytest = "^8.3"
+pytest-asyncio = "^0.24.0"
 aiosqlite = "^0.22.1"
 moto = {version = "^5.0.0", extras = ["secretsmanager"]}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+asyncio_mode = "auto"
 markers = [
   "live_llm: requires OpenAI API key and runs real LLM calls",
   "slow: slow running tests",
