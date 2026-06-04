@@ -212,7 +212,8 @@ class DynamoKVStore(KVStore):
             # DynamoDB TTL is eventual; enforce expiry explicitly
             return None
 
-        return item.get("value")
+        raw = item.get("value")
+        return str(raw) if raw is not None else None
 
     async def set(self, key: str, value: str, *, ttl_seconds: int | None = None) -> None:
         item: dict = {"pk": key, "value": value}
@@ -250,7 +251,11 @@ class DynamoKVStore(KVStore):
             try:
                 await self._run(
                     self._table.put_item,
-                    Item={"pk": key, "value": "1", "expires_at": new_expires_at},
+                    # Store as a Number (int) so that the subsequent update_item ADD
+                    # path works correctly.  DynamoDB's ADD operand requires a Number
+                    # attribute — storing as String causes a ValidationException on
+                    # real DynamoDB / LocalStack (moto accepted it silently).
+                    Item={"pk": key, "value": 1, "expires_at": new_expires_at},
                     ConditionExpression="attribute_not_exists(pk)",
                 )
                 return 1

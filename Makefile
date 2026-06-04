@@ -32,4 +32,4 @@ local-deploy:
 	cd infra && npx cdklocal deploy --all --require-approval never
 
 local-test:
-	cd backend && python3 -m pytest tests/integration -q
+	cd backend && AWS_ENDPOINT_URL=http://localhost:4566 python3 -m pytest tests/integration -m integration -q
