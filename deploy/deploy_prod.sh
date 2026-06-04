@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# DEPRECATED: legacy EC2 docker-compose deploy.
+# The serverless path (docs/deploy-serverless.md) is the new default.
+# Kept as a rollback fallback — see docs/serverless-rollback.md.
+# Do NOT remove this file; it is the recovery path if the serverless stack has issues.
 set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
