@@ -123,7 +123,12 @@ All four stacks synthesize; cdk-nag clean (suppressed with justifications). ARM6
 
 ---
 
-## Phase 5 — LocalStack end-to-end (IN PROGRESS)
+## Phase 5 — LocalStack end-to-end ✅ (DONE)
+
+**Gate:** core path proven live (5.1); 4 adapters proven vs real LocalStack (5.2, +1 real bug fixed); frontend hosting
+proven (5.7); unit suite 589 passed + 23 integration (skip when LocalStack down). Full-loop-through-deployed-worker-Lambda
+is covered in parts (SQS adapter live + worker handler moto-tested + DB connectivity live) and is a real-AWS verification
+step in the runbook (container-image worker Lambda needs LocalStack Pro to deploy). **Next:** Phase 6 — docs/runbook/cost/cleanup.
 
 - 5.1 `9c72e02` **CORE PROOF achieved.** Deployed to LocalStack and proved live: API GW → Lambda `/health` → 200;
   `/api/auth/me` → 200 `{"user":null}` = **full path Lambda cold-start → Secrets Manager → DATABASE_URL → asyncpg →
@@ -137,9 +142,16 @@ All four stacks synthesize; cdk-nag clean (suppressed with justifications). ARM6
     deploy uses arm64/Graviton — CI build platform must match the CDK `architecture`).
   - Fixes: `aws-cdk-local`→3.0.4 (compat with cdk 2.1126/Node 24); `ssm` added to LocalStack SERVICES (CDK bootstrap);
     stable compose network name.
-- 5.2 (next): integration tests exercising the **adapters against REAL LocalStack APIs** (S3BlobStore, DynamoKVStore,
-  SqsJobQueue, SecretsManagerProvider) — closes the moto≠LocalStack fidelity gap without re-hand-building Lambdas.
-- 5.7 (next): frontend build → S3 (LocalStack) → local reverse-proxy routing (`/`→S3, `/api/*`→API).
+- 5.2 `84e2a57` **23 adapter integration tests vs REAL LocalStack** (S3BlobStore, DynamoKVStore, SqsJobQueue,
+  SecretsManagerProvider) — all pass; skip cleanly when LocalStack is down (unit suite stays 589 passed + 23 skipped).
+  Wired to `make local-test`. **Found+fixed a REAL bug moto masked:** `DynamoKVStore.incr` stored the counter as a
+  *String* then `ADD`'d a *Number* → real DynamoDB rejects (`ValidationException`); moto silently accepted. Fix: store
+  `value` as Number, coerce `get()` return via `str()` (Decimal→str). **This would have broken the auth rate-limiter on
+  real AWS** — exactly the moto≠LocalStack gap this task targeted.
+- 5.7 `db0e174` **frontend build → S3 → reverse-proxy parity.** Built with `VITE_API_BASE_URL=` (empty) — correct: the
+  axios client's route paths already include `/api`, so empty base → same-origin `/api/*` (CloudFront `/api/*` behavior
+  parity); `/api` would double-prefix. Served from LocalStack S3 (200, index.html). `infra/local/Caddyfile.local`
+  reverse proxy (`/`→S3, `/api/*`→API) committed; `/` leg proven e2e. Maps 1:1 to EdgeStack CloudFront behaviors.
 
 **Phase 5 honesty boundary:** proven LIVE on LocalStack = app logic + Lambda runtime + Secrets + Postgres networking +
 API routing + (5.2) the four AWS adapters. Synth-validated + real-AWS-ready + separately smoke-proven (RIE/docker-run in
