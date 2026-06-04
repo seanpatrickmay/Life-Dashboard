@@ -70,6 +70,12 @@ jobs:
         # VITE_API_BASE_URL must be empty: the Axios client prepends /api already,
         # so an empty base → same-origin /api/* (CloudFront /api/* behavior).
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: CDK deploy — all stacks
         working-directory: infra
         run: |
@@ -97,7 +103,7 @@ jobs:
           echo "  Step 5: Run DB migrate Fargate task"
           echo "  Step 7: Update FRONTEND_URL + OAuth redirect URIs in the secret to: ${CF_URL}"
           echo "  Step 7: Update Google Cloud Console authorized redirect URIs"
-          echo "  Step 8: Verify: curl ${CF_URL}/health"
+          echo "  Step 8: Verify: curl ${CF_URL}/api/auth/me  (expect {\"user\":null})"
         # The DB migrate task (Step 5) requires the secret to be populated and must be
         # run manually after this workflow completes. It cannot safely be automated here
         # because it runs against the production database and is idempotent-but-careful.

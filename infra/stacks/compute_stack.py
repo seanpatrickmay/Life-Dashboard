@@ -45,9 +45,9 @@ class ComputeStack(cdk.Stack):
             "LD_S3_ASSET_BUCKET": foundation.asset_bucket.bucket_name,
             "LD_SQS_QUEUE_URL": foundation.job_queue.queue_url,
             "LD_DDB_KV_TABLE": foundation.kv_table.table_name,
-            # Non-secret app config — update ADMIN_EMAIL/FRONTEND_URL post-deploy per runbook
-            "ADMIN_EMAIL": "admin@example.com",
-            "FRONTEND_URL": "https://REPLACE_WITH_CLOUDFRONT_DOMAIN",
+            # ADMIN_EMAIL and FRONTEND_URL are intentionally NOT here.
+            # They are loaded from the Secrets Manager secret at cold-start via
+            # load_secrets_into_env().  See docs/deploy-serverless.md Step 3.
         }
 
         # --- One image, four functions via per-function CMD override ---

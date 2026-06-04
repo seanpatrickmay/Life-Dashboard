@@ -140,7 +140,11 @@ After this step, note the outputs:
 ### Step 3 — Populate the Secret
 
 **This step must be done before deploying Compute, because Lambda cold-start reads the
-secret.** The secret is JSON; populate all keys at once:
+secret.** The secret is JSON; populate all keys at once.
+
+> **Ordering note:** `FRONTEND_URL` and the OAuth redirect URIs reference the CloudFront
+> domain, which is not known until after the Edge stack deploys (Step 4). Set placeholder
+> values now; you will update them in Step 7 after the Edge stack is deployed.
 
 ```bash
 aws secretsmanager put-secret-value \
@@ -157,7 +161,7 @@ aws secretsmanager put-secret-value \
     "GOOGLE_CLIENT_SECRET_PROD":       "<Google OAuth client secret>",
     "GOOGLE_REDIRECT_URI_PROD":        "https://REPLACE_AFTER_EDGE_DEPLOY.cloudfront.net/api/auth/google/callback",
     "GOOGLE_CALENDAR_REDIRECT_URI_PROD": "https://REPLACE_AFTER_EDGE_DEPLOY.cloudfront.net/api/calendar/google/callback",
-    "GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY": "<Fernet key for calendar tokens — may reuse Garmin key or generate separately>",
+    "GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY": "<Fernet key for calendar tokens — generate separately from the Garmin key>",
     "APP_ENV":                         "prod"
   }'
 ```
@@ -211,29 +215,15 @@ After this step, note the outputs:
 Before the app can serve requests, the database schema must be at head. The Fargate task
 reads secrets from Secrets Manager at startup (including `DATABASE_URL_MIGRATIONS`).
 
-First, find the VPC and create a security group that allows all egress (so the Fargate
-task can reach Neon over the public internet):
+The DataJobs stack creates a dedicated egress-only security group (`MigrateSg`) with
+inbound denied and egress limited to port 5432 (Neon Postgres) and port 443 (Secrets
+Manager / ECR). Use it directly from the CDK stack outputs:
 
 ```bash
-# Get the VPC that CDK created for the DataJobs stack
-VPC_ID=$(aws ec2 describe-vpcs \
-  --filters "Name=tag:aws:cloudformation:stack-name,Values=LifeDash-DataJobs" \
-  --query "Vpcs[0].VpcId" \
+SG_ID=$(aws cloudformation describe-stacks \
+  --stack-name LifeDash-DataJobs \
+  --query "Stacks[0].Outputs[?OutputKey=='MigrateSecurityGroupId'].OutputValue" \
   --output text)
-
-# Create an egress-only security group in that VPC
-SG_ID=$(aws ec2 create-security-group \
-  --group-name lifedash-migrate-egress \
-  --description "Fargate migrate task — all egress to reach Neon" \
-  --vpc-id "$VPC_ID" \
-  --query "GroupId" \
-  --output text)
-
-# Allow all outbound traffic (Neon Postgres on :5432 over TLS)
-aws ec2 authorize-security-group-egress \
-  --group-id "$SG_ID" \
-  --protocol -1 \
-  --cidr 0.0.0.0/0
 ```
 
 Then run the migrate task using the CDK outputs:
@@ -314,7 +304,7 @@ aws cloudfront create-invalidation \
 
 ### Step 7 — Post-Deploy Config: Update OAuth Redirect URIs
 
-After Step 4 you have the CloudFront domain. Update the secret and Lambda env:
+After Step 4 you have the CloudFront domain. Update the secret with the real URLs:
 
 ```bash
 CF_URL=$(aws cloudformation describe-stacks \
@@ -323,7 +313,7 @@ CF_URL=$(aws cloudformation describe-stacks \
   --output text)
 # e.g. https://abc123.cloudfront.net
 
-# 1. Update the secret with the real CloudFront URL
+# Update the secret with the real CloudFront URL
 aws secretsmanager put-secret-value \
   --secret-id life-dashboard/app \
   --secret-string "$(aws secretsmanager get-secret-value \
@@ -334,21 +324,18 @@ aws secretsmanager put-secret-value \
       d['GOOGLE_REDIRECT_URI_PROD']='${CF_URL}/api/auth/google/callback'; \
       d['GOOGLE_CALENDAR_REDIRECT_URI_PROD']='${CF_URL}/api/calendar/google/callback'; \
       print(json.dumps(d))")"
-
-# 2. Force a Lambda cold-start to pick up the new secret values
-API_FN=$(aws cloudformation describe-stacks \
-  --stack-name LifeDash-Compute \
-  --query "Stacks[0].Outputs[?OutputKey=='ApiFnName'].OutputValue" \
-  --output text)
-
-aws lambda update-function-configuration \
-  --function-name "$API_FN" \
-  --environment "Variables={FRONTEND_URL=${CF_URL}}"
-# Secrets Manager values are reloaded at cold-start, not via env; this FRONTEND_URL
-# override ensures Settings() validates correctly even before the next cold-start.
 ```
 
-3. **Update Google Cloud Console** — add the CloudFront URL to the authorized redirect URIs
+> **Do NOT use `aws lambda update-function-configuration --environment "Variables={...}"`.**
+> That command replaces the entire Lambda environment, wiping all `LD_*` config vars that
+> CDK manages. `FRONTEND_URL` and `ADMIN_EMAIL` are loaded from the secret at cold-start —
+> no Lambda env update is needed.
+>
+> The updated secret values take effect on the next Lambda cold start (≤ 15 min for a new
+> invocation after a warm container expires). To force an immediate pickup, briefly touch a
+> benign Lambda env var via the Console, or redeploy the Compute stack.
+
+2. **Update Google Cloud Console** — add the CloudFront URL to the authorized redirect URIs
    for your OAuth 2.0 client:
    - `https://<cloudfront>/api/auth/google/callback`
    - `https://<cloudfront>/api/calendar/google/callback`
@@ -358,18 +345,27 @@ aws lambda update-function-configuration \
 ```bash
 CF_URL=https://abc123.cloudfront.net   # your CloudFront URL
 
-# Health endpoint (no DB)
-curl -s "${CF_URL}/health"
-# → {"status":"ok"}
-
-# Auth endpoint (DB-backed)
+# Auth endpoint (DB-backed; use this instead of /health for post-deploy smoke testing)
 curl -s "${CF_URL}/api/auth/me"
 # → {"user":null}
+
+# Health endpoint (no DB) — see Known Limitation below
+curl -s "${CF_URL}/health"
+# → May return 200 with index.html rather than {"status":"ok"} when hit through CloudFront
+#   Use /api/auth/me as the canonical health check.
 
 # Load the SPA
 open "$CF_URL"
 # → React app loads; Google login should work
 ```
+
+> **Known limitation — CloudFront error response masking:** CloudFront's `error_responses`
+> (403/404 → index.html with 200) are configured at the distribution level. This means API
+> 4xx responses that pass through CloudFront may be rewritten to 200 + index.html body,
+> making them invisible from outside. `/health` (not under `/api`) is similarly served as
+> the SPA index. **Rely on CloudWatch Logs for API error visibility**, not HTTP status codes
+> observed through CloudFront. A CloudFront Function SPA-rewrite (rewrite only non-`/api`
+> paths) is a documented hardening option that would fix this.
 
 ---
 
@@ -468,3 +464,23 @@ To use a custom domain:
 4. Re-deploy `LifeDash-Edge`.
 5. Add a Route 53 alias record (or CNAME in external DNS) pointing to the CloudFront domain.
 6. Update `FRONTEND_URL` and OAuth redirect URIs to the custom domain.
+
+---
+
+## Hardening (post-MVP)
+
+The following items are deferred from the initial deploy but are documented here for
+visibility. They are tracked as cdk-nag suppressions with matching `reason` strings.
+
+| Item | Description |
+|---|---|
+| **CloudFront origin secret (X-Origin-Verify)** | Add a secret header from CloudFront to API Gateway and reject direct API GW requests that lack it. Currently anyone with the API GW URL can bypass the CloudFront rate limiter. |
+| **Asset bucket CORS** | Tighten `allowed_origins` from `["*"]` to `["https://<cloudfront-domain>"]` after deploy via `aws s3api put-bucket-cors`. |
+| **`GOOGLE_CALENDAR_TOKEN_ENCRYPTION_KEY`** | Generate a dedicated Fernet key; do not fall back to or reuse the Garmin key. |
+| **CloudFront WAF** | Attach an AWS WAF Web ACL to the CloudFront distribution (rate limiting, geo-blocking, managed rule groups). |
+| **CloudFront access logging** | Enable standard access logs to S3 for audit trail. |
+| **CloudFront OAC (vs OAI)** | Migrate from Origin Access Identity to Origin Access Control (OAC) for S3 — OAI is legacy. |
+| **CloudFront security policy** | Pin `minimum_protocol_version=TLS_V1_2_2021` on the distribution. |
+| **Secrets Manager rotation** | Implement a rotation Lambda for `DATABASE_URL` and API keys where supported. |
+| **CloudFront Function SPA rewrite** | Add a CloudFront Function that rewrites only non-`/api` paths to `index.html`, so API 4xx are not masked by the error-response rewrite. |
+| **VPC endpoints for Secrets Manager / ECR** | Add VPC interface endpoints so the Fargate migrate task no longer needs 0.0.0.0/0 egress for AWS APIs. |

@@ -8,11 +8,14 @@ from loguru import logger
 
 from app.aws.bootstrap import cold_start
 
-# Import handler modules so their @job registrations populate the registry:
-import app.jobs.handlers  # noqa: F401
-import app.workers.tasks  # noqa: F401
+cold_start()  # MUST run before the imports below: loads secrets (DATABASE_URL) into env
+              # before app.core.config's module-level Settings() is constructed.
 
-from app.jobs.queue import dispatch
+# Import handler modules so their @job registrations populate the registry:
+import app.jobs.handlers  # noqa: F401, E402
+import app.workers.tasks  # noqa: F401, E402
+
+from app.jobs.queue import dispatch  # noqa: E402
 
 
 def handler(event: dict | None, context: object = None) -> dict:
@@ -31,7 +34,7 @@ def handler(event: dict | None, context: object = None) -> dict:
     dispatch() handles gracefully (unknown/malformed job names) are NOT failures
     from SQS's perspective and are therefore NOT included in batchItemFailures.
     """
-    cold_start()
+    cold_start()  # idempotent no-op (already ran at import); kept for safety
     return asyncio.run(_process(event or {}))
 
 

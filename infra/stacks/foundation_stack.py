@@ -50,10 +50,12 @@ class FoundationStack(cdk.Stack):
         self.job_dlq = sqs.Queue(self, "JobDlq",
             retention_period=Duration.days(14),
             enforce_ssl=True,
+            encryption=sqs.QueueEncryption.SQS_MANAGED,
         )
         self.job_queue = sqs.Queue(self, "JobQueue",
             visibility_timeout=Duration.seconds(960),
             enforce_ssl=True,
+            encryption=sqs.QueueEncryption.SQS_MANAGED,
             dead_letter_queue=sqs.DeadLetterQueue(
                 max_receive_count=5,
                 queue=self.job_dlq,

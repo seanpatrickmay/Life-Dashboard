@@ -26,7 +26,7 @@ COPY alembic.ini ${LAMBDA_TASK_ROOT}/
 #   ENTRYPOINT ["python", "-m", "app.aws.migrate"]   (CMD not used)
 #   -- or via docker run: --entrypoint python ... -m app.aws.migrate
 #
-# NOTE: this image is built for the host architecture (arm64 on Apple Silicon).
-# The real Lambda/Fargate deploy should pin --platform linux/amd64 (or arm64 if
-# using Graviton) in the Phase 4 runbook / CI build command.
+# NOTE: this image is built for linux/arm64 (Graviton). CDK sets
+# platform=LINUX_ARM64 on the DockerImageAsset; CI uses QEMU + buildx for
+# cross-compilation on x86_64 runners. See docs/deploy-serverless.md.
 CMD ["app.aws.api_handler.handler"]

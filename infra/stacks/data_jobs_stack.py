@@ -60,6 +60,14 @@ class DataJobsStack(cdk.Stack):
 
         foundation.app_secret.grant_read(task_def.task_role)
 
+        # Explicit egress-only security group for the migrate task.
+        # No inbound rules; egress limited to Neon Postgres (5432) and AWS APIs/ECR (443).
+        migrate_sg = ec2.SecurityGroup(self, "MigrateSg", vpc=vpc,
+            description="Fargate migrate task - egress only", allow_all_outbound=False)
+        migrate_sg.add_egress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(5432), "Neon Postgres")
+        migrate_sg.add_egress_rule(ec2.Peer.any_ipv4(), ec2.Port.tcp(443), "Secrets Manager / ECR")
+        self.migrate_sg = migrate_sg
+
         self.cluster = cluster
         self.migrate_task = task_def
         self.vpc = vpc
@@ -69,6 +77,7 @@ class DataJobsStack(cdk.Stack):
         cdk.CfnOutput(self, "MigrateTaskDefArn", value=task_def.task_definition_arn)
         cdk.CfnOutput(self, "PublicSubnetIds",
             value=cdk.Fn.join(",", [s.subnet_id for s in vpc.public_subnets]))
+        cdk.CfnOutput(self, "MigrateSecurityGroupId", value=migrate_sg.security_group_id)
 
         # --- cdk-nag suppressions ---
 
@@ -137,4 +146,23 @@ class DataJobsStack(cdk.Stack):
                 applies_to=["Resource::*"],
             )],
             apply_to_children=True,
+        )
+
+        # EC23: MigrateSg egress rules use 0.0.0.0/0 CIDR.
+        # The Fargate migrate task runs in a no-NAT public VPC and must reach Neon Postgres
+        # (hosted on the public internet) and AWS-managed services (Secrets Manager, ECR) over
+        # their public endpoints. Restricting to specific IPs is not feasible for managed SaaS
+        # endpoints. All egress is TLS-only (ports 443 and 5432/TLS). Documented as a hardening
+        # item (VPC endpoint for Secrets Manager / ECR would eliminate the 0.0.0.0/0 need).
+        cdk_nag.NagSuppressions.add_resource_suppressions(
+            migrate_sg,
+            [cdk_nag.NagPackSuppression(
+                id="AwsSolutions-EC23",
+                reason=(
+                    "Egress to 0.0.0.0/0 on ports 443 and 5432 is required: Neon Postgres is a "
+                    "managed SaaS with no fixed IP range, and Secrets Manager / ECR are reached "
+                    "via public endpoints from this no-NAT VPC. All traffic is TLS-only. "
+                    "VPC endpoints for Secrets Manager/ECR are a documented hardening option."
+                ),
+            )],
         )

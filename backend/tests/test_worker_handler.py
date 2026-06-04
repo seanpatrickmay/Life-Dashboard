@@ -9,6 +9,8 @@ Coverage
 5. Partial batch — one good record, one raising record; only failing one reported.
 6. Registration — importing worker_handler causes all real job names to be in
    registered_jobs() (proves @job side-effects from both handler modules ran).
+8. Cold-start ordering — worker_handler imports cleanly when DATABASE_URL is absent
+   from the environment but present in a (moto) Secrets Manager secret.
 
 Registry isolation
 ------------------
@@ -21,6 +23,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -271,3 +277,96 @@ def test_single_asyncio_run_for_batch(
 
     assert run_call_count == 1
     assert len(payloads_seen) == 2
+
+
+# ---------------------------------------------------------------------------
+# 8. Cold-start ordering — DATABASE_URL absent from env, present in Secrets Manager
+# ---------------------------------------------------------------------------
+
+
+def test_worker_handler_imports_cleanly_without_database_url_in_env() -> None:
+    """Prove the cold_start()-before-imports fix: worker_handler must import cleanly
+    when DATABASE_URL is NOT in the environment but IS in a moto Secrets Manager secret.
+
+    Uses a subprocess so the import happens in a completely fresh Python process with no
+    prior module state — the only way to truly validate module-level import ordering.
+
+    The subprocess:
+    1. Installs a mocked Secrets Manager secret containing DATABASE_URL (and friends).
+    2. Sets LD_SECRETS=secretsmanager / LD_SECRETS_NAME so cold_start() loads from it.
+    3. Explicitly deletes DATABASE_URL from the environment.
+    4. Imports app.aws.worker_handler and asserts handler is callable.
+    5. Exits 0 on success, non-zero (with error to stderr) on any exception.
+    """
+    backend_root = str(Path(__file__).resolve().parents[1])
+
+    script = r"""
+import sys
+import os
+import json
+
+# Point Python at the backend root so 'app' is importable
+sys.path.insert(0, sys.argv[1])
+
+# Set up moto BEFORE any boto3/app imports
+import boto3
+from moto import mock_aws
+
+secret_value = json.dumps({
+    "DATABASE_URL": "postgresql+asyncpg://user:pass@localhost/testdb?ssl=require",
+    "DATABASE_URL_MIGRATIONS": "postgresql://user:pass@localhost/testdb?sslmode=require",
+    "ADMIN_EMAIL": "test@example.com",
+    "FRONTEND_URL": "http://localhost:4173",
+    "GARMIN_PASSWORD_ENCRYPTION_KEY": "test-key",
+    "OPENAI_API_KEY": "test-key",
+    "READINESS_ADMIN_TOKEN": "test-token",
+    "GOOGLE_CLIENT_ID_LOCAL": "test-id",
+    "GOOGLE_CLIENT_SECRET_LOCAL": "test-secret",
+    "GOOGLE_REDIRECT_URI_LOCAL": "http://localhost:8000/api/auth/google/callback",
+})
+
+with mock_aws():
+    # Create the secret in moto's in-memory Secrets Manager
+    sm = boto3.client("secretsmanager", region_name="us-east-1")
+    sm.create_secret(Name="life-dashboard/app", SecretString=secret_value)
+
+    # Configure env to use secretsmanager; remove DATABASE_URL to prove the ordering fix
+    os.environ["LD_SECRETS"] = "secretsmanager"
+    os.environ["LD_SECRETS_NAME"] = "life-dashboard/app"
+    os.environ["AWS_REGION"] = "us-east-1"
+    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+    os.environ["AWS_SECURITY_TOKEN"] = "testing"
+    os.environ["AWS_SESSION_TOKEN"] = "testing"
+    os.environ.pop("DATABASE_URL", None)
+    os.environ.pop("AWS_ENDPOINT_URL", None)
+
+    # This is the import under test: cold_start() MUST fire before app.core.config
+    # constructs Settings(), otherwise ValidationError crashes here.
+    import app.aws.worker_handler as wh
+
+    assert callable(wh.handler), "handler must be callable after import"
+    print("OK: worker_handler imported cleanly without DATABASE_URL in env")
+"""
+
+    env = os.environ.copy()
+    # Remove vars that must not reach the subprocess:
+    # - DATABASE_URL: the whole point of this test is to prove cold_start() loads it
+    # - AWS_ENDPOINT_URL: integration tests may leave this pointing at localstack (4566);
+    #   the subprocess uses moto (in-process), so any real endpoint URL breaks it.
+    for var in ("DATABASE_URL", "AWS_ENDPOINT_URL"):
+        env.pop(var, None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", script, backend_root],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, (
+        f"worker_handler cold-start import failed (exit {result.returncode}).\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
