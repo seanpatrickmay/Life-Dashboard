@@ -67,6 +67,27 @@ KVStore→DynamoDB, SecretsProvider, JobQueue→SQS, job_run throttle), defaults
 
 ---
 
+## Phase 2 — AWS handlers ✅ (DONE)
+
+**Tests: 531 → 589 passing.** New package `app/aws/`.
+
+**What was done (commits):**
+- 2.1 `1a3c527` lazy, env-profiled DB engine (`get_engine`/`get_sessionmaker`/`init_engine`, PEP 562 `__getattr__` backward-compat for `engine`/`AsyncSessionLocal`).
+- 2.1b `d64a955` **NullPool** for the AWS profile (avoids asyncpg cross-loop connection reuse under per-invocation `asyncio.run`).
+- 2.2 `5fa44de` `bootstrap.cold_start()` (secrets → runtime validation → init_engine) + Mangum `api_handler` (`lifespan="off"`); `_validate_runtime` HARD-raises if `LD_RUNTIME=aws` and `LD_JOB_QUEUE!=sqs`; `_client_ip` XFF helper.
+- 2.3 `e4ffa6c` EventBridge `scheduled_handler` (garmin_ingest, rss_digest); extracted DRY `run_metrics_refresh` shared with the visit_refresh job.
+- 2.4 `893636a` SQS `worker_handler` (single-loop batch, partial-batch-failure `{batchItemFailures}`, imports handler modules to populate the registry).
+- 2.5 `11bcf1d` `migrate.py` runner — fresh DB → `create_all`+`stamp head`; existing → `upgrade head`; **seeds admin user** (no longer run under Mangum lifespan=off). Verified BOTH paths on real Postgres.
+- hardening `4a080f1` (review): **lazy `get_sessionmaker()()` in worker chain** (tasks.py/handlers.py — fixes stale import-time engine capture before cold_start), dropped dead `pool_pre_ping` from NullPool branch, migrate guard against stamping a half-initialized DB.
+
+**Review (devils-advocate):** confirmed solid — NullPool reasoning, `_COLD_STARTED` ordering, single-loop batch, engine safe to build outside a loop. Genuine bug (worker import-time session capture) fixed. Deferred (justified): import-time `cold_start` in api_handler (Lambda self-heals INIT on transient failure; fail-fast on config errors is desired); `_client_ip` XFF nuance (single-user-acceptable; CloudFront-always-present topology).
+
+**Gate:** 589 tests green; `app/aws/` ruff clean.
+
+**Next:** Phase 3 — container image (one Lambda-base image, four entrypoints: api/scheduled/worker/migrate).
+
+---
+
 ## Carry-forward / known issues (MUST address in later phases)
 
 1. **Migration chain is NOT replayable on a fresh DB** (pre-existing, discovered in Task 1.3).
@@ -94,3 +115,15 @@ KVStore→DynamoDB, SecretsProvider, JobQueue→SQS, job_run throttle), defaults
    `bootstrap.cold_start()`:** if `LD_RUNTIME=="aws"` and `LD_JOB_QUEUE!="sqs"`, raise at cold start
    (convert silent data-loss into a loud deploy failure). Likewise consider asserting `LD_BLOB_STORE=s3`,
    `LD_KV_STORE=dynamodb`, `LD_SECRETS=secretsmanager` under aws runtime. CDK must set all of these.
+   ✅ DONE in Task 2.2 (`_validate_runtime` raises on LD_JOB_QUEUE!=sqs; warns on the others). Items 1 & 5 resolved.
+
+### Phase 4 (CDK) requirements derived from Phase 2:
+6. **Lambda env vars CDK MUST set** on all function (api/scheduled/worker) + the Fargate migrate task:
+   `LD_RUNTIME=aws`, `LD_JOB_QUEUE=sqs`, `LD_BLOB_STORE=s3`, `LD_KV_STORE=dynamodb`, `LD_SECRETS=secretsmanager`,
+   `LD_SECRETS_NAME=<secret>`, `LD_S3_ASSET_BUCKET`, `LD_SQS_QUEUE_URL`, `LD_DDB_KV_TABLE`, `AWS_REGION`.
+   Also set `DATABASE_URL`/`ADMIN_EMAIL` as env (belt-and-suspenders; the lazy-session fix makes secrets-only also work,
+   but env is simplest). Migrate task needs `DATABASE_URL_MIGRATIONS` (sync URL) + `LD_SECRETS*`.
+7. **SQS event source mapping MUST enable `ReportBatchItemFailures`** (the worker returns `{batchItemFailures}`); set
+   a DLQ with `maxReceiveCount` (~5). Otherwise partial-batch-failure is ignored and whole batches re-run.
+8. **CloudFront topology is assumed** by `_client_ip` (rate limit) — keep CloudFront in front of API Gateway so the
+   viewer IP reaches the app via XFF; rate-limit is best-effort for the single user regardless.
