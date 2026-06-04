@@ -123,6 +123,31 @@ All four stacks synthesize; cdk-nag clean (suppressed with justifications). ARM6
 
 ---
 
+## Phase 5 — LocalStack end-to-end (IN PROGRESS)
+
+- 5.1 `9c72e02` **CORE PROOF achieved.** Deployed to LocalStack and proved live: API GW → Lambda `/health` → 200;
+  `/api/auth/me` → 200 `{"user":null}` = **full path Lambda cold-start → Secrets Manager → DATABASE_URL → asyncpg →
+  `appdb:5432` (via `LAMBDA_DOCKER_NETWORK=life-dashboard-local_default`) → FastAPI query → response.** Secret seeded
+  with in-network `appdb:5432` URL. Repeatable via `infra/local/smoke_deploy.sh`.
+  - **MAJOR FINDING — LocalStack Community can't deploy the exact CDK stacks:** ECR push, container-image Lambdas
+    (`PackageType=Image`), and **API Gateway v2 (HTTP API)** are all **Pro-only** (plus the known ECS/CloudFront Pro
+    gaps). The smoke used a functionally-equivalent **ZIP Lambda (python3.12) + REST API v1** deployed by CLI to prove
+    the flow. The **CDK stacks are real-AWS-ready as-is** (DockerImageAsset→real ECR, HttpApi→real HTTP API v2) — no
+    code change needed for real deploy. Also: LocalStack on Apple Silicon spawns **x86_64** Lambda containers (real
+    deploy uses arm64/Graviton — CI build platform must match the CDK `architecture`).
+  - Fixes: `aws-cdk-local`→3.0.4 (compat with cdk 2.1126/Node 24); `ssm` added to LocalStack SERVICES (CDK bootstrap);
+    stable compose network name.
+- 5.2 (next): integration tests exercising the **adapters against REAL LocalStack APIs** (S3BlobStore, DynamoKVStore,
+  SqsJobQueue, SecretsManagerProvider) — closes the moto≠LocalStack fidelity gap without re-hand-building Lambdas.
+- 5.7 (next): frontend build → S3 (LocalStack) → local reverse-proxy routing (`/`→S3, `/api/*`→API).
+
+**Phase 5 honesty boundary:** proven LIVE on LocalStack = app logic + Lambda runtime + Secrets + Postgres networking +
+API routing + (5.2) the four AWS adapters. Synth-validated + real-AWS-ready + separately smoke-proven (RIE/docker-run in
+Phase 3) = the exact container-image stacks, HTTP API v2, ECS Fargate migrate, CloudFront. Real `cdklocal deploy` of the
+container stacks needs LocalStack Pro.
+
+---
+
 ## Carry-forward / known issues (MUST address in later phases)
 
 1. **Migration chain is NOT replayable on a fresh DB** (pre-existing, discovered in Task 1.3).
