@@ -86,15 +86,19 @@ def test_engine_kwargs_local_profile():
 
 
 def test_engine_kwargs_aws_profile():
-    """AWS profile (ld_runtime='aws') produces lean 2/2 pool with recycle=300."""
+    """AWS profile (ld_runtime='aws') uses NullPool — no pool_size/max_overflow."""
+    from sqlalchemy.pool import NullPool
+
     from app.db.session import _engine_kwargs
 
     stub = _StubSettings(ld_runtime="aws")
     kwargs = _engine_kwargs(stub)  # type: ignore[arg-type]
 
-    assert kwargs["pool_size"] == 2
-    assert kwargs["max_overflow"] == 2
-    assert kwargs["pool_recycle"] == 300
+    assert kwargs["poolclass"] is NullPool
+    assert "pool_size" not in kwargs
+    assert "max_overflow" not in kwargs
+    assert "pool_recycle" not in kwargs
+    assert "pool_use_lifo" not in kwargs
 
 
 def test_engine_kwargs_aws_profile_with_postgres_connect_args():
@@ -280,3 +284,43 @@ def test_monkeypatch_setattr_overrides_getattr():
                 pass
         else:
             session_mod.AsyncSessionLocal = original  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# 6. AWS engine actually uses NullPool at the SQLAlchemy engine level
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_aws_engine_uses_null_pool(monkeypatch):
+    """get_engine() under ld_runtime=aws produces an engine backed by NullPool.
+
+    Uses a SQLite+aiosqlite URL so no Postgres connection is required.
+    Verifies via _engine_kwargs (which controls the poolclass kwarg) and also
+    checks the built engine's pool class name contains 'NullPool'.
+    """
+    from sqlalchemy.pool import NullPool
+
+    import app.db.session as session_mod
+    from app.db.session import _engine_kwargs, init_engine
+
+    monkeypatch.setenv("LD_RUNTIME", "aws")
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///test_aws_pool.db")
+
+    engine = init_engine()
+    try:
+        # Verify _engine_kwargs picked NullPool
+        from app.core.config import Settings
+        s = Settings()
+        kwargs = _engine_kwargs(s)
+        assert kwargs.get("poolclass") is NullPool
+
+        # Verify the actual engine pool class
+        pool_class_name = type(engine.pool).__name__
+        assert "NullPool" in pool_class_name, (
+            f"Expected pool class containing 'NullPool', got {pool_class_name!r}"
+        )
+    finally:
+        await engine.dispose()
+        # Restore clean state (autouse fixture also does this, but be explicit)
+        session_mod._engine = None
+        session_mod._sessionmaker = None

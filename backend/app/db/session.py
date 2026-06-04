@@ -2,25 +2,42 @@
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.core.config import Settings
 
 
 def _engine_kwargs(s: Settings) -> dict:
-    """Return SQLAlchemy engine kwargs tuned for the active runtime profile."""
-    is_aws = s.ld_runtime == "aws"
+    """Return SQLAlchemy engine kwargs tuned for the active runtime profile.
+
+    AWS/Lambda profile uses NullPool — no connections are cached across
+    invocations.  Each Lambda invocation creates a fresh event loop via
+    asyncio.run(), and asyncpg connections are bound to the loop that
+    created them; reusing a pooled connection on the next warm invocation
+    points at a closed loop ("Event loop is closed" / "attached to a
+    different loop").  NullPool avoids this entirely; Neon's PgBouncer
+    makes per-invocation connection setup cheap.
+    """
     connect_args = (
         {"server_settings": {"jit": "off"}, "command_timeout": 60}
         if "postgresql" in s.database_url
         else {}
     )
+    if s.ld_runtime == "aws":
+        return dict(
+            echo=False,
+            future=True,
+            poolclass=NullPool,
+            pool_pre_ping=s.database_pool_pre_ping,
+            connect_args=connect_args,
+        )
     return dict(
         echo=False,
         future=True,
-        pool_size=2 if is_aws else 5,
-        max_overflow=2 if is_aws else 5,
+        pool_size=5,
+        max_overflow=5,
         pool_pre_ping=s.database_pool_pre_ping,
-        pool_recycle=300 if is_aws else s.database_pool_recycle_seconds,
+        pool_recycle=s.database_pool_recycle_seconds,
         pool_use_lifo=s.database_pool_use_lifo,
         connect_args=connect_args,
     )
