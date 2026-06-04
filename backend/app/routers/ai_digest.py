@@ -24,7 +24,7 @@ async def get_today_digest(
 
     if is_stale:
         controller = get_digest_refresh_controller()
-        await controller.request_refresh()
+        await controller.request_refresh(session)
 
     items = await service.get_today_items()
     last_refreshed = await service.get_latest_refresh_time()
@@ -47,9 +47,10 @@ async def get_today_digest(
 @router.post("/refresh", response_model=RefreshResponse)
 async def refresh_digest(
     current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> RefreshResponse:
     controller = get_digest_refresh_controller()
-    status = await controller.request_refresh(force=True)
+    status = await controller.request_refresh(session, force=True)
     return RefreshResponse(started=status.job_started, message=status.message or "")
 
 
