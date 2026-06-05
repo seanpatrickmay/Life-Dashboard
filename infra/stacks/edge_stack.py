@@ -4,6 +4,7 @@ import aws_cdk as cdk
 import cdk_nag
 from aws_cdk import (
     Duration,
+    aws_certificatemanager as acm,
     aws_cloudfront as cf,
     aws_cloudfront_origins as origins,
 )
@@ -35,9 +36,23 @@ class EdgeStack(cdk.Stack):
         # Default behavior: React SPA served from private S3 via OAI (S3Origin auto-creates OAI).
         # NOTE: OAC support (S3BucketOrigin.with_origin_access_control) arrives in aws-cdk-lib 2.156+.
         #       We use OAI via S3Origin for 2.150 compatibility. Migrate to OAC in the runbook hardening.
+        # Optional custom domain. Set at deploy time:
+        #   cdk deploy --context acm_cert_arn=<arn> --context domain_names=lifedashboard.tech,www.lifedashboard.tech
+        # The ACM cert MUST be in us-east-1 (this stack is). Without context, CloudFront uses the
+        # default *.cloudfront.net certificate (and no alternate domain names) — keeps LocalStack/no-domain
+        # deploys working.
+        cert_arn = self.node.try_get_context("acm_cert_arn")
+        _domains = self.node.try_get_context("domain_names")
+        domain_names = [d.strip() for d in _domains.split(",")] if _domains else None
+        certificate = (
+            acm.Certificate.from_certificate_arn(self, "SiteCert", cert_arn) if cert_arn else None
+        )
+
         distribution = cf.Distribution(
             self,
             "Distribution",
+            domain_names=domain_names,
+            certificate=certificate,
             default_root_object="index.html",
             default_behavior=cf.BehaviorOptions(
                 origin=origins.S3Origin(foundation.frontend_bucket),
