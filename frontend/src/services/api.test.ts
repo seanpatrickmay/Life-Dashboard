@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { resolveApiBaseUrl } from './api';
+import {
+  api,
+  fetchAllActivities,
+  fetchDigest,
+  fetchNutritionIngredients,
+  fetchNutritionNutrients,
+  fetchNutritionRecipe,
+  fetchNutritionRecipes,
+  fetchProjectActivities,
+  refreshDigest,
+  resolveApiBaseUrl
+} from './api';
+import { enterGuestMode, exitGuestMode } from '../demo/guest/guestMode';
 
 const httpsLocation = {
   protocol: 'https:',
@@ -52,5 +64,98 @@ describe('resolveApiBaseUrl', () => {
   it('uses localhost when no location is available', () => {
     const resolved = resolveApiBaseUrl();
     expect(resolved).toBe('http://localhost:8000');
+  });
+});
+
+describe('guest mode API short-circuits', () => {
+  beforeEach(() => {
+    enterGuestMode();
+  });
+
+  afterEach(() => {
+    exitGuestMode();
+    vi.restoreAllMocks();
+  });
+
+  it('fetchDigest returns an empty digest without calling the network', async () => {
+    const getSpy = vi
+      .spyOn(api, 'get')
+      .mockRejectedValue(new Error('network must not be called in guest mode'));
+    const result = await fetchDigest();
+    expect(result).toEqual({
+      items: [],
+      last_refreshed: null,
+      item_count: 0,
+      is_stale: false,
+      narrative: null
+    });
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
+  it('refreshDigest reports disabled without calling the network', async () => {
+    const postSpy = vi
+      .spyOn(api, 'post')
+      .mockRejectedValue(new Error('network must not be called in guest mode'));
+    const result = await refreshDigest();
+    expect(result).toEqual({
+      started: false,
+      message: 'Refreshing the digest is disabled in demo mode.'
+    });
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
+  it('fetchProjectActivities returns [] without calling the network', async () => {
+    const getSpy = vi
+      .spyOn(api, 'get')
+      .mockRejectedValue(new Error('network must not be called in guest mode'));
+    const result = await fetchProjectActivities(1);
+    expect(result).toEqual([]);
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
+  it('fetchAllActivities returns [] without calling the network', async () => {
+    const getSpy = vi
+      .spyOn(api, 'get')
+      .mockRejectedValue(new Error('network must not be called in guest mode'));
+    const result = await fetchAllActivities();
+    expect(result).toEqual([]);
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
+  it('fetchNutritionNutrients returns [] without calling the network', async () => {
+    const getSpy = vi
+      .spyOn(api, 'get')
+      .mockRejectedValue(new Error('network must not be called in guest mode'));
+    const result = await fetchNutritionNutrients();
+    expect(result).toEqual([]);
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
+  it('fetchNutritionIngredients returns [] without calling the network', async () => {
+    const getSpy = vi
+      .spyOn(api, 'get')
+      .mockRejectedValue(new Error('network must not be called in guest mode'));
+    const result = await fetchNutritionIngredients();
+    expect(result).toEqual([]);
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
+  it('fetchNutritionRecipes returns [] without calling the network', async () => {
+    const getSpy = vi
+      .spyOn(api, 'get')
+      .mockRejectedValue(new Error('network must not be called in guest mode'));
+    const result = await fetchNutritionRecipes();
+    expect(result).toEqual([]);
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
+  it('fetchNutritionRecipe throws a friendly demo error without calling the network', async () => {
+    const getSpy = vi
+      .spyOn(api, 'get')
+      .mockRejectedValue(new Error('network must not be called in guest mode'));
+    await expect(fetchNutritionRecipe(1)).rejects.toThrow(
+      'Recipe details are not available in demo mode.'
+    );
+    expect(getSpy).not.toHaveBeenCalled();
   });
 });
