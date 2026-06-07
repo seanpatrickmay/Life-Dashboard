@@ -17,6 +17,7 @@ import { PageShell } from '../components/layout/PageShell';
 import { PageBackground } from '../components/layout/PageBackground';
 import { useVisitRefresh } from '../hooks/useVisitRefresh';
 import { useLocalMidnightInvalidation } from '../hooks/useLocalMidnightInvalidation';
+import useNewsContextPrefetch from '../hooks/useNewsContextPrefetch';
 import { RequireAuth } from '../components/auth/RequireAuth';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { ToastProvider } from '../components/common/Toast';
@@ -53,6 +54,7 @@ const routes = [
 function ShellLayout() {
   useVisitRefresh();
   useLocalMidnightInvalidation();
+  useNewsContextPrefetch();
   return (
     <PageShell>
       <ErrorBoundary>
