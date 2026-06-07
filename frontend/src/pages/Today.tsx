@@ -5,6 +5,7 @@ import { DashboardNewsFeed } from '../components/dashboard/DashboardNewsFeed';
 import { DashboardNutritionSnapshot } from '../components/dashboard/DashboardNutritionSnapshot';
 import { MorningBriefCard } from '../components/dashboard/MorningBriefCard';
 import { SummaryChips } from '../components/dashboard/SummaryChips';
+import { SecondaryNavCTAs } from '../components/dashboard/SecondaryNavCTAs';
 import { QuickCapture } from '../components/todo/QuickCapture';
 import { TodoScrollPad } from '../components/todo/TodoScrollPad';
 import { useInsight } from '../hooks/useInsight';
@@ -149,6 +150,7 @@ export function TodayPage() {
           </Column>
           <Column $delay={1}>
             <DashboardUpcomingEvents />
+            <SecondaryNavCTAs />
           </Column>
           <Column $delay={2}>
             <DashboardNutritionSnapshot />

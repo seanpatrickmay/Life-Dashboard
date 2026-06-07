@@ -8,7 +8,6 @@ const ReflectPage = lazy(() => import('./Reflect').then(m => ({ default: m.Refle
 const CalendarPage = lazy(() => import('./Calendar').then(m => ({ default: m.CalendarPage })));
 const ProjectsPage = lazy(() => import('./Projects').then(m => ({ default: m.ProjectsPage })));
 const ReadPage = lazy(() => import('./Read').then(m => ({ default: m.ReadPage })));
-const UserPage = lazy(() => import('./User').then(m => ({ default: m.UserPage })));
 const FoodManagerPage = lazy(() => import('./FoodManagerPage').then(m => ({ default: m.FoodManagerPage })));
 const LoginPage = lazy(() => import('./Login').then(m => ({ default: m.LoginPage })));
 
@@ -47,7 +46,7 @@ const routes = [
   { path: '/news', element: <Navigate to="/read" replace /> },
   { path: '/news/profile', element: <Navigate to="/read" replace /> },
   { path: '/ai-digest', element: <Navigate to="/read" replace /> },
-  { path: '/user', element: <UserPage /> },
+  { path: '/user', element: <Navigate to="/" replace /> },
   { path: '/settings/food-db', element: <FoodManagerPage /> },
 ];
 

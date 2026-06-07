@@ -7,6 +7,7 @@ import { MonetChatBubble } from '../dashboard/MonetChatPanel';
 import { exitGuestMode, isGuestMode } from '../../demo/guest/guestMode';
 import { clearGuestState } from '../../demo/guest/guestStore';
 import { SettingsDrawer } from './SettingsDrawer';
+import { MovedBanner } from './MovedBanner';
 
 const paletteAccent = (mode: 'light' | 'dark', theme?: { colors?: { accent?: string } }) =>
   theme?.colors?.accent ?? (mode === 'dark' ? palette.bloom['300'] : palette.bloom['200']);
@@ -24,9 +25,9 @@ const Frame = styled.div<{ $fullWidth?: boolean }>`
 
 const Nav = styled.nav`
   display: flex;
-  width: min(90vw, 840px);
-  gap: clamp(12px, 3vw, 28px);
-  justify-content: space-between;
+  width: min(90vw, 560px);
+  gap: clamp(20px, 4vw, 40px);
+  justify-content: flex-start;
   padding: clamp(12px, 1.5vh, 20px) clamp(8px, 2vw, 24px);
   overflow-x: auto;
   scrollbar-width: none;
@@ -165,32 +166,18 @@ export function PageShell({ children }: PropsWithChildren) {
           </GuestExitButton>
         </GuestBanner>
       ) : null}
+      <MovedBanner />
       <CloudNavShelf>
         <NavRow>
           <Nav aria-label="Main navigation">
             <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/" end>
               Today
             </NavLink>
-            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/insights">
-              Insights
-            </NavLink>
-            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/reflect">
-              Reflect
-            </NavLink>
-            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/calendar">
-              Calendar
-            </NavLink>
-            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/projects">
-              Projects
-            </NavLink>
             <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/read">
               Read
             </NavLink>
-            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/nutrition">
-              Nutrition
-            </NavLink>
-            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/user">
-              User
+            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/reflect">
+              Reflect
             </NavLink>
           </Nav>
           <GearButton
