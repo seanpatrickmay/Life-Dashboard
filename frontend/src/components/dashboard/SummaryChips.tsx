@@ -6,6 +6,7 @@ import { useCalendarEvents } from '../../hooks/useCalendar';
 import { useNutritionDailySummary } from '../../hooks/useNutritionIntake';
 import { fadeUp, reducedMotion } from '../../styles/animations';
 import { SecondaryNavCTAs } from './SecondaryNavCTAs';
+import { isEventOnLocalDay } from '../../utils/calendarEvents';
 
 // ── Styled components ─────────────────────────────────────────────────────────
 
@@ -76,16 +77,10 @@ export function SummaryChips() {
   const { eventsQuery } = useCalendarEvents(startDate, endDate);
   const nutritionQuery = useNutritionDailySummary();
 
-  // Count today's events only
-  const todayEvents = (eventsQuery.data?.events ?? []).filter((ev) => {
-    if (!ev.start_time) return false;
-    const d = new Date(ev.start_time);
-    return (
-      d.getFullYear() === today.getFullYear() &&
-      d.getMonth() === today.getMonth() &&
-      d.getDate() === today.getDate()
-    );
-  });
+  // Count today's events only (includes all-day events via shared predicate)
+  const todayEvents = (eventsQuery.data?.events ?? []).filter((ev) =>
+    isEventOnLocalDay(ev, today)
+  );
   const eventCount = todayEvents.length;
 
   // Calories from nutrition summary
