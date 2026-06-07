@@ -5,7 +5,6 @@ import { MacroHero } from '../components/nutrition/MacroHero';
 import { MicronutrientPanel } from '../components/nutrition/MicronutrientPanel';
 import { MenuPanel } from '../components/nutrition/MenuPanel';
 import { GoalsPanel } from '../components/nutrition/GoalsPanel';
-import { FoodManager } from '../components/nutrition/FoodManager';
 import { QuickLogPanel } from '../components/nutrition/QuickLogPanel';
 import { useNutritionHistory } from '../hooks/useNutritionIntake';
 import { fadeUp, reducedMotion } from '../styles/animations';
@@ -195,7 +194,6 @@ type SectionState = {
   micro: boolean;
   averages: boolean;
   goals: boolean;
-  foods: boolean;
   quicklog: boolean;
 };
 
@@ -204,7 +202,6 @@ const DEFAULTS: SectionState = {
   micro: false,
   averages: false,
   goals: false,
-  foods: false,
   quicklog: true,
 };
 
@@ -392,24 +389,6 @@ export function NutritionPage() {
         </CollapsibleWrapper>
       </SectionCard>
 
-      {/* Food Manager */}
-      <SectionCard>
-        <SectionToggle
-          type="button"
-          onClick={() => toggle('foods')}
-          aria-expanded={sections.foods}
-        >
-          <ToggleLeft>
-            <span>Food Manager</span>
-          </ToggleLeft>
-          <Chevron $open={sections.foods}>▶</Chevron>
-        </SectionToggle>
-        <CollapsibleWrapper $open={sections.foods}>
-          <CollapsibleInner>
-            <FoodManager />
-          </CollapsibleInner>
-        </CollapsibleWrapper>
-      </SectionCard>
     </Page>
   );
 }

@@ -12,6 +12,7 @@ const NewsPage = lazy(() => import('./News').then(m => ({ default: m.NewsPage })
 const InterestProfilePage = lazy(() => import('./InterestProfile').then(m => ({ default: m.InterestProfilePage })));
 const AIDigestPage = lazy(() => import('./AIDigest').then(m => ({ default: m.AIDigestPage })));
 const UserPage = lazy(() => import('./User').then(m => ({ default: m.UserPage })));
+const FoodManagerPage = lazy(() => import('./FoodManagerPage').then(m => ({ default: m.FoodManagerPage })));
 const LoginPage = lazy(() => import('./Login').then(m => ({ default: m.LoginPage })));
 
 import { PageShell } from '../components/layout/PageShell';
@@ -45,7 +46,8 @@ const routes = [
   { path: '/news/profile', element: <InterestProfilePage /> },
   { path: '/ai-digest', element: <AIDigestPage /> },
   { path: '/nutrition', element: <NutritionPage /> },
-  { path: '/user', element: <UserPage /> }
+  { path: '/user', element: <UserPage /> },
+  { path: '/settings/food-db', element: <FoodManagerPage /> },
 ];
 
 function ShellLayout() {
