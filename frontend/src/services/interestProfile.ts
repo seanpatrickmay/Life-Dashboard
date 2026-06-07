@@ -304,6 +304,35 @@ export function getSkipPenalty(category: string, readArticleIds: Set<string>): n
   return Math.max(penalty, -1.0);
 }
 
+/* ─── Boost / Mute Topic Persistence ───────────── */
+
+const BOOSTED_KEY = 'ld_boosted_topics';
+const MUTED_KEY = 'ld_muted_topics';
+
+export function getBoostedTopics(): string[] {
+  try {
+    const raw = localStorage.getItem(BOOSTED_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return [];
+}
+
+export function saveBoostedTopics(topics: string[]): void {
+  localStorage.setItem(BOOSTED_KEY, JSON.stringify(topics));
+}
+
+export function getMutedTopics(): string[] {
+  try {
+    const raw = localStorage.getItem(MUTED_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return [];
+}
+
+export function saveMutedTopics(topics: string[]): void {
+  localStorage.setItem(MUTED_KEY, JSON.stringify(topics));
+}
+
 /* ─── Exploration Slots Persistence ────────────── */
 
 const EXPLORATION_KEY = 'ld_exploration_slots';
