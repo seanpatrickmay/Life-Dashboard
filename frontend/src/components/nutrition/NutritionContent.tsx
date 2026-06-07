@@ -7,7 +7,16 @@ import { MicronutrientPanel } from './MicronutrientPanel';
 import { MenuPanel } from './MenuPanel';
 import { GoalsPanel } from './GoalsPanel';
 import { QuickLogPanel } from './QuickLogPanel';
-import { useNutritionHistory } from '../../hooks/useNutritionIntake';
+import { useNutritionDailySummary, useNutritionHistory } from '../../hooks/useNutritionIntake';
+
+/* ── Error notice ── */
+
+const ErrorNotice = styled.p`
+  margin: 0;
+  font-size: 0.82rem;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  padding: clamp(12px, 1.5vw, 16px) 0;
+`;
 
 /* ── Collapsible section ── */
 
@@ -249,6 +258,7 @@ function persistSections(state: SectionState) {
 /* ── NutritionContent ── */
 
 export function NutritionContent() {
+  const { isError: summaryError } = useNutritionDailySummary();
   const [sections, setSections] = useState<SectionState>(readPersistedSections);
 
   const toggle = useCallback((key: keyof SectionState) => {
@@ -261,7 +271,11 @@ export function NutritionContent() {
 
   return (
     <>
-      <MacroHero />
+      {summaryError ? (
+        <ErrorNotice>Couldn&apos;t load nutrition data — try again later.</ErrorNotice>
+      ) : (
+        <MacroHero />
+      )}
 
       {/* Quick Log */}
       <SectionCard>
