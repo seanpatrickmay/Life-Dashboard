@@ -104,13 +104,22 @@ def test_get_client_rotates_password_when_fallback_key_used(
 def test_metrics_ingest_marks_reauth_and_skips_invalid_stored_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """ingest() must mark reauth and return an empty summary when get_client_ctx raises ValueError."""
+    from contextlib import asynccontextmanager
+
     calls: list[tuple[int, bool]] = []
+
+    class FakeSession:
+        async def rollback(self) -> None:
+            pass
 
     async def fake_get_connection(self, user_id: int):  # noqa: ANN001, ANN202
         return SimpleNamespace(user_id=user_id, requires_reauth=False)
 
-    async def fake_get_client(self, user_id: int):  # noqa: ANN001, ANN202
+    @asynccontextmanager
+    async def fake_get_client_ctx(self, user_id: int):  # noqa: ANN001, ANN202
         raise ValueError("Unable to decrypt stored credentials")
+        yield  # make it a generator (unreachable)
 
     async def fake_mark_reauth_required(  # noqa: ANN001, ANN202
         self, user_id: int, required: bool = True
@@ -122,15 +131,15 @@ def test_metrics_ingest_marks_reauth_and_skips_invalid_stored_credentials(
         fake_get_connection,
     )
     monkeypatch.setattr(
-        "app.services.metrics_service.GarminConnectionService.get_client",
-        fake_get_client,
+        "app.services.metrics_service.GarminConnectionService.get_client_ctx",
+        fake_get_client_ctx,
     )
     monkeypatch.setattr(
         "app.services.metrics_service.GarminConnectionService.mark_reauth_required",
         fake_mark_reauth_required,
     )
 
-    summary = asyncio.run(MetricsService(object()).ingest(user_id=11, lookback_days=14))
+    summary = asyncio.run(MetricsService(FakeSession()).ingest(user_id=11, lookback_days=14))  # type: ignore[arg-type]
 
     assert summary == MetricsService._empty_summary()
     assert calls == [(11, True)]

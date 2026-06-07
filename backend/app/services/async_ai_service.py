@@ -1,12 +1,10 @@
 """Async AI service for non-blocking AI operations."""
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from typing import Dict, Optional
 from loguru import logger
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import AsyncSessionLocal
 from app.db.repositories.todo_repository import TodoRepository
 from app.services.todo_accomplishment_agent import TodoAccomplishmentAgent
@@ -73,8 +71,18 @@ class AsyncAIService:
             logger.error(f"[async_ai] Failed to generate accomplishment for todo {todo_id}: {exc}")
 
     @classmethod
-    def schedule_accomplishment_generation(cls, todo_id: int, user_id: int, todo_text: str) -> None:
-        """Schedule accomplishment generation to run in background."""
-        # Create a task that runs independently
-        asyncio.create_task(cls.generate_accomplishment_async(todo_id, user_id, todo_text))
-        logger.debug(f"[async_ai] Scheduled accomplishment generation for todo {todo_id}")
+    async def schedule_accomplishment_generation(cls, todo_id: int, user_id: int, todo_text: str) -> None:
+        """Schedule accomplishment generation via job queue.
+
+        The call site in todos.py already uses ``get_job_queue().enqueue(...)``
+        directly, so this method is kept only for backward-compat with any
+        direct callers.  It delegates to the job queue so that inline tests
+        exercise the same code path and SQS routing works in Phase 2.
+        """
+        from app.jobs.queue import get_job_queue  # noqa: PLC0415
+
+        await get_job_queue().enqueue(
+            "todo_accomplishment",
+            {"todo_id": todo_id, "user_id": user_id, "todo_text": todo_text},
+        )
+        logger.debug(f"[async_ai] Enqueued todo_accomplishment for todo {todo_id}")

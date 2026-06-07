@@ -26,22 +26,55 @@ Life Dashboard is a self-hosted wellness hub that blends Garmin health data, nut
   - OpenAI Responses API with `gpt-5-mini` for daily readiness narratives and Monet assistant reasoning.
   - Tool agents for nutrition parsing and todo generation backed by OpenAI structured outputs.
 
+## Deployment Paths
+
+### Serverless — New Default (Lambda + Fargate + CloudFront)
+
+The app is deployed as a set of AWS Lambda functions (API, scheduled jobs, SQS worker)
+behind CloudFront, with a Fargate one-shot task for DB migrations and the frontend
+hosted on S3. All infrastructure is defined in CDK (Python) under `infra/`.
+
+**Full runbook:** [`docs/deploy-serverless.md`](docs/deploy-serverless.md)
+
+```
+CloudFront → API Gateway HTTP API → API Lambda (Mangum/FastAPI)
+                                 → EventBridge → GarminFn / DigestFn
+                                 → SQS → WorkerFn
+                                 → ECS Fargate (migrate, one-shot)
+           → S3 (frontend static bundle)
+All Lambdas → Neon Postgres (shared, TLS, no VPC) + DynamoDB (KV/cache) + S3 (assets)
+```
+
+Local simulation: `make local-up && bash infra/local/smoke_deploy.sh`
+
+### EC2 Docker Compose — Deprecated Fallback
+
+The original single-EC2 `docker-compose` deploy is kept intact as a rollback path.
+See [`docs/serverless-rollback.md`](docs/serverless-rollback.md) for how to fail back.
+
+- `docker/docker-compose.prod.yml` and `deploy/deploy_prod.sh` are the EC2 artifacts.
+- GitHub Actions `deploy-prod.yml` still deploys via SSM to EC2.
+- **Do not delete these files**; they are the recovery path.
+
 ## Tech Stack
 
 - **Frontend**: React, Vite, styled-components, TanStack Query
 - **Backend**: FastAPI, SQLAlchemy (async), Alembic, Loguru
-- **Data**: PostgreSQL
+- **Data**: PostgreSQL (Neon)
 - **AI**: OpenAI Responses API (`gpt-5-mini` via the OpenAI Python SDK)
-- **Infra**: Docker, Docker Compose
+- **Infra (serverless)**: AWS Lambda, API Gateway HTTP API, CloudFront, S3, DynamoDB, SQS, ECS Fargate; CDK (Python)
+- **Infra (legacy)**: Docker, Docker Compose, EC2, Caddy
 
 ## Repository Layout
 
 ```
 backend/    FastAPI app, models, services, migrations
 frontend/   React app, lily pad UI, charts, scenes
+infra/      AWS CDK stacks (serverless deployment)
 docs/       Setup, pipeline, operations, styling guides
 scripts/    Manual ingest, debug tools, pixel asset generator
-docker/     Docker compose stack definitions
+docker/     Docker compose stack definitions (legacy EC2 path)
+deploy/     EC2 deploy script (legacy fallback)
 ```
 
 ## Getting Started (Docker)

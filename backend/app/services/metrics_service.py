@@ -59,10 +59,49 @@ class MetricsService:
         end_date = eastern_today()
         cutoff_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=EASTERN_TZ)
 
+        connection_service = GarminConnectionService(self.session)
+        ingested: int = 0
+
         if self.garmin is not None:
             garmin = self.garmin
+            # Pre-injected client (tests / CLI usage) — skip DB token management.
+            try:
+                if activities is None:
+                    logger.info("Fetching Garmin activities since {}", cutoff_dt)
+                    activities = await asyncio.to_thread(garmin.fetch_recent_activities, cutoff_dt)
+                activities = self._filter_recent_activities(activities, cutoff_dt)
+                ingested = await self.activity_repo.upsert_many(user_id, activities)
+                fresh_start = end_date - timedelta(days=self._FRESH_WINDOW_DAYS - 1)
+                historical_dates = await self._detect_changed_historical_dates(
+                    user_id, activities, start_date, fresh_start - timedelta(days=1),
+                )
+                hrv_payload, rhr_payload, sleep_payload, load_payload, energy_payload = (
+                    await self._fetch_metrics_concurrent(
+                        garmin,
+                        fresh_start=fresh_start,
+                        end_date=end_date,
+                        historical_dates=historical_dates,
+                        start_date=start_date,
+                        hrv_payload=hrv_payload,
+                        rhr_payload=rhr_payload,
+                        sleep_payload=sleep_payload,
+                        load_payload=load_payload,
+                        energy_payload=energy_payload,
+                    )
+                )
+            except GarminConnectAuthenticationError:
+                raise
+            except (GarminConnectConnectionError, OSError, TimeoutError) as exc:
+                logger.warning(
+                    "Transient error during Garmin fetch for user {} (not marking reauth): {}",
+                    user_id,
+                    exc,
+                )
+                raise
+            except Exception:
+                logger.exception("Unexpected error during Garmin ingest for user {}", user_id)
+                raise
         else:
-            connection_service = GarminConnectionService(self.session)
             connection = await connection_service.get_connection(user_id)
             if not connection:
                 logger.info("Skipping Garmin ingest for user {} (no connection).", user_id)
@@ -70,8 +109,47 @@ class MetricsService:
             if connection.requires_reauth:
                 logger.info("Skipping Garmin ingest for user {} (reauth required).", user_id)
                 return self._empty_summary()
+            # Release the read-only transaction before long-running Garmin API calls.
+            await self.session.rollback()
             try:
-                garmin = await connection_service.get_client(user_id)
+                async with connection_service.get_client_ctx(user_id) as garmin:
+                    try:
+                        if activities is None:
+                            logger.info("Fetching Garmin activities since {}", cutoff_dt)
+                            activities = await asyncio.to_thread(garmin.fetch_recent_activities, cutoff_dt)
+                        activities = self._filter_recent_activities(activities, cutoff_dt)
+                        ingested = await self.activity_repo.upsert_many(user_id, activities)
+                        fresh_start = end_date - timedelta(days=self._FRESH_WINDOW_DAYS - 1)
+                        historical_dates = await self._detect_changed_historical_dates(
+                            user_id, activities, start_date, fresh_start - timedelta(days=1),
+                        )
+                        hrv_payload, rhr_payload, sleep_payload, load_payload, energy_payload = (
+                            await self._fetch_metrics_concurrent(
+                                garmin,
+                                fresh_start=fresh_start,
+                                end_date=end_date,
+                                historical_dates=historical_dates,
+                                start_date=start_date,
+                                hrv_payload=hrv_payload,
+                                rhr_payload=rhr_payload,
+                                sleep_payload=sleep_payload,
+                                load_payload=load_payload,
+                                energy_payload=energy_payload,
+                            )
+                        )
+                    except GarminConnectAuthenticationError:
+                        await connection_service.mark_reauth_required(user_id, True)
+                        raise
+                    except (GarminConnectConnectionError, OSError, TimeoutError) as exc:
+                        logger.warning(
+                            "Transient error during Garmin fetch for user {} (not marking reauth): {}",
+                            user_id,
+                            exc,
+                        )
+                        raise
+                    except Exception:
+                        logger.exception("Unexpected error during Garmin ingest for user {}", user_id)
+                        raise
             except ValueError:
                 await connection_service.mark_reauth_required(user_id, True)
                 logger.warning(
@@ -79,54 +157,6 @@ class MetricsService:
                     user_id,
                 )
                 return self._empty_summary()
-            # Release the read-only transaction before long-running Garmin API calls.
-            await self.session.rollback()
-
-        try:
-            # --- Phase 1: Fetch activities + detect historical changes -------
-            if activities is None:
-                logger.info("Fetching Garmin activities since {}", cutoff_dt)
-                activities = await asyncio.to_thread(garmin.fetch_recent_activities, cutoff_dt)
-            activities = self._filter_recent_activities(activities, cutoff_dt)
-            ingested = await self.activity_repo.upsert_many(user_id, activities)
-
-            # Determine which date ranges actually need metric fetches.
-            fresh_start = end_date - timedelta(days=self._FRESH_WINDOW_DAYS - 1)
-            historical_dates = await self._detect_changed_historical_dates(
-                user_id, activities, start_date, fresh_start - timedelta(days=1),
-            )
-
-            # --- Phase 2: Fetch metrics concurrently -------------------------
-            hrv_payload, rhr_payload, sleep_payload, load_payload, energy_payload = (
-                await self._fetch_metrics_concurrent(
-                    garmin,
-                    fresh_start=fresh_start,
-                    end_date=end_date,
-                    historical_dates=historical_dates,
-                    start_date=start_date,
-                    hrv_payload=hrv_payload,
-                    rhr_payload=rhr_payload,
-                    sleep_payload=sleep_payload,
-                    load_payload=load_payload,
-                    energy_payload=energy_payload,
-                )
-            )
-        except GarminConnectAuthenticationError:
-            if self.garmin is None:
-                await GarminConnectionService(self.session).mark_reauth_required(user_id, True)
-            raise
-        except (GarminConnectConnectionError, OSError, TimeoutError) as exc:
-            logger.warning(
-                "Transient error during Garmin fetch for user {} (not marking reauth): {}",
-                user_id,
-                exc,
-            )
-            raise
-        except Exception:
-            logger.exception("Unexpected error during Garmin ingest for user {}", user_id)
-            raise
-
-        if self.garmin is None:
             stmt = select(GarminConnection).where(GarminConnection.user_id == user_id)
             result = await self.session.execute(stmt)
             connection = result.scalar_one_or_none()
