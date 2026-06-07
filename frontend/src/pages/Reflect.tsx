@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import styled from 'styled-components';
+import { reducedMotion } from '../styles/animations';
 import { JournalBook } from '../components/journal/JournalBook';
 import { getSavedTodayCount, getTodayLocalDate } from '../services/savedToday';
 
@@ -70,6 +71,7 @@ const DismissButton = styled.button`
   flex-shrink: 0;
   opacity: 0.7;
   transition: opacity 0.2s ease;
+  ${reducedMotion}
 
   &:hover { opacity: 1; }
   &:focus-visible {

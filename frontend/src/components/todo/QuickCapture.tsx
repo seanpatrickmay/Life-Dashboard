@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import styled from 'styled-components';
+import { reducedMotion } from '../../styles/animations';
 import { useProjectBoard } from '../../hooks/useProjectBoard';
 import { useTodos } from '../../hooks/useTodos';
 
@@ -87,6 +88,7 @@ const AddButton = styled.button`
   line-height: 1;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
+  ${reducedMotion}
   flex-shrink: 0;
 
   &:hover:not(:disabled) {
