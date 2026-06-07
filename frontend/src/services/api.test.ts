@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { resolveApiBaseUrl } from './api';
+import { resolveApiBaseUrl, fetchDigest, refreshDigest } from './api';
+
+// Guest mode flag key (must match guestMode.ts)
+const GUEST_MODE_KEY = 'ld_guest_mode';
 
 const httpsLocation = {
   protocol: 'https:',
@@ -13,6 +17,34 @@ const localLocation = {
   origin: 'http://localhost:4173',
   hostname: 'localhost'
 };
+
+describe('fetchDigest / refreshDigest — guest guards', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    // Enable guest demo + set guest mode
+    localStorage.setItem(GUEST_MODE_KEY, '1');
+    vi.stubEnv('VITE_GUEST_DEMO_ENABLED', 'true');
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.unstubAllEnvs();
+  });
+
+  it('fetchDigest returns empty digest in guest mode without calling network', async () => {
+    const result = await fetchDigest();
+    expect(result.items).toEqual([]);
+    expect(result.item_count).toBe(0);
+    expect(result.narrative).toBeNull();
+    expect(result.is_stale).toBe(false);
+  });
+
+  it('refreshDigest returns disabled message in guest mode without calling network', async () => {
+    const result = await refreshDigest();
+    expect(result.started).toBe(false);
+    expect(result.message).toContain('guest');
+  });
+});
 
 describe('resolveApiBaseUrl', () => {
   it('upgrades http env base on https pages', () => {
