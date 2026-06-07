@@ -1283,3 +1283,33 @@ export const refreshDigest = async (): Promise<DigestRefreshResponse> => {
   const { data } = await api.post('/api/ai-digest/refresh');
   return data;
 };
+
+// Morning Brief
+
+export type MorningBriefRequest = {
+  readiness: {
+    score: number | null;
+    label: string | null;
+    sleep_hours: number | null;
+    hrv_ms: number | null;
+    narrative: string | null;
+  } | null;
+  events: Array<{ summary: string | null; start_time: string | null }>;
+  overdue_tasks: string[];
+  reads: Array<{ title: string; annotation: string | null }>;
+};
+
+export type MorningBriefResponse = {
+  paragraph: string;
+};
+
+export const fetchMorningBrief = async (
+  inputs: MorningBriefRequest,
+  signal?: AbortSignal
+): Promise<MorningBriefResponse> => {
+  if (isGuestMode()) {
+    throw new Error('Morning brief LLM not available in guest mode.');
+  }
+  const { data } = await api.post('/api/morning/brief', inputs, { signal });
+  return data;
+};
