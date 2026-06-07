@@ -11,7 +11,7 @@ import { useAIDigest } from '../../hooks/useAIDigest';
 import type { DigestItem } from '../../services/api';
 import { formatTimeAgo } from '../../utils/dateFormat';
 
-/* ─── Local category config (mirrors AIDigest.tsx) ── */
+/* ─── Local category config ──────────────────────── */
 
 const CATEGORY_COLORS: Record<string, string> = {
   'claude-anthropic': 'rgba(217, 119, 87, 0.85)',

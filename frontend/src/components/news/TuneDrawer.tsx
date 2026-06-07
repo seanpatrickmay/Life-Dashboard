@@ -6,7 +6,7 @@
  * - Mobile = bottom sheet (≥85vh); desktop = right slide-in panel
  * - Visible one-tap controls: [+ boost] [✕ mute] per topic (wireframe R3)
  */
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -309,9 +309,21 @@ interface TuneDrawerProps {
   profileTopics?: string[];
 }
 
+const FOCUSABLE = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ');
+
 export function TuneDrawer({ onClose, profileTopics = [] }: TuneDrawerProps) {
   const queryClient = useQueryClient();
   const { profileQuery } = useNewsFeed();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<Element | null>(null);
 
   // Init from persistent storage
   const [boostedTopics, setBoostedTopics] = useState<Set<string>>(
@@ -342,10 +354,47 @@ export function TuneDrawer({ onClose, profileTopics = [] }: TuneDrawerProps) {
     onClose();
   }, [queryClient, onClose]);
 
-  // Close on Escape
+  // Move focus into dialog on open; restore on close
+  useEffect(() => {
+    previousFocusRef.current = document.activeElement;
+    const firstFocusable = closeBtnRef.current ??
+      panelRef.current?.querySelector<HTMLElement>(FOCUSABLE) ?? null;
+    firstFocusable?.focus();
+
+    return () => {
+      (previousFocusRef.current as HTMLElement | null)?.focus?.();
+    };
+  }, []);
+
+  // Close on Escape; trap Tab/Shift+Tab inside panel
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose();
+      if (e.key === 'Escape') {
+        handleClose();
+        return;
+      }
+      if (e.key !== 'Tab' || !panelRef.current) return;
+
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE),
+      ).filter(el => !el.closest('[disabled]'));
+
+      if (focusable.length === 0) { e.preventDefault(); return; }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
@@ -417,10 +466,10 @@ export function TuneDrawer({ onClose, profileTopics = [] }: TuneDrawerProps) {
 
   return (
     <Backdrop onClick={e => { if (e.target === e.currentTarget) handleClose(); }}>
-      <Panel role="dialog" aria-modal="true" aria-label="Tune your feed">
+      <Panel ref={panelRef} role="dialog" aria-modal="true" aria-label="Tune your feed">
         <Header>
           <Title>Tune your feed</Title>
-          <CloseBtn onClick={handleClose} aria-label="Close">✕</CloseBtn>
+          <CloseBtn ref={closeBtnRef} onClick={handleClose} aria-label="Close">✕</CloseBtn>
         </Header>
 
         {/* Topics */}

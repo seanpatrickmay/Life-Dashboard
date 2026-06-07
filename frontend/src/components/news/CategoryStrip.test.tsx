@@ -19,10 +19,10 @@ describe('CategoryStrip', () => {
     expect(screen.getByText('World')).toBeInTheDocument();
   });
 
-  it('marks the active pill as selected', () => {
+  it('marks the active pill as pressed', () => {
     wrap(<CategoryStrip active="tech" onChange={() => {}} />);
-    expect(screen.getByRole('tab', { name: 'Tech' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('button', { name: 'Tech' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('calls onChange with the correct category when a pill is clicked', () => {

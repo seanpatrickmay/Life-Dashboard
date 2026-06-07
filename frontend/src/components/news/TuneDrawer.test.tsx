@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { QueryClient } from '@tanstack/react-query';
 import { renderWithProviders } from '../../test/renderWithProviders';
 import { TuneDrawer } from './TuneDrawer';
 import { getBoostedTopics, getMutedTopics } from '../../services/interestProfile';
+import { NEWS_CURATED_KEY } from '../../hooks/useNewsFeed';
 
 // Mock useNewsFeed to avoid network calls
 vi.mock('../../hooks/useNewsFeed', () => ({
@@ -102,5 +104,25 @@ describe('TuneDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: /clear all/i }));
     expect(getBoostedTopics()).toEqual([]);
     expect(getMutedTopics()).toEqual([]);
+  });
+
+  it('moves focus to the close button when the drawer opens', async () => {
+    renderWithProviders(<TuneDrawer onClose={() => {}} />);
+    const closeBtn = screen.getByRole('button', { name: /close/i });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(closeBtn);
+    });
+  });
+
+  it('calls queryClient.invalidateQueries with NEWS_CURATED_KEY when closed', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const spy = vi.spyOn(queryClient, 'invalidateQueries');
+    const onClose = vi.fn();
+    renderWithProviders(<TuneDrawer onClose={onClose} />, { queryClient });
+    fireEvent.click(screen.getByRole('button', { name: /close/i }));
+    expect(spy).toHaveBeenCalledWith({ queryKey: NEWS_CURATED_KEY });
+    expect(onClose).toHaveBeenCalled();
   });
 });

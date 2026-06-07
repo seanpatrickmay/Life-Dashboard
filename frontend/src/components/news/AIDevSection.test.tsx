@@ -37,20 +37,20 @@ const mockDigestData: DigestResponse = {
   narrative: 'Today was a big day for AI with multiple releases.',
 };
 
+const mockUseAIDigest = vi.fn();
+
 vi.mock('../../hooks/useAIDigest', () => ({
-  useAIDigest: () => ({
-    digestQuery: {
-      isLoading: false,
-      data: mockDigestData,
-    },
-    refreshDigest: vi.fn(),
-    isRefreshing: false,
-  }),
+  useAIDigest: () => mockUseAIDigest(),
 }));
 
 describe('AIDevSection', () => {
   beforeEach(() => {
     localStorage.clear();
+    mockUseAIDigest.mockReturnValue({
+      digestQuery: { isLoading: false, data: mockDigestData },
+      refreshDigest: vi.fn(),
+      isRefreshing: false,
+    });
   });
 
   it('renders the AI & Dev heading', () => {
@@ -81,16 +81,17 @@ describe('AIDevSection', () => {
 });
 
 describe('AIDevSection — loading state', () => {
-  it('shows loading text when digestQuery is loading', () => {
-    vi.doMock('../../hooks/useAIDigest', () => ({
-      useAIDigest: () => ({
-        digestQuery: { isLoading: true, data: undefined },
-        refreshDigest: vi.fn(),
-        isRefreshing: false,
-      }),
-    }));
-    // We can't re-import without module isolation, so we test the empty case
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('shows "Fetching AI briefing…" when digestQuery.isLoading is true', () => {
+    mockUseAIDigest.mockReturnValue({
+      digestQuery: { isLoading: true, data: undefined },
+      refreshDigest: vi.fn(),
+      isRefreshing: false,
+    });
     renderWithProviders(<AIDevSection />);
-    // At minimum the component renders without crashing
+    expect(screen.getByText('Fetching AI briefing…')).toBeInTheDocument();
   });
 });

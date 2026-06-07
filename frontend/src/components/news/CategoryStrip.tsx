@@ -52,10 +52,9 @@ const CATEGORY_ORDER: Category[] = ['tech', 'science', 'world', 'culture', 'hist
 
 export function CategoryStrip({ active, counts, onChange }: CategoryStripProps) {
   return (
-    <Strip role="tablist" aria-label="Filter by category">
+    <Strip role="group" aria-label="Filter by category">
       <Pill
-        role="tab"
-        aria-selected={active === 'all'}
+        aria-pressed={active === 'all'}
         $active={active === 'all'}
         onClick={() => onChange('all')}
       >
@@ -66,8 +65,7 @@ export function CategoryStrip({ active, counts, onChange }: CategoryStripProps) 
         return (
           <Pill
             key={cat}
-            role="tab"
-            aria-selected={active === cat}
+            aria-pressed={active === cat}
             $active={active === cat}
             onClick={() => onChange(cat)}
           >

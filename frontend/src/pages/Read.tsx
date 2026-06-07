@@ -861,6 +861,7 @@ export function ReadPage() {
                             $active
                             onClick={(e) => handleSaveToggle(e, article.id)}
                             title="Unsave"
+                            aria-label="Unsave"
                           >
                             ★
                           </IconButton>
