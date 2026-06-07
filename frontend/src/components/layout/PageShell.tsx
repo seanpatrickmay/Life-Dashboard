@@ -8,11 +8,14 @@ import { exitGuestMode, isGuestMode } from '../../demo/guest/guestMode';
 import { clearGuestState } from '../../demo/guest/guestStore';
 import { SettingsDrawer } from './SettingsDrawer';
 import { MovedBanner } from './MovedBanner';
+import { BottomNav, BOTTOM_NAV_HEIGHT_PX } from './BottomNav';
+import { MoreSheet } from './MoreSheet';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 const paletteAccent = (mode: 'light' | 'dark', theme?: { colors?: { accent?: string } }) =>
   theme?.colors?.accent ?? (mode === 'dark' ? palette.bloom['300'] : palette.bloom['200']);
 
-const Frame = styled.div<{ $fullWidth?: boolean }>`
+const Frame = styled.div<{ $fullWidth?: boolean; $mobileBottomPad?: boolean }>`
   padding: clamp(20px, 3vw, 36px);
   max-width: ${({ $fullWidth }) => ($fullWidth ? '100%' : '1200px')};
   width: 100%;
@@ -21,6 +24,10 @@ const Frame = styled.div<{ $fullWidth?: boolean }>`
   flex-direction: column;
   gap: 24px;
   color: ${({ theme }) => theme.colors.textPrimary};
+  ${({ $mobileBottomPad }) =>
+    $mobileBottomPad
+      ? `padding-bottom: calc(${BOTTOM_NAV_HEIGHT_PX}px + env(safe-area-inset-bottom) + 16px);`
+      : ''}
 `;
 
 const Nav = styled.nav`
@@ -139,18 +146,26 @@ export function PageShell({ children }: PropsWithChildren) {
   const navigate = useNavigate();
   const guestMode = isGuestMode();
   const fullWidth = pathname.startsWith('/calendar') || pathname.startsWith('/projects') || pathname.startsWith('/read');
+  const isMobile = useIsMobile();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
-  // Fix 1: close drawer on route changes so it doesn't block the new page
+  // Close drawers on route changes so they don't block the new page
   useEffect(() => {
     setSettingsOpen(false);
+    setMoreOpen(false);
   }, [pathname]);
 
-  // Fix 4: stable callback — avoids re-registering the keydown effect in SettingsDrawer every render
+  // Stable callbacks — avoids re-registering keydown effects every render
   const handleSettingsClose = useCallback(() => setSettingsOpen(false), []);
+  const handleMoreClose = useCallback(() => setMoreOpen(false), []);
+  const handleOpenSettings = useCallback(() => {
+    setMoreOpen(false);
+    setSettingsOpen(true);
+  }, []);
 
   return (
-    <Frame $fullWidth={fullWidth}>
+    <Frame $fullWidth={fullWidth} $mobileBottomPad={isMobile}>
       {guestMode ? (
         <GuestBanner>
           <GuestBannerText>Guest mode - demo data only - sign in to save changes</GuestBannerText>
@@ -167,32 +182,40 @@ export function PageShell({ children }: PropsWithChildren) {
         </GuestBanner>
       ) : null}
       <MovedBanner />
-      <CloudNavShelf>
-        <NavRow>
-          <Nav aria-label="Main navigation">
-            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/" end>
-              Today
-            </NavLink>
-            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/read">
-              Read
-            </NavLink>
-            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/reflect">
-              Reflect
-            </NavLink>
-          </Nav>
-          <GearButton
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-            aria-label="Settings"
-            aria-haspopup="dialog"
-            aria-expanded={settingsOpen}
-          >
-            ⚙
-          </GearButton>
-        </NavRow>
-      </CloudNavShelf>
+      {!isMobile && (
+        <CloudNavShelf>
+          <NavRow>
+            <Nav aria-label="Main navigation">
+              <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/" end>
+                Today
+              </NavLink>
+              <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/read">
+                Read
+              </NavLink>
+              <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/reflect">
+                Reflect
+              </NavLink>
+            </Nav>
+            <GearButton
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Settings"
+              aria-haspopup="dialog"
+              aria-expanded={settingsOpen}
+            >
+              ⚙
+            </GearButton>
+          </NavRow>
+        </CloudNavShelf>
+      )}
       <main><Surface>{children}</Surface></main>
       <MonetChatBubble />
+      {isMobile && (
+        <BottomNav onMore={() => setMoreOpen(true)} moreOpen={moreOpen} />
+      )}
+      {moreOpen && (
+        <MoreSheet onClose={handleMoreClose} onOpenSettings={handleOpenSettings} />
+      )}
       {settingsOpen && (
         <SettingsDrawer onClose={handleSettingsClose} />
       )}
