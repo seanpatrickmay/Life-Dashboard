@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Outlet, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 
 // Lazy load all page components for code splitting
 const DashboardPage = lazy(() => import('./Dashboard').then(m => ({ default: m.DashboardPage })));
@@ -8,9 +8,7 @@ const JournalPage = lazy(() => import('./Journal').then(m => ({ default: m.Journ
 const CalendarPage = lazy(() => import('./Calendar').then(m => ({ default: m.CalendarPage })));
 const NutritionPage = lazy(() => import('./Nutrition').then(m => ({ default: m.NutritionPage })));
 const ProjectsPage = lazy(() => import('./Projects').then(m => ({ default: m.ProjectsPage })));
-const NewsPage = lazy(() => import('./News').then(m => ({ default: m.NewsPage })));
-const InterestProfilePage = lazy(() => import('./InterestProfile').then(m => ({ default: m.InterestProfilePage })));
-const AIDigestPage = lazy(() => import('./AIDigest').then(m => ({ default: m.AIDigestPage })));
+const ReadPage = lazy(() => import('./Read').then(m => ({ default: m.ReadPage })));
 const UserPage = lazy(() => import('./User').then(m => ({ default: m.UserPage })));
 const FoodManagerPage = lazy(() => import('./FoodManagerPage').then(m => ({ default: m.FoodManagerPage })));
 const LoginPage = lazy(() => import('./Login').then(m => ({ default: m.LoginPage })));
@@ -42,9 +40,10 @@ const routes = [
   { path: '/journal', element: <JournalPage /> },
   { path: '/calendar', element: <CalendarPage /> },
   { path: '/projects/*', element: <ProjectsPage /> },
-  { path: '/news', element: <NewsPage /> },
-  { path: '/news/profile', element: <InterestProfilePage /> },
-  { path: '/ai-digest', element: <AIDigestPage /> },
+  { path: '/read', element: <ReadPage /> },
+  { path: '/news', element: <Navigate to="/read" replace /> },
+  { path: '/news/profile', element: <Navigate to="/read" replace /> },
+  { path: '/ai-digest', element: <Navigate to="/read" replace /> },
   { path: '/nutrition', element: <NutritionPage /> },
   { path: '/user', element: <UserPage /> },
   { path: '/settings/food-db', element: <FoodManagerPage /> },

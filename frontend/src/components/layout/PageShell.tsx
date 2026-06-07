@@ -106,7 +106,7 @@ export function PageShell({ children }: PropsWithChildren) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const guestMode = isGuestMode();
-  const fullWidth = pathname.startsWith('/calendar') || pathname.startsWith('/projects') || pathname.startsWith('/news');
+  const fullWidth = pathname.startsWith('/calendar') || pathname.startsWith('/projects') || pathname.startsWith('/read');
   return (
     <Frame $fullWidth={fullWidth}>
       {guestMode ? (
@@ -141,14 +141,8 @@ export function PageShell({ children }: PropsWithChildren) {
           <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/projects">
             Projects
           </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/news">
-            News
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/news/profile" style={{ opacity: 0.5, fontSize: '0.85em' }}>
-            Profile
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/ai-digest">
-            AI Digest
+          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/read">
+            Read
           </NavLink>
           <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/nutrition">
             Nutrition
