@@ -1,5 +1,5 @@
 import { JournalBook } from '../components/journal/JournalBook';
 
-export function JournalPage() {
+export function ReflectPage() {
   return <JournalBook />;
 }

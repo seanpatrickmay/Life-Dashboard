@@ -132,8 +132,8 @@ export function PageShell({ children }: PropsWithChildren) {
           <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/insights">
             Insights
           </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/journal">
-            Journal
+          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/reflect">
+            Reflect
           </NavLink>
           <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/calendar">
             Calendar
