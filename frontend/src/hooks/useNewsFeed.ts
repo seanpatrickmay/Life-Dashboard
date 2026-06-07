@@ -34,6 +34,7 @@ import {
   getArticleEmbeddings,
   cosineSimilarity,
 } from '../services/profileSummarizer';
+import { recordSavedToday } from '../services/savedToday';
 import { useTodos } from './useTodos';
 
 const NEWS_FEED_KEY = ['news', 'feed'];
@@ -294,6 +295,7 @@ export function useNewsFeed() {
   const saveMutation = useMutation({
     mutationFn: async (articleId: string) => {
       saveArticle(articleId);
+      recordSavedToday(articleId);
     },
     onSuccess: invalidateAll,
   });

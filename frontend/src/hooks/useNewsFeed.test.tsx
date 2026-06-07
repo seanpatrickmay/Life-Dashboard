@@ -59,6 +59,13 @@ vi.mock('../services/profileSummarizer', () => ({
   cosineSimilarity: vi.fn().mockReturnValue(0),
 }));
 
+const recordSavedTodayMock = vi.fn();
+
+vi.mock('../services/savedToday', () => ({
+  recordSavedToday: (...args: unknown[]) => recordSavedTodayMock(...args),
+  getSavedTodayCount: vi.fn().mockReturnValue(0),
+}));
+
 const useTodosMock = vi.fn();
 
 vi.mock('./useTodos', () => ({
@@ -247,5 +254,15 @@ describe('useNewsFeed', () => {
     expect(hookResult.feedQuery).toBe(mockResult);
     expect(hookResult.allQuery).toBe(mockResult);
     expect(hookResult.curatedQuery).toBe(mockResult);
+  });
+
+  it('saveArticle mutation calls recordSavedToday with the article id', async () => {
+    render(<HookProbe />);
+
+    // saveMutation is the second useMutation call (index 1)
+    const saveMutationFn = useMutationMock.mock.calls[1][0].mutationFn;
+    await saveMutationFn('article-save-42');
+
+    expect(recordSavedTodayMock).toHaveBeenCalledWith('article-save-42');
   });
 });
