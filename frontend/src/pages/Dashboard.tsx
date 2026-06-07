@@ -3,6 +3,7 @@ import styled, { useTheme } from 'styled-components';
 import { DashboardUpcomingEvents } from '../components/dashboard/DashboardUpcomingEvents';
 import { DashboardNewsFeed } from '../components/dashboard/DashboardNewsFeed';
 import { DashboardNutritionSnapshot } from '../components/dashboard/DashboardNutritionSnapshot';
+import { MorningBriefCard } from '../components/dashboard/MorningBriefCard';
 import { TodoScrollPad } from '../components/todo/TodoScrollPad';
 import { useInsight } from '../hooks/useInsight';
 import { fadeUp, reducedMotion } from '../styles/animations';
@@ -101,6 +102,7 @@ export function DashboardPage() {
         <DateText>{today}</DateText>
         {score && <ScoreBadge>Readiness {score}/100</ScoreBadge>}
       </GreetingStrip>
+      <MorningBriefCard />
       <Grid>
         <Column $delay={0}>
           <TodoScrollPad />
