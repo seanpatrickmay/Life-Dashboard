@@ -173,13 +173,11 @@ const HeroCard = styled(Card)`
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   text-decoration: none;
   color: inherit;
-  ${({ theme }) => (theme as any).mode === 'dark' ? `
-    background: rgba(246, 240, 232, 0.08);
-    border-color: rgba(246, 240, 232, 0.12);
-  ` : ''}
+  ${reducedMotion}
 
   &:hover {
     transform: translateY(-2px);
+    box-shadow: ${({ theme }) => theme.shadows?.soft};
   }
 `;
 
@@ -247,8 +245,9 @@ const PickCard = styled.a<{ $borderColor: string; $dismissing?: boolean }>`
   gap: 6px;
   padding: clamp(12px, 1.5vw, 16px);
   border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
-  background: ${({ theme }) => theme.colors.surfaceRaised};
+  background: ${({ theme }) => theme.colors.backgroundCard};
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  box-shadow: ${({ theme }) => theme.shadows?.soft};
   transition: border-color 0.15s ease, transform 0.15s ease;
   text-decoration: none;
   color: inherit;
@@ -460,6 +459,49 @@ const DiscoveryLabel = styled.span`
   white-space: nowrap;
 `;
 
+/* ─── AI & Dev Entry Card ─────────────────────── */
+
+const AIDevEntryCard = styled(Card).attrs({ as: 'button' })`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border: none;
+  color: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  ${reducedMotion}
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: ${({ theme }) => theme.shadows?.soft};
+  }
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
+`;
+
+const AIDevEntryLabel = styled.span`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: clamp(0.82rem, 1.6vw, 0.95rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+`;
+
+const AIDevDot = styled.span`
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: ${({ theme }) => theme.palette?.lilac?.['200'] ?? '#B1A7FF'};
+  flex-shrink: 0;
+`;
+
 /* ─── Saved section ────────────────────────────── */
 
 const SavedList = styled.div`
@@ -638,24 +680,17 @@ export function ReadPage() {
       />
 
       {/* ─── AI & Dev Entry Card ─────────────────── */}
-      <div
-        role="button"
-        tabIndex={0}
+      <AIDevEntryCard
         onClick={() => setShowAIDev(v => !v)}
-        onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && setShowAIDev(v => !v)}
-        style={{ cursor: 'pointer' }}
         aria-expanded={showAIDev}
         aria-label="Toggle AI & Dev Briefing"
       >
-        <Card style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <span style={{ fontFamily: 'inherit', fontSize: '0.85rem', opacity: 0.85 }}>
-            AI &amp; Dev Briefing — today's digest
-          </span>
-          <span style={{ fontSize: '0.7rem', opacity: 0.4 }}>
-            {showAIDev ? '▾' : '›'}
-          </span>
-        </Card>
-      </div>
+        <AIDevEntryLabel>
+          <AIDevDot />
+          AI &amp; Dev Briefing — today's digest
+        </AIDevEntryLabel>
+        <Chevron $open={showAIDev}>›</Chevron>
+      </AIDevEntryCard>
 
       {/* ─── AI & Dev Section (expanded) ─────────── */}
       {showAIDev && (
