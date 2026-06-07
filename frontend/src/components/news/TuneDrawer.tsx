@@ -8,6 +8,7 @@
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
+import { reducedMotion } from '../../styles/animations';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   getBoostedTopics,
@@ -48,7 +49,7 @@ const Backdrop = styled.div`
 `;
 
 const Panel = styled.div`
-  background: ${({ theme }) => theme.colors.surfaceRaised ?? theme.colors.overlay};
+  background: ${({ theme }) => theme.colors.backgroundCard};
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
   padding: 20px 20px 32px;
@@ -67,6 +68,8 @@ const Panel = styled.div`
     border-left: 1px solid ${({ theme }) => theme.colors.borderSubtle};
     animation: ${slideIn} 0.25s ease-out both;
   }
+
+  ${reducedMotion}
 
   scrollbar-width: thin;
   scrollbar-color: ${({ theme }) => theme.colors.scrollThumb} transparent;
@@ -156,6 +159,7 @@ const ChipAction = styled.button<{ $variant: 'boost' | 'mute'; $active?: boolean
   opacity: ${({ $active }) => ($active ? 1 : 0.45)};
   line-height: 1.4;
   transition: all 0.12s ease;
+  ${reducedMotion}
   &:hover { opacity: 1; }
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};

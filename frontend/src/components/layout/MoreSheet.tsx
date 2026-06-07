@@ -12,6 +12,7 @@
 import { useEffect, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { Link } from 'react-router-dom';
+import { reducedMotion } from '../../styles/animations';
 
 /* ─── Animations ──────────────────────────────────────────────── */
 
@@ -41,6 +42,7 @@ const Panel = styled.div`
   flex-direction: column;
   gap: 4px;
   animation: ${slideUp} 0.25s ease-out both;
+  ${reducedMotion}
 
   scrollbar-width: thin;
   scrollbar-color: ${({ theme }) => theme.colors.scrollThumb} transparent;
@@ -91,6 +93,7 @@ const SheetItem = styled.div`
     gap: 12px;
     width: 100%;
     padding: 14px 12px;
+    min-height: 44px;
     border-radius: 12px;
     text-decoration: none;
     color: ${({ theme }) => theme.colors.textPrimary};
@@ -104,6 +107,7 @@ const SheetItem = styled.div`
     text-align: left;
     opacity: 0.85;
     transition: opacity 0.15s ease, background 0.15s ease;
+    ${reducedMotion}
 
     &:hover {
       opacity: 1;

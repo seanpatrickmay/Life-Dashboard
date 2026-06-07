@@ -9,6 +9,7 @@ import styled from 'styled-components';
 import { NavLink } from 'react-router-dom';
 import { Z_LAYERS } from '../../styles/zLayers';
 import { palette } from '../../theme/monetTheme';
+import { reducedMotion } from '../../styles/animations';
 
 const BOTTOM_NAV_HEIGHT = 56;
 
@@ -57,6 +58,7 @@ const TabItem = styled.div`
     text-decoration: none;
     opacity: 0.55;
     transition: opacity 0.15s ease;
+    ${reducedMotion}
 
     &:hover {
       opacity: 0.85;

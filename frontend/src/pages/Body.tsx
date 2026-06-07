@@ -68,16 +68,20 @@ const TabList = styled.div`
 const Tab = styled.button<{ $active: boolean }>`
   flex: 1;
   background: ${({ $active, theme }) =>
-    $active ? theme.colors.surfaceRaised : 'transparent'};
+    $active ? theme.colors.accentSubtle : 'transparent'};
   border: none;
+  border-bottom: ${({ $active, theme }) =>
+    $active ? `2px solid ${theme.colors.accent}` : '2px solid transparent'};
   border-radius: 9px;
   color: ${({ $active, theme }) =>
-    $active ? theme.colors.textPrimary : theme.colors.textSecondary};
+    $active ? theme.colors.accent : theme.colors.textSecondary};
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 0.68rem;
+  font-weight: ${({ $active }) => ($active ? 600 : 400)};
   letter-spacing: 0.12em;
   text-transform: uppercase;
   padding: 8px 16px;
+  min-height: 44px;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 

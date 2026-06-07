@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import styled from 'styled-components';
+import { reducedMotion } from '../../styles/animations';
 
 const DISMISSED_FLAG = 'ld_nav_moved_dismissed';
 
@@ -38,6 +39,7 @@ const DismissButton = styled.button`
   flex-shrink: 0;
   opacity: 0.7;
   transition: opacity 0.2s ease;
+  ${reducedMotion}
   &:hover { opacity: 1; }
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};

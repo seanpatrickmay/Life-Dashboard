@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef, useCallback } from 'react';
 import styled, { keyframes } from 'styled-components';
+import { reducedMotion } from '../../styles/animations';
 import { useNavigate } from 'react-router-dom';
 import { useThemeMode } from '../../theme/ThemeProvider';
 import { UserProfileScene } from '../user/UserProfileScene';
@@ -39,7 +40,7 @@ const Backdrop = styled.div`
 `;
 
 const Panel = styled.div`
-  background: ${({ theme }) => theme.colors.surfaceRaised ?? theme.colors.overlay};
+  background: ${({ theme }) => theme.colors.backgroundCard};
   border-top-left-radius: 20px;
   border-top-right-radius: 20px;
   padding: 20px 20px 32px;
@@ -58,6 +59,8 @@ const Panel = styled.div`
     border-left: 1px solid ${({ theme }) => theme.colors.borderSubtle};
     animation: ${slideIn} 0.25s ease-out both;
   }
+
+  ${reducedMotion}
 
   scrollbar-width: thin;
   scrollbar-color: ${({ theme }) => theme.colors.scrollThumb} transparent;
@@ -125,6 +128,7 @@ const ThemeBtn = styled.button<{ $active: boolean }>`
   cursor: pointer;
   opacity: ${({ $active }) => ($active ? 1 : 0.55)};
   transition: all 0.15s ease;
+  ${reducedMotion}
   &:hover { opacity: 1; }
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};
@@ -150,6 +154,7 @@ const FoodDbBtn = styled.button`
   justify-content: space-between;
   opacity: 0.85;
   transition: opacity 0.15s ease;
+  ${reducedMotion}
   &:hover { opacity: 1; }
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};
