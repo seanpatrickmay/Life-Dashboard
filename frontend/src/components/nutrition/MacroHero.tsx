@@ -1,5 +1,6 @@
 import styled from 'styled-components';
 import { useNutritionDailySummary } from '../../hooks/useNutritionIntake';
+import { hexToRgba } from '../../utils/color';
 
 const CALORIE_SLUG = 'calories';
 
@@ -15,15 +16,6 @@ const OVER_COLOR = '#F59E0B';
 
 const getColor = (slug: string) =>
   MACRO_COLORS[slug] ?? '#aaa';
-
-/** Convert a 6-digit hex color to an rgba() string with the given alpha (0–1). */
-function hexToRgba(hex: string, alpha: number): string {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
 
 /* ── Styled Components ── */
 

@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
 
 import { MacroHero } from './MacroHero';
+import { hexToRgba } from '../../utils/color';
 import { MicronutrientPanel } from './MicronutrientPanel';
 import { MenuPanel } from './MenuPanel';
 import { GoalsPanel } from './GoalsPanel';
@@ -11,7 +12,7 @@ import { useNutritionHistory } from '../../hooks/useNutritionIntake';
 /* ── Collapsible section ── */
 
 const SectionCard = styled.div`
-  border-radius: 16px;
+  border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
   background: ${({ theme }) => theme.colors.backgroundCard};
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   overflow: hidden;
@@ -93,15 +94,6 @@ const MACRO_COLORS: Record<string, string> = {
   fat: '#C2D5FF',
   fiber: '#82dcb8',
 };
-
-/** Convert a 6-digit hex color to an rgba() string with the given alpha (0–1). */
-function hexToRgba(hex: string, alpha: number): string {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
 
 const AvgGrid = styled.div`
   display: grid;

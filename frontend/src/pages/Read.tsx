@@ -560,7 +560,7 @@ export function ReadPage() {
 
   const annotations = annotationsQuery.data ?? {};
   const theme = useTheme();
-  const catColors = (theme as any).mode === 'dark' ? CATEGORY_COLORS_DARK : CATEGORY_COLORS;
+  const catColors = theme.mode === 'dark' ? CATEGORY_COLORS_DARK : CATEGORY_COLORS;
 
   const [moreOpen, setMoreOpen] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
@@ -683,6 +683,7 @@ export function ReadPage() {
       <AIDevEntryCard
         onClick={() => setShowAIDev(v => !v)}
         aria-expanded={showAIDev}
+        aria-controls="ai-dev-panel"
         aria-label="Toggle AI & Dev Briefing"
       >
         <AIDevEntryLabel>
@@ -694,7 +695,7 @@ export function ReadPage() {
 
       {/* ─── AI & Dev Section (expanded) ─────────── */}
       {showAIDev && (
-        <Card>
+        <Card id="ai-dev-panel">
           <AIDevSection />
         </Card>
       )}
