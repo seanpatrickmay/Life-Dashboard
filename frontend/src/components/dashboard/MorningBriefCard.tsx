@@ -37,27 +37,6 @@ const DateLabel = styled.span`
   color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
-const ReadinessPill = styled.span<{ $tier: 'low' | 'moderate' | 'good' }>`
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.76rem;
-  letter-spacing: 0.06em;
-  background: ${({ theme, $tier }) => {
-    if ($tier === 'low') return theme.colors.dangerSubtle ?? 'rgba(242,140,60,0.14)';
-    if ($tier === 'moderate') return theme.colors.accentSubtle ?? 'rgba(126,215,196,0.18)';
-    return theme.colors.successSubtle ?? 'rgba(63,155,138,0.14)';
-  }};
-  color: ${({ theme, $tier }) => {
-    if ($tier === 'low') return theme.colors.danger;
-    if ($tier === 'moderate') return theme.colors.accent;
-    return theme.colors.success;
-  }};
-`;
-
 // ── Paragraph ─────────────────────────────────────────────────────────────────
 
 const BriefText = styled.p`
@@ -76,37 +55,7 @@ const ChipRow = styled.div`
   gap: 6px;
 `;
 
-const BaseChip = styled.button`
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 12px;
-  border-radius: 20px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => theme.colors.overlay};
-  color: ${({ theme }) => theme.colors.textSecondary};
-  font-family: ${({ theme }) => theme.fonts.body};
-  font-size: 0.76rem;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background 0.15s ease, border-color 0.15s ease;
-  ${reducedMotion}
-
-  &:hover {
-    background: ${({ theme }) => theme.colors.overlayHover};
-    border-color: ${({ theme }) => theme.colors.accent}66;
-  }
-
-  &:focus-visible {
-    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
-    outline-offset: 2px;
-  }
-`;
-
-const NavChip = BaseChip;
-
-// Article chip is rendered as an <a> but styled as a chip
-const ArticleChipAnchor = styled.a`
+const NavChip = styled.a`
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -131,6 +80,9 @@ const ArticleChipAnchor = styled.a`
     outline-offset: 2px;
   }
 `;
+
+// Article chips share the same anchor styles as NavChip
+const ArticleChipAnchor = NavChip;
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -166,19 +118,6 @@ function BriefSkeleton() {
   );
 }
 
-// ── Readiness tier helper (mirrors composeBrief logic for pill colour) ─────────
-
-function readinessTier(score: number | null | undefined, label: string | null | undefined): 'low' | 'moderate' | 'good' {
-  const lc = (label ?? '').toLowerCase();
-  if (['strained', 'depleted', 'low', 'fatigued', 'poor'].some(w => lc.includes(w))) return 'low';
-  if (['moderate', 'fair', 'okay', 'neutral'].some(w => lc.includes(w))) return 'moderate';
-  if (typeof score === 'number') {
-    if (score < 50) return 'low';
-    if (score < 70) return 'moderate';
-  }
-  return 'good';
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function MorningBriefCard() {
@@ -203,11 +142,6 @@ export function MorningBriefCard() {
     );
   }
 
-  // Extract readiness info from the brief sources or paragraph for pill
-  // We can't easily extract from plain text so we rely on the readiness
-  // score/label from useMorningBrief — but that hook doesn't expose them directly.
-  // The insight data is embedded in the paragraph; for the pill we derive from
-  // a small inline hook call. We keep this decoupled by having a separate import.
   return (
     <HeroCard aria-label="Morning brief">
       <MetaRow>
@@ -225,7 +159,6 @@ export function MorningBriefCard() {
 
       <ChipRow>
         <NavChip
-          as="a"
           href="/body"
           aria-label="Body — navigate to body metrics"
         >

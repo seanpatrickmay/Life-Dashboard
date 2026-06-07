@@ -140,14 +140,18 @@ describe('useMorningBrief – session lock', () => {
     expect(result.current.paragraph.endsWith('What would make today count?')).toBe(true);
   });
 
-  it('stores the brief in sessionStorage once isReady', () => {
+  it('stores the brief in sessionStorage once isReady — including sources snapshot', () => {
     setQueryMocks({});
     renderHook(() => useMorningBrief());
-    const raw = sessionStorage.getItem('ld_morning_brief_v1');
+    const raw = sessionStorage.getItem('ld_morning_brief_v2');
     expect(raw).not.toBeNull();
     const parsed = JSON.parse(raw!);
     expect(parsed.text).toBeTruthy();
     expect(parsed.date).toBe('2026-06-07');
+    // Sources must be co-snapshotted so cache hit returns same articles as paragraph
+    expect(Array.isArray(parsed.sources)).toBe(true);
+    expect(parsed.sources[0].id).toBe('p1');
+    expect(parsed.sources[0].url).toBe('https://example.com/p1');
   });
 
   it('returns the locked text on a re-render even when picks change', () => {
@@ -166,11 +170,31 @@ describe('useMorningBrief – session lock', () => {
     expect(result.current.paragraph).not.toContain('A completely different article');
   });
 
-  it('recomputes when the stored date differs from today', () => {
-    // Pre-seed cache with a stale date
+  it('returns snapshotted sources from cache — not today\'s current picks', () => {
+    // Pre-seed with yesterday's cache that has specific sources
+    const cachedSources = [
+      { id: 'p-old', title: 'Old article', url: 'https://example.com/old', annotation: 'Old annotation' },
+    ];
     sessionStorage.setItem(
-      'ld_morning_brief_v1',
-      JSON.stringify({ text: 'Yesterday brief.', date: '2026-06-06' })
+      'ld_morning_brief_v2',
+      JSON.stringify({ text: 'Cached brief.', date: '2026-06-07', sources: cachedSources })
+    );
+
+    // Mock returns different current picks
+    setQueryMocks({ picks: [pick1, pick2] });
+    const { result } = renderHook(() => useMorningBrief());
+
+    // Cache hit — sources must match the snapshot, not current picks
+    expect(result.current.paragraph).toBe('Cached brief.');
+    expect(result.current.sources[0].id).toBe('p-old');
+    expect(result.current.sources[0].title).toBe('Old article');
+  });
+
+  it('recomputes when the stored date differs from today', () => {
+    // Pre-seed cache with a stale date (new shape includes sources)
+    sessionStorage.setItem(
+      'ld_morning_brief_v2',
+      JSON.stringify({ text: 'Yesterday brief.', date: '2026-06-06', sources: [] })
     );
     setQueryMocks({});
     const { result } = renderHook(() => useMorningBrief());
@@ -178,7 +202,7 @@ describe('useMorningBrief – session lock', () => {
     expect(result.current.paragraph).not.toBe('Yesterday brief.');
     expect(result.current.paragraph.length).toBeGreaterThan(0);
     // Updated cache should reflect today
-    const raw = sessionStorage.getItem('ld_morning_brief_v1');
+    const raw = sessionStorage.getItem('ld_morning_brief_v2');
     const parsed = JSON.parse(raw!);
     expect(parsed.date).toBe('2026-06-07');
   });

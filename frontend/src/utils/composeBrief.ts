@@ -7,7 +7,6 @@ export interface ComposeBriefInputs {
   overdueTasks: string[];
   picks: NewsArticle[];
   annotations: Record<string, string>;
-  isGuest?: boolean;
 }
 
 const REFLECTION = 'What would make today count?';
@@ -20,11 +19,13 @@ function formatTime(iso: string): string {
   }
 }
 
+const FOCUS_EVENT_RE = /deep.?work|focus|flow|writing|research|planning|review/i;
+
 /**
  * Returns the readiness tier: 'low' | 'moderate' | 'good' based on label or score.
- * Drives the cross-domain synthesis sentence.
+ * Exported so MorningBriefCard can use the same derivation without duplicating logic.
  */
-function readinessTier(insight: InsightResponse): 'low' | 'moderate' | 'good' {
+export function readinessTier(insight: InsightResponse): 'low' | 'moderate' | 'good' {
   const label = (insight.readiness_label ?? '').toLowerCase();
   if (['strained', 'depleted', 'low', 'fatigued', 'poor'].some(w => label.includes(w))) return 'low';
   if (['moderate', 'fair', 'okay', 'neutral'].some(w => label.includes(w))) return 'moderate';
@@ -33,6 +34,92 @@ function readinessTier(insight: InsightResponse): 'low' | 'moderate' | 'good' {
     if (insight.readiness_score < 70) return 'moderate';
   }
   return 'good';
+}
+
+// ── Synthesis fragment builders ───────────────────────────────────────────────
+// Each returns a short phrase (no leading/trailing space) or null if data absent.
+
+function sleepFragment(hours: number | null | undefined): string | null {
+  if (hours == null) return null;
+  return `${hours.toFixed(1)}h sleep`;
+}
+
+function scheduleFragment(
+  events: Array<{ summary?: string | null; start_time?: string | null }>
+): string | null {
+  const named = events.filter(e => e.summary);
+  if (named.length === 0) return null;
+  const focusEvent = named.find(e => FOCUS_EVENT_RE.test(e.summary ?? ''));
+  if (focusEvent) {
+    const time = focusEvent.start_time ? ` at ${formatTime(focusEvent.start_time)}` : '';
+    return `a ${(focusEvent.summary ?? '').trim()}${time}`;
+  }
+  if (named.length >= 4) return `${named.length} things on the calendar`;
+  return null;
+}
+
+function taskFragment(overdueTasks: string[]): string | null {
+  if (overdueTasks.length === 0) return null;
+  if (overdueTasks.length === 1) return `"${overdueTasks[0]}" still open`;
+  return `${overdueTasks.length} overdue tasks`;
+}
+
+/**
+ * Builds one fluent synthesis sentence that ties the top read to at least one
+ * concrete day-signal (sleep, a notable event, or overdue-task load).
+ * Falls back gracefully when signals are absent.
+ */
+function buildSynthesisSentence(
+  tier: 'low' | 'moderate' | 'good',
+  topTitle: string,
+  annotation: string | null,
+  sleepCtx: string | null,
+  scheduleCtx: string | null,
+  taskCtx: string | null,
+): string {
+  const ann = annotation
+    ? annotation.toLowerCase().replace(/\.$/, '')
+    : null;
+
+  // Pick up to two available signals (prefer sleep+schedule over sleep+task, etc.)
+  const allSignals = [sleepCtx, scheduleCtx, taskCtx].filter(Boolean) as string[];
+  const signals = allSignals.slice(0, 2);
+  const signalPhrase = signals.length > 0 ? signals.join(' and ') : null;
+
+  if (tier === 'good') {
+    if (signalPhrase && ann) {
+      return `With ${signalPhrase}, readiness is solid — a strong moment to dig into "${topTitle}": ${ann}.`;
+    }
+    if (signalPhrase) {
+      return `With ${signalPhrase}, readiness is solid — "${topTitle}" is today's strongest read if you have the bandwidth.`;
+    }
+    return ann
+      ? `Readiness is solid — a good moment to dig into "${topTitle}": ${ann}.`
+      : `Readiness looks good; "${topTitle}" is today's strongest signal if you have bandwidth.`;
+  }
+
+  if (tier === 'moderate') {
+    if (signalPhrase && ann) {
+      return `A mid-range morning with ${signalPhrase} — "${topTitle}" is the standout read: ${ann}.`;
+    }
+    if (signalPhrase) {
+      return `A mid-range morning with ${signalPhrase} — "${topTitle}" is worth squeezing in.`;
+    }
+    return ann
+      ? `Body is mid-range today; the standout read — "${topTitle}" — ${ann}.`
+      : `Body is mid-range; "${topTitle}" is worth a look when energy allows.`;
+  }
+
+  // low / recovery
+  if (signalPhrase && ann) {
+    return `Recovery day (${signalPhrase}) — the lighter load of "${topTitle}" suits the pace: ${ann}.`;
+  }
+  if (signalPhrase) {
+    return `Recovery day with ${signalPhrase} — "${topTitle}" fits a lighter, curiosity-driven morning.`;
+  }
+  return ann
+    ? `On a recovery day, "${topTitle}" stands out — ${ann} — worth a slower read.`
+    : `With recovery as the priority today, the top read — "${topTitle}" — fits a lighter, curiosity-driven morning.`;
 }
 
 /**
@@ -77,30 +164,24 @@ export function composeBrief(inputs: ComposeBriefInputs): string {
     if (bodyLine) segments.push(bodyLine.trim());
 
     // ── Cross-domain synthesis sentence ───────────────────────────────────────
-    // Connects readiness level to top read when there's a meaningful pairing.
+    // Ties the top read to concrete day-signals so it differs with each day's data.
     const tier = readinessTier(insight);
     const topPick = picks[0] ?? null;
     const topAnnotation = topPick ? (annotations[topPick.id] ?? null) : null;
 
     if (topPick) {
-      if (tier === 'low') {
-        // Low readiness + relevant read → suggest gentler approach
-        const connector = topAnnotation
-          ? `On a recovery day, "${topPick.title}" stands out — ${topAnnotation.toLowerCase().replace(/\.$/, '')} — worth a slower read.`
-          : `With recovery as the priority today, the top read — "${topPick.title}" — fits a lighter, curiosity-driven morning.`;
-        segments.push(connector);
-      } else if (tier === 'moderate') {
-        const connector = topAnnotation
-          ? `Body is mid-range today; the standout read — "${topPick.title}" — ${topAnnotation.toLowerCase().replace(/\.$/, '')}.`
-          : `Body is mid-range; "${topPick.title}" is worth a look when energy allows.`;
-        segments.push(connector);
-      } else {
-        // Good readiness — pair high energy with strong read
-        const connector = topAnnotation
-          ? `Readiness is solid — a good moment to dig into "${topPick.title}": ${topAnnotation.toLowerCase().replace(/\.$/, '')}.`
-          : `Readiness looks good; "${topPick.title}" is today's strongest signal if you have bandwidth.`;
-        segments.push(connector);
-      }
+      const sCtx = sleepFragment(insight.sleep_value_hours);
+      const schCtx = scheduleFragment(events);
+      const tCtx = taskFragment(overdueTasks);
+      const synthesis = buildSynthesisSentence(
+        tier,
+        topPick.title,
+        topAnnotation,
+        sCtx,
+        schCtx,
+        tCtx,
+      );
+      segments.push(synthesis);
     }
   }
 

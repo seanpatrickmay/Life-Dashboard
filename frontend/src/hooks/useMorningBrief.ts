@@ -9,11 +9,26 @@ import { isGuestMode } from '../demo/guest/guestMode';
 import { getGuestInsight } from '../demo/guest/guestStore';
 import type { NewsArticle } from '../services/newsFeedService';
 
-const SESSION_KEY = 'ld_morning_brief_v1';
+const SESSION_KEY = 'ld_morning_brief_v2';
+
+export interface BriefSource {
+  id: string;
+  title: string;
+  url: string;
+  annotation: string | null;
+}
 
 interface CachedBrief {
   text: string;
   date: string;
+  sources: BriefSource[];
+}
+
+export interface MorningBriefResult {
+  paragraph: string;
+  sources: BriefSource[];
+  isReady: boolean;
+  isPartiallyReady: boolean;
 }
 
 function getLocalDateKey(): string {
@@ -34,26 +49,12 @@ function loadSessionBrief(): CachedBrief | null {
   }
 }
 
-function saveSessionBrief(text: string, date: string): void {
+function saveSessionBrief(text: string, date: string, sources: BriefSource[]): void {
   try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ text, date }));
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ text, date, sources }));
   } catch {
     // sessionStorage unavailable (SSR or private browsing edge case)
   }
-}
-
-export interface BriefSource {
-  id: string;
-  title: string;
-  url: string;
-  annotation: string | null;
-}
-
-export interface MorningBriefResult {
-  paragraph: string;
-  sources: BriefSource[];
-  isReady: boolean;
-  isPartiallyReady: boolean;
 }
 
 export function useMorningBrief(): MorningBriefResult {
@@ -94,16 +95,15 @@ export function useMorningBrief(): MorningBriefResult {
     const picks: NewsArticle[] = curatedQuery.data?.picks?.slice(0, 2) ?? [];
     const annotations: Record<string, string> = annotationsQuery.data ?? {};
 
-    // Check session cache — return stable text if same day
+    // Check session cache — return stable text AND the snapshot sources from the same compose run
     const cached = loadSessionBrief();
     if (cached && cached.date === today && isReady) {
-      const sources: BriefSource[] = picks.slice(0, 2).map(p => ({
-        id: p.id,
-        title: p.title,
-        url: p.url,
-        annotation: annotations[p.id] ?? null,
-      }));
-      return { paragraph: cached.text, sources, isReady: true, isPartiallyReady: true };
+      return {
+        paragraph: cached.text,
+        sources: cached.sources,
+        isReady: true,
+        isPartiallyReady: true,
+      };
     }
 
     if (!insightReady && !isPartiallyReady) {
@@ -116,13 +116,7 @@ export function useMorningBrief(): MorningBriefResult {
       overdueTasks,
       picks,
       annotations,
-      isGuest: isGuestMode(),
     });
-
-    // Persist to session once fully ready so picks changes don't recompose
-    if (isReady && paragraph) {
-      saveSessionBrief(paragraph, today);
-    }
 
     const sources: BriefSource[] = picks.slice(0, 2).map(p => ({
       id: p.id,
@@ -130,6 +124,11 @@ export function useMorningBrief(): MorningBriefResult {
       url: p.url,
       annotation: annotations[p.id] ?? null,
     }));
+
+    // Persist to session once fully ready — snapshot both text and sources together
+    if (isReady && paragraph) {
+      saveSessionBrief(paragraph, today, sources);
+    }
 
     return { paragraph, sources, isReady, isPartiallyReady };
   }, [

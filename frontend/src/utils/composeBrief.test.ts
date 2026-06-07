@@ -104,56 +104,141 @@ describe('composeBrief – full data', () => {
   });
 });
 
-// ── Synthesis sentence: good readiness + top read ─────────────────────────
+// ── Synthesis: good readiness + sleep + focus event ───────────────────────
 
-describe('composeBrief – synthesis sentence (good readiness)', () => {
-  it('connects good readiness to top read with annotation', () => {
+describe('composeBrief – synthesis (good readiness + sleep + focus event)', () => {
+  it('weaves sleep hours and focus event into the synthesis sentence with the article title', () => {
+    // baseInputs has sleep_value_hours=7.5 and a "Deep work block" event
     const result = composeBrief(baseInputs);
-    // Should have a sentence bridging readiness and the article, not just list them
+
+    // Must name the top article
     expect(result).toContain('The future of distributed systems');
-    // The annotation text should appear, not just the title alone
-    expect(result).toContain('relevant to your current projects');
+
+    // Must reference sleep hours (a concrete non-readiness signal)
+    expect(result).toContain('7.5h sleep');
+
+    // Must reference the focus event (a second non-readiness signal)
+    expect(result).toContain('Deep work block');
+
+    // The synthesis sentence must be one coherent sentence, not two bare values
+    const barePattern = /\d+\/100\.\s+"The future/;
+    expect(barePattern.test(result)).toBe(false);
   });
 
-  it('does NOT produce a bare value list (readiness score + article title without bridge)', () => {
+  it('includes annotation text in the synthesis phrase', () => {
     const result = composeBrief(baseInputs);
-    // Fails if text is merely "Readiness 78/100. The future of distributed systems."
-    const scoreIdx = result.indexOf('78');
-    const titleIdx = result.indexOf('The future of distributed systems');
-    // They should either not be adjacent bare values OR the synthesis sentence
-    // wraps them — we verify by checking a connecting phrase exists
+    expect(result).toContain('relevant to your current projects');
+  });
+});
+
+// ── Synthesis: low readiness + overdue task ────────────────────────────────
+
+describe('composeBrief – synthesis (low readiness + overdue task)', () => {
+  it('names the overdue task alongside the article title in a recovery framing', () => {
+    const lowInsight: InsightResponse = {
+      ...baseInsight,
+      readiness_score: 42,
+      readiness_label: 'Strained',
+      morning_note: 'Take it easy today.',
+      sleep_value_hours: null,
+    };
+    const result = composeBrief({
+      ...baseInputs,
+      insight: lowInsight,
+      events: [], // no events so task is the only day-signal
+    });
+
+    // Must name the article
+    expect(result).toContain('The future of distributed systems');
+
+    // Must reference the overdue task by name — proves cross-domain combination
+    expect(result).toContain('Finish report');
+
+    // Should frame this as a recovery / lighter day
+    expect(
+      result.includes('Recovery day') ||
+      result.includes('recovery') ||
+      result.includes('lighter') ||
+      result.includes('slower')
+    ).toBe(true);
+  });
+});
+
+// ── Synthesis: moderate + busy calendar (no focus event) ──────────────────
+
+describe('composeBrief – synthesis (moderate readiness + busy calendar)', () => {
+  it('mentions event count as a concrete signal when no focus/review event exists', () => {
+    const moderateInsight: InsightResponse = {
+      ...baseInsight,
+      readiness_score: 62,
+      readiness_label: 'Fair',
+      sleep_value_hours: null,
+    };
+    // Four generic events — none match the focus-event regex
+    const busyEvents = [
+      { summary: 'Team standup', start_time: null },
+      { summary: 'Lunch', start_time: null },
+      { summary: '1:1 with manager', start_time: null },
+      { summary: 'Sprint retrospective demo', start_time: null },
+    ];
+    const result = composeBrief({
+      ...baseInputs,
+      insight: moderateInsight,
+      events: busyEvents,
+      overdueTasks: [],
+    });
+
+    // Must name the article
+    expect(result).toContain('The future of distributed systems');
+
+    // Must reference the event count — concrete day-signal, not tier-switch alone
+    expect(result).toContain('4 things on the calendar');
+  });
+
+  it('names a focus/review event rather than count when one is present', () => {
+    const moderateInsight: InsightResponse = {
+      ...baseInsight,
+      readiness_score: 62,
+      readiness_label: 'Fair',
+      sleep_value_hours: null,
+    };
+    const result = composeBrief({
+      ...baseInputs,
+      insight: moderateInsight,
+      events: [{ summary: 'Deep work block', start_time: null }],
+      overdueTasks: [],
+    });
+
+    // Must name the article
+    expect(result).toContain('The future of distributed systems');
+
+    // Must reference the focus event by name — concrete signal
+    expect(result).toContain('Deep work block');
+  });
+});
+
+// ── Synthesis: signals absent — graceful fallback ─────────────────────────
+
+describe('composeBrief – synthesis (no extra signals)', () => {
+  it('still produces a sentence with the article title when sleep/events/tasks all absent', () => {
+    const result = composeBrief({
+      ...baseInputs,
+      insight: { ...baseInsight, sleep_value_hours: null },
+      events: [],
+      overdueTasks: [],
+    });
+
+    expect(result).toContain('The future of distributed systems');
+    // Must still have a coherent bridging phrase rather than bare title
     expect(
       result.includes('dig into') ||
       result.includes('worth a look') ||
       result.includes('stands out') ||
       result.includes('standout read') ||
       result.includes('fits a') ||
-      result.includes('relevant to')
-    ).toBe(true);
-    // The title must not appear as first word right after a period following the score
-    const barePattern = /\d+\/100\.\s+"The future/;
-    expect(barePattern.test(result)).toBe(false);
-  });
-});
-
-// ── Synthesis sentence: low readiness + relevant read ─────────────────────
-
-describe('composeBrief – synthesis sentence (low readiness)', () => {
-  it('connects low readiness to top read when readiness_label is low', () => {
-    const lowInsight: InsightResponse = {
-      ...baseInsight,
-      readiness_score: 42,
-      readiness_label: 'Strained',
-      morning_note: 'Take it easy today.',
-    };
-    const result = composeBrief({ ...baseInputs, insight: lowInsight });
-    expect(result).toContain('The future of distributed systems');
-    // Should suggest gentle/recovery framing, not just state two values
-    expect(
-      result.includes('recovery') ||
-      result.includes('lighter') ||
-      result.includes('slower') ||
-      result.includes('priority')
+      result.includes('relevant to') ||
+      result.includes('strongest signal') ||
+      result.includes('strongest read')
     ).toBe(true);
   });
 });
@@ -215,7 +300,6 @@ describe('composeBrief – guest mode', () => {
       overdueTasks: [],
       picks: [],
       annotations: {},
-      isGuest: true,
     });
     expect(result).toContain('Fuel early');
     expect(result.trim().endsWith(REFLECTION)).toBe(true);
