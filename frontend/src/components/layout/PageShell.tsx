@@ -127,7 +127,7 @@ export function PageShell({ children }: PropsWithChildren) {
       <CloudNavShelf>
         <Nav aria-label="Main navigation">
           <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/" end>
-            Dashboard
+            Today
           </NavLink>
           <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/insights">
             Insights

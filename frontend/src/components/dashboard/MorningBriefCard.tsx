@@ -19,6 +19,8 @@ const HeroCard = styled(Card)`
       : 'rgba(240, 248, 255, 0.97)'};
   border-color: ${({ theme }) => theme.colors.accent}44;
   margin-bottom: clamp(10px, 1.5vh, 20px);
+  padding: clamp(20px, 3vw, 32px);
+  min-height: 150px;
 `;
 
 const MetaRow = styled.div`
@@ -40,10 +42,10 @@ const DateLabel = styled.span`
 // ── Paragraph ─────────────────────────────────────────────────────────────────
 
 const BriefText = styled.p`
-  margin: 0 0 14px;
+  margin: 0 0 18px;
   font-family: ${({ theme }) => theme.fonts.body};
-  font-size: clamp(0.88rem, 1.5vw, 0.97rem);
-  line-height: 1.65;
+  font-size: clamp(1rem, 2vw, 1.18rem);
+  line-height: 1.72;
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 

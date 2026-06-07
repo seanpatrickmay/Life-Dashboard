@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 
 // Lazy load all page components for code splitting
-const DashboardPage = lazy(() => import('./Dashboard').then(m => ({ default: m.DashboardPage })));
+const TodayPage = lazy(() => import('./Today').then(m => ({ default: m.TodayPage })));
 const InsightsPage = lazy(() => import('./Insights').then(m => ({ default: m.InsightsPage })));
 const ReflectPage = lazy(() => import('./Reflect').then(m => ({ default: m.ReflectPage })));
 const CalendarPage = lazy(() => import('./Calendar').then(m => ({ default: m.CalendarPage })));
@@ -35,7 +35,7 @@ const PageLoader = () => (
 );
 
 const routes = [
-  { path: '/', element: <DashboardPage /> },
+  { path: '/', element: <TodayPage /> },
   { path: '/insights', element: <InsightsPage /> },
   { path: '/reflect', element: <ReflectPage /> },
   { path: '/journal', element: <Navigate to="/reflect" replace /> },
