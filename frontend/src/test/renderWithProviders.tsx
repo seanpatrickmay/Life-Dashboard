@@ -12,6 +12,11 @@ import type { DefaultTheme } from 'styled-components';
 export const testTheme: DefaultTheme = {
   fonts: { heading: 'sans-serif', body: 'sans-serif' },
   mode: 'dark',
+  intensity: 'rich',
+  shadows: {
+    soft: '0 2px 8px rgba(0,0,0,0.3)',
+    hard: '0 4px 16px rgba(0,0,0,0.5)',
+  },
   palette: {
     neutral: {
       '50': '#fafafa',
@@ -39,6 +44,8 @@ export const testTheme: DefaultTheme = {
     scrollThumb: '#555',
     scrollTrack: '#222',
     accent: '#7ED7C4',
+    backgroundCard: 'rgba(20,28,46,0.94)',
+    surfaceInset: 'rgba(0,0,0,0.12)',
   },
 } as unknown as DefaultTheme;
 
