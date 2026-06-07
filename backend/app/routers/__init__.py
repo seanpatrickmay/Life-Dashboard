@@ -7,6 +7,7 @@ from . import (
   insights,
   journal,
   metrics,
+  morning_brief,
   news,
   nutrition,
   projects,
