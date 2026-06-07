@@ -1,4 +1,5 @@
-import styled, { keyframes } from 'styled-components';
+import styled, { keyframes, css } from 'styled-components';
+import { Link } from 'react-router-dom';
 import { Card } from '../common/Card';
 import { useMorningBrief } from '../../hooks/useMorningBrief';
 import { reducedMotion } from '../../styles/animations';
@@ -57,7 +58,7 @@ const ChipRow = styled.div`
   gap: 6px;
 `;
 
-const NavChip = styled.a`
+const chipStyles = css`
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -83,8 +84,11 @@ const NavChip = styled.a`
   }
 `;
 
-// Article chips share the same anchor styles as NavChip
-const ArticleChipAnchor = NavChip;
+// Internal route → client-side navigation (no full reload)
+const NavChip = styled(Link)`${chipStyles}`;
+
+// Article chips link to external URLs → plain anchor with target=_blank
+const ArticleChipAnchor = styled.a`${chipStyles}`;
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -161,7 +165,7 @@ export function MorningBriefCard() {
 
       <ChipRow>
         <NavChip
-          href="/body"
+          to="/body"
           aria-label="Body — navigate to body metrics"
         >
           Body · Health
