@@ -1,32 +1,12 @@
 import { useState, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
 
-import { MacroHero } from '../components/nutrition/MacroHero';
-import { MicronutrientPanel } from '../components/nutrition/MicronutrientPanel';
-import { MenuPanel } from '../components/nutrition/MenuPanel';
-import { GoalsPanel } from '../components/nutrition/GoalsPanel';
-import { QuickLogPanel } from '../components/nutrition/QuickLogPanel';
-import { useNutritionHistory } from '../hooks/useNutritionIntake';
-import { fadeUp, reducedMotion } from '../styles/animations';
-
-/* ── Layout ── */
-
-const Page = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: clamp(14px, 2.5vw, 22px);
-  margin-top: clamp(16px, 4vh, 48px);
-  animation: ${fadeUp} 0.5s ease-out both;
-  ${reducedMotion}
-`;
-
-const Title = styled.h1`
-  margin: 0;
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 1rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-`;
+import { MacroHero } from './MacroHero';
+import { MicronutrientPanel } from './MicronutrientPanel';
+import { MenuPanel } from './MenuPanel';
+import { GoalsPanel } from './GoalsPanel';
+import { QuickLogPanel } from './QuickLogPanel';
+import { useNutritionHistory } from '../../hooks/useNutritionIntake';
 
 /* ── Collapsible section ── */
 
@@ -62,15 +42,6 @@ const ToggleLeft = styled.div`
   display: flex;
   align-items: center;
   gap: 10px;
-`;
-
-const ItemBadge = styled.span`
-  font-size: 0.55rem;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: ${({ theme }) => `${theme.colors.accent}26`};
-  color: ${({ theme }) => theme.colors.accent};
-  letter-spacing: 0.06em;
 `;
 
 const Chevron = styled.span<{ $open: boolean }>`
@@ -185,43 +156,6 @@ const AvgEmpty = styled.p`
   margin: 0;
 `;
 
-/* ── State persistence ── */
-
-const STORAGE_KEY = 'nutrition-sections';
-
-type SectionState = {
-  meals: boolean;
-  micro: boolean;
-  averages: boolean;
-  goals: boolean;
-  quicklog: boolean;
-};
-
-const DEFAULTS: SectionState = {
-  meals: true,
-  micro: false,
-  averages: false,
-  goals: false,
-  quicklog: true,
-};
-
-function readPersistedSections(): SectionState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return { ...DEFAULTS, ...parsed };
-    }
-  } catch { /* ignore */ }
-  return DEFAULTS;
-}
-
-function persistSections(state: SectionState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-/* ── Averages sub-component ── */
-
 function AveragesContent() {
   const { data } = useNutritionHistory();
   const macros = useMemo(
@@ -267,9 +201,44 @@ function AveragesContent() {
   );
 }
 
-/* ── Page ── */
+/* ── State persistence ── */
 
-export function NutritionPage() {
+const STORAGE_KEY = 'nutrition-sections';
+
+type SectionState = {
+  meals: boolean;
+  micro: boolean;
+  averages: boolean;
+  goals: boolean;
+  quicklog: boolean;
+};
+
+const DEFAULTS: SectionState = {
+  meals: true,
+  micro: false,
+  averages: false,
+  goals: false,
+  quicklog: true,
+};
+
+function readPersistedSections(): SectionState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULTS, ...parsed };
+    }
+  } catch { /* ignore */ }
+  return DEFAULTS;
+}
+
+function persistSections(state: SectionState) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+/* ── NutritionContent ── */
+
+export function NutritionContent() {
   const [sections, setSections] = useState<SectionState>(readPersistedSections);
 
   const toggle = useCallback((key: keyof SectionState) => {
@@ -281,9 +250,7 @@ export function NutritionPage() {
   }, []);
 
   return (
-    <Page>
-      <Title data-halo="heading">Nutrition</Title>
-
+    <>
       <MacroHero />
 
       {/* Quick Log */}
@@ -388,7 +355,6 @@ export function NutritionPage() {
           </CollapsibleInner>
         </CollapsibleWrapper>
       </SectionCard>
-
-    </Page>
+    </>
   );
 }

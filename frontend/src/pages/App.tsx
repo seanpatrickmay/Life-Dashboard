@@ -3,10 +3,9 @@ import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 
 // Lazy load all page components for code splitting
 const TodayPage = lazy(() => import('./Today').then(m => ({ default: m.TodayPage })));
-const InsightsPage = lazy(() => import('./Insights').then(m => ({ default: m.InsightsPage })));
+const BodyPage = lazy(() => import('./Body').then(m => ({ default: m.BodyPage })));
 const ReflectPage = lazy(() => import('./Reflect').then(m => ({ default: m.ReflectPage })));
 const CalendarPage = lazy(() => import('./Calendar').then(m => ({ default: m.CalendarPage })));
-const NutritionPage = lazy(() => import('./Nutrition').then(m => ({ default: m.NutritionPage })));
 const ProjectsPage = lazy(() => import('./Projects').then(m => ({ default: m.ProjectsPage })));
 const ReadPage = lazy(() => import('./Read').then(m => ({ default: m.ReadPage })));
 const UserPage = lazy(() => import('./User').then(m => ({ default: m.UserPage })));
@@ -37,7 +36,9 @@ const PageLoader = () => (
 
 const routes = [
   { path: '/', element: <TodayPage /> },
-  { path: '/insights', element: <InsightsPage /> },
+  { path: '/body', element: <BodyPage /> },
+  { path: '/insights', element: <Navigate to="/body" replace /> },
+  { path: '/nutrition', element: <Navigate to="/body?tab=nutrition" replace /> },
   { path: '/reflect', element: <ReflectPage /> },
   { path: '/journal', element: <Navigate to="/reflect" replace /> },
   { path: '/calendar', element: <CalendarPage /> },
@@ -46,7 +47,6 @@ const routes = [
   { path: '/news', element: <Navigate to="/read" replace /> },
   { path: '/news/profile', element: <Navigate to="/read" replace /> },
   { path: '/ai-digest', element: <Navigate to="/read" replace /> },
-  { path: '/nutrition', element: <NutritionPage /> },
   { path: '/user', element: <UserPage /> },
   { path: '/settings/food-db', element: <FoodManagerPage /> },
 ];
