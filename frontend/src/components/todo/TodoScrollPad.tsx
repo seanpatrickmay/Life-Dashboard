@@ -6,32 +6,12 @@ import type { TodoItem, TimeHorizon } from '../../services/api';
 const ScrollShell = styled.div`
   position: relative;
   padding: 10px 14px 12px;
-  border-radius: 20px;
+  border-radius: ${({ theme }) => theme.radii?.card ?? '22px'};
   background: ${({ theme }) => theme.colors.backgroundCard};
-  box-shadow: 0 10px 26px rgba(11, 18, 32, 0.55);
+  box-shadow: ${({ theme }) => theme.shadows?.soft ?? '0 18px 34px rgba(28, 41, 64, 0.18)'};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   color: ${({ theme }) => theme.colors.textPrimary};
   overflow: visible;
-
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    left: 8px;
-    right: 8px;
-    height: 10px;
-    border-radius: 999px;
-    background: radial-gradient(circle at 50% 0, rgba(121, 88, 62, 0.9), transparent 70%);
-    opacity: 0.9;
-  }
-
-  &::before {
-    top: -6px;
-  }
-
-  &::after {
-    bottom: -8px;
-    transform: scaleY(-1);
-  }
 `;
 
 const ScrollHeading = styled.div`
@@ -42,7 +22,7 @@ const ScrollHeading = styled.div`
   font-family: ${({ theme }) => theme.fonts.heading};
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  font-size: 0.78rem;
+  font-size: clamp(0.85rem, 1.8vw, 0.95rem);
 `;
 
 const Count = styled.span`
@@ -67,7 +47,7 @@ const List = styled.ul`
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 6px;
 `;
 
 const Row = styled.li<{ $completed: boolean; $overdue: boolean }>`
@@ -75,7 +55,7 @@ const Row = styled.li<{ $completed: boolean; $overdue: boolean }>`
   grid-template-columns: auto 1fr;
   gap: 4px;
   align-items: start;
-  padding: 4px 6px;
+  padding: 6px 8px;
   border-radius: 8px;
   background: ${({ $overdue, $completed, theme }) =>
     $completed

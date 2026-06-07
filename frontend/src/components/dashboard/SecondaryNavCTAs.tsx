@@ -17,7 +17,7 @@ export const CTALink = styled(Link)`
   box-sizing: border-box;
   border-radius: 999px;
   border: 1px solid ${({ theme }) => theme.colors.accent}55;
-  background: ${({ theme }) => theme.colors.overlay};
+  background: ${({ theme }) => theme.colors.backgroundCard};
   color: ${({ theme }) => theme.colors.accent};
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 0.74rem;

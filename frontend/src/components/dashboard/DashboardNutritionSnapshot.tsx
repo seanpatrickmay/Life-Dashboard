@@ -10,7 +10,6 @@ const Panel = styled(Card)`
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: 0 0 0 1px ${({ theme }) => theme.colors.borderSubtle}, 0 0 32px rgba(120, 170, 255, 0.35);
 `;
 
 const Heading = styled.h3`

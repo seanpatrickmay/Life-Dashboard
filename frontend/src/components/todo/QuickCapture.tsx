@@ -10,10 +10,10 @@ const Row = styled.div`
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 14px;
+  border-radius: ${({ theme }) => theme.radii?.card ?? '22px'};
   background: ${({ theme }) => theme.colors.backgroundCard};
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  box-shadow: 0 2px 8px rgba(11, 18, 32, 0.35);
+  box-shadow: ${({ theme }) => theme.shadows?.soft ?? '0 18px 34px rgba(28, 41, 64, 0.18)'};
 `;
 
 const TaskInput = styled.input`
@@ -49,15 +49,17 @@ const TaskInput = styled.input`
 const ProjectSelect = styled.select`
   min-height: 44px;
   box-sizing: border-box;
-  padding: 0 8px;
+  padding: 0 28px 0 8px;
   border-radius: 8px;
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => theme.colors.surfaceInset};
+  background: ${({ theme }) => theme.colors.overlay};
   color: ${({ theme }) => theme.colors.textSecondary};
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: 0.78rem;
   cursor: pointer;
   max-width: 130px;
+  appearance: none;
+  -webkit-appearance: none;
 
   &:disabled {
     opacity: 0.5;
