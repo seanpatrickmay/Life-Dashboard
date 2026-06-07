@@ -5,6 +5,7 @@ import { DashboardNewsFeed } from '../components/dashboard/DashboardNewsFeed';
 import { DashboardNutritionSnapshot } from '../components/dashboard/DashboardNutritionSnapshot';
 import { MorningBriefCard } from '../components/dashboard/MorningBriefCard';
 import { SummaryChips } from '../components/dashboard/SummaryChips';
+import { QuickCapture } from '../components/todo/QuickCapture';
 import { TodoScrollPad } from '../components/todo/TodoScrollPad';
 import { useInsight } from '../hooks/useInsight';
 import { useIsMobile } from '../hooks/useMediaQuery';
@@ -85,6 +86,13 @@ const Column = styled.div<{ $delay?: number }>`
   ${reducedMotion}
 `;
 
+// Tasks panel: quick-capture + scroll pad stacked together
+const TasksPanel = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+`;
+
 // Mobile supporting section (todo + chips)
 const MobileSupport = styled.div`
   display: flex;
@@ -124,14 +132,20 @@ export function TodayPage() {
       {isMobile ? (
         /* ── Mobile: dense one-glance layout ── */
         <MobileSupport>
-          <TodoScrollPad />
+          <TasksPanel>
+            <QuickCapture />
+            <TodoScrollPad />
+          </TasksPanel>
           <SummaryChips />
         </MobileSupport>
       ) : (
         /* ── Desktop: 3-column supporting grid ── */
         <Grid>
           <Column $delay={0}>
-            <TodoScrollPad />
+            <TasksPanel>
+              <QuickCapture />
+              <TodoScrollPad />
+            </TasksPanel>
           </Column>
           <Column $delay={1}>
             <DashboardUpcomingEvents />
