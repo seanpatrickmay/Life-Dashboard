@@ -1,4 +1,4 @@
-import { PropsWithChildren } from 'react';
+import { PropsWithChildren, useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { palette } from '../../theme/monetTheme';
@@ -6,6 +6,7 @@ import { CloudNavShelf } from './CloudNavShelf';
 import { MonetChatBubble } from '../dashboard/MonetChatPanel';
 import { exitGuestMode, isGuestMode } from '../../demo/guest/guestMode';
 import { clearGuestState } from '../../demo/guest/guestStore';
+import { SettingsDrawer } from './SettingsDrawer';
 
 const paletteAccent = (mode: 'light' | 'dark', theme?: { colors?: { accent?: string } }) =>
   theme?.colors?.accent ?? (mode === 'dark' ? palette.bloom['300'] : palette.bloom['200']);
@@ -102,11 +103,51 @@ const GuestExitButton = styled.button`
   }
 `;
 
+const NavRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const GearButton = styled.button`
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: ${({ theme }) => theme.colors.textPrimary};
+  font-size: 1rem;
+  opacity: 0.6;
+  line-height: 1;
+  padding: 10px 12px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity 0.2s ease;
+  &:hover { opacity: 1; }
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+`;
+
 export function PageShell({ children }: PropsWithChildren) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const guestMode = isGuestMode();
   const fullWidth = pathname.startsWith('/calendar') || pathname.startsWith('/projects') || pathname.startsWith('/read');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Fix 1: close drawer on route changes so it doesn't block the new page
+  useEffect(() => {
+    setSettingsOpen(false);
+  }, [pathname]);
+
+  // Fix 4: stable callback — avoids re-registering the keydown effect in SettingsDrawer every render
+  const handleSettingsClose = useCallback(() => setSettingsOpen(false), []);
+
   return (
     <Frame $fullWidth={fullWidth}>
       {guestMode ? (
@@ -125,35 +166,49 @@ export function PageShell({ children }: PropsWithChildren) {
         </GuestBanner>
       ) : null}
       <CloudNavShelf>
-        <Nav aria-label="Main navigation">
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/" end>
-            Today
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/insights">
-            Insights
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/reflect">
-            Reflect
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/calendar">
-            Calendar
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/projects">
-            Projects
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/read">
-            Read
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/nutrition">
-            Nutrition
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/user">
-            User
-          </NavLink>
-        </Nav>
+        <NavRow>
+          <Nav aria-label="Main navigation">
+            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/" end>
+              Today
+            </NavLink>
+            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/insights">
+              Insights
+            </NavLink>
+            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/reflect">
+              Reflect
+            </NavLink>
+            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/calendar">
+              Calendar
+            </NavLink>
+            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/projects">
+              Projects
+            </NavLink>
+            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/read">
+              Read
+            </NavLink>
+            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/nutrition">
+              Nutrition
+            </NavLink>
+            <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/user">
+              User
+            </NavLink>
+          </Nav>
+          <GearButton
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Settings"
+            aria-haspopup="dialog"
+            aria-expanded={settingsOpen}
+          >
+            ⚙
+          </GearButton>
+        </NavRow>
       </CloudNavShelf>
       <main><Surface>{children}</Surface></main>
       <MonetChatBubble />
+      {settingsOpen && (
+        <SettingsDrawer onClose={handleSettingsClose} />
+      )}
     </Frame>
   );
 }
