@@ -3,8 +3,13 @@ import styled, { useTheme } from 'styled-components';
 import { DashboardUpcomingEvents } from '../components/dashboard/DashboardUpcomingEvents';
 import { DashboardNewsFeed } from '../components/dashboard/DashboardNewsFeed';
 import { DashboardNutritionSnapshot } from '../components/dashboard/DashboardNutritionSnapshot';
+import { MorningBriefCard } from '../components/dashboard/MorningBriefCard';
+import { SummaryChips } from '../components/dashboard/SummaryChips';
+import { SecondaryNavCTAs } from '../components/dashboard/SecondaryNavCTAs';
+import { QuickCapture } from '../components/todo/QuickCapture';
 import { TodoScrollPad } from '../components/todo/TodoScrollPad';
 import { useInsight } from '../hooks/useInsight';
+import { useIsMobile } from '../hooks/useMediaQuery';
 import { fadeUp, reducedMotion } from '../styles/animations';
 import type { MonetTheme, Moment } from '../theme/monetTheme';
 
@@ -15,13 +20,14 @@ const GREETINGS: Record<Moment, string> = {
   night: 'Good night'
 };
 
+// Slim greeting strip — must not compete with hero
 const GreetingStrip = styled.div`
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 10px 18px;
-  margin-top: clamp(20px, 5vh, 64px);
-  margin-bottom: clamp(4px, 1vh, 12px);
+  gap: 8px 14px;
+  margin-top: clamp(12px, 3vh, 36px);
+  margin-bottom: clamp(4px, 0.75vh, 10px);
   animation: ${fadeUp} 0.5s ease-out both;
   ${reducedMotion}
 `;
@@ -29,14 +35,14 @@ const GreetingStrip = styled.div`
 const GreetingText = styled.h2`
   margin: 0;
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: clamp(1.1rem, 2vw, 1.4rem);
+  font-size: clamp(0.9rem, 1.5vw, 1.1rem);
   letter-spacing: 0.08em;
   color: ${({ theme }) => theme.colors.textPrimary};
-  text-shadow: 0 2px 10px rgba(10, 18, 40, 0.25);
+  opacity: 0.8;
 `;
 
 const DateText = styled.span`
-  font-size: clamp(0.7rem, 1vw, 0.82rem);
+  font-size: clamp(0.65rem, 0.9vw, 0.76rem);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: ${({ theme }) => theme.colors.textSecondary};
@@ -46,15 +52,17 @@ const ScoreBadge = styled.span`
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 10px;
+  padding: 2px 8px;
   border-radius: 20px;
   background: ${({ theme }) => theme.colors.overlay};
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   letter-spacing: 0.06em;
   color: ${({ theme }) => theme.colors.textPrimary};
+  opacity: 0.75;
 `;
 
+// Desktop supporting grid
 const Grid = styled.div`
   display: grid;
   gap: clamp(20px, 3vw, 32px);
@@ -79,10 +87,27 @@ const Column = styled.div<{ $delay?: number }>`
   ${reducedMotion}
 `;
 
-export function DashboardPage() {
+// Tasks panel: quick-capture + scroll pad stacked together
+const TasksPanel = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+`;
+
+// Mobile supporting section (todo + chips)
+const MobileSupport = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: ${fadeUp} 0.4s ease-out 0.08s both;
+  ${reducedMotion}
+`;
+
+export function TodayPage() {
   const theme = useTheme() as MonetTheme;
   const moment = (theme.moment ?? 'morning') as Moment;
   const { data: insight } = useInsight();
+  const isMobile = useIsMobile();
 
   const today = new Date().toLocaleDateString(undefined, {
     weekday: 'long',
@@ -101,18 +126,38 @@ export function DashboardPage() {
         <DateText>{today}</DateText>
         {score && <ScoreBadge>Readiness {score}/100</ScoreBadge>}
       </GreetingStrip>
-      <Grid>
-        <Column $delay={0}>
-          <TodoScrollPad />
-        </Column>
-        <Column $delay={1}>
-          <DashboardUpcomingEvents />
-        </Column>
-        <Column $delay={2}>
-          <DashboardNutritionSnapshot />
-          <DashboardNewsFeed />
-        </Column>
-      </Grid>
+
+      {/* Hero — dominant on every viewport */}
+      <MorningBriefCard />
+
+      {isMobile ? (
+        /* ── Mobile: dense one-glance layout ── */
+        <MobileSupport>
+          <TasksPanel>
+            <QuickCapture />
+            <TodoScrollPad />
+          </TasksPanel>
+          <SummaryChips />
+        </MobileSupport>
+      ) : (
+        /* ── Desktop: 3-column supporting grid ── */
+        <Grid>
+          <Column $delay={0}>
+            <TasksPanel>
+              <QuickCapture />
+              <TodoScrollPad />
+            </TasksPanel>
+          </Column>
+          <Column $delay={1}>
+            <DashboardUpcomingEvents />
+            <SecondaryNavCTAs />
+          </Column>
+          <Column $delay={2}>
+            <DashboardNutritionSnapshot />
+            <DashboardNewsFeed />
+          </Column>
+        </Grid>
+      )}
     </>
   );
 }

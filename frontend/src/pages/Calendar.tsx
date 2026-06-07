@@ -462,6 +462,13 @@ export function CalendarPage() {
           onClose={() => setSelectedItem(null)}
           recurrenceScope={recurrenceScope}
           onChangeScope={setRecurrenceScope}
+          onReschedule={async (calItem, start, end, isAllDay) => {
+            if (isAllDay) {
+              await handleMoveAllDayItem(calItem, start);
+            } else {
+              await handleMoveItem(calItem, start, end);
+            }
+          }}
         />
       </CalendarShell>
 

@@ -1,12 +1,17 @@
+/**
+ * AIDevSection — renders AI Digest content as an entry card in the Read tab.
+ * This is NOT a filter pill; it's a distinct section card (wireframe R2).
+ * Uses useAIDigest; read-only (no save/dismiss/skip on digest items).
+ * DigestItem.id is number — do NOT unify with NewsArticle.id (string).
+ */
 import { useState } from 'react';
 import styled from 'styled-components';
+import { Card } from '../common/Card';
+import { useAIDigest } from '../../hooks/useAIDigest';
+import type { DigestItem } from '../../services/api';
+import { formatTimeAgo } from '../../utils/dateFormat';
 
-import { Card } from '../components/common/Card';
-import { useAIDigest } from '../hooks/useAIDigest';
-import type { DigestItem } from '../services/api';
-import { fadeUp, reducedMotion } from '../styles/animations';
-
-/* ─── Category config ─────────────────────────── */
+/* ─── Local category config ──────────────────────── */
 
 const CATEGORY_COLORS: Record<string, string> = {
   'claude-anthropic': 'rgba(217, 119, 87, 0.85)',
@@ -38,8 +43,6 @@ const CATEGORY_ORDER: string[] = [
   'claude-anthropic', 'openai', 'google-ai', 'developer-tools',
   'open-source', 'frameworks', 'aggregator', 'analysis', 'research', 'industry',
 ];
-
-/* ─── Data helpers ────────────────────────────── */
 
 const COLLAPSE_KEY = 'ld_ai_digest_collapsed';
 
@@ -89,25 +92,6 @@ function groupByCategory(items: DigestItem[]): [string, DigestItem[]][] {
     .map(cat => [cat, groups[cat]]);
 }
 
-function formatTimeAgo(dateStr: string | null): string {
-  if (!dateStr) return '';
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  if (hours < 1) return 'just now';
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'yesterday';
-  return `${days}d ago`;
-}
-
-function formatDate(): string {
-  return new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
-}
-
 function getColor(cat: string | null): string {
   return CATEGORY_COLORS[cat || ''] || 'rgba(160, 160, 160, 0.7)';
 }
@@ -116,59 +100,35 @@ function getLabel(cat: string | null): string {
   return CATEGORY_LABELS[cat || ''] || cat || 'General';
 }
 
-/* ─── Styled: Layout ──────────────────────────── */
+/* ─── Styled ─────────────────────────────────────── */
 
-const Page = styled.div`
+const Wrapper = styled.div`
   display: flex;
   flex-direction: column;
-  gap: clamp(20px, 4vw, 36px);
-  max-width: 680px;
-  margin: 0 auto;
-  animation: ${fadeUp} 0.45s ease-out both;
-  ${reducedMotion}
+  gap: 16px;
 `;
 
-const Header = styled.div`
+const EntryHeader = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 `;
 
-const TitleGroup = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-`;
-
-const Title = styled.h1`
-  margin: 0;
+const EntryLabel = styled.div`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: clamp(1.2rem, 2.5vw, 1.5rem);
-  letter-spacing: 0.2em;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-`;
-
-const DateLine = styled.span`
-  font-size: 0.65rem;
-  letter-spacing: 0.08em;
-  opacity: 0.4;
-  text-transform: uppercase;
-`;
-
-const HeaderActions = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
+  opacity: 0.45;
 `;
 
 const CountPill = styled.span`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 4px 10px;
+  padding: 3px 8px;
   border-radius: 999px;
   background: ${({ theme }) => theme.palette?.pond?.['200'] ?? '#7ED7C4'}22;
   color: ${({ theme }) => theme.palette?.pond?.['200'] ?? '#7ED7C4'};
@@ -181,17 +141,15 @@ const RefreshBtn = styled.button`
   border-radius: 8px;
   color: inherit;
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  padding: 6px 12px;
+  padding: 4px 10px;
   cursor: pointer;
   transition: background 0.15s ease;
   &:hover:not(:disabled) { background: ${({ theme }) => theme.colors.overlayActive}; }
   &:disabled { opacity: 0.4; cursor: default; }
 `;
-
-/* ─── Styled: Narrative ───────────────────────── */
 
 const NarrativeCard = styled(Card)`
   font-size: 0.82rem;
@@ -231,8 +189,6 @@ const ExpandHint = styled.span`
   margin-top: 8px;
 `;
 
-/* ─── Styled: Top Stories ─────────────────────── */
-
 const SectionLabel = styled.div`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 0.72rem;
@@ -244,7 +200,7 @@ const SectionLabel = styled.div`
 const TopStoriesGrid = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 `;
 
 const StoryCard = styled(Card)`
@@ -286,27 +242,32 @@ const TimeMeta = styled.span`
 `;
 
 const StoryTitle = styled.div`
-  font-size: 1rem;
+  font-size: 0.95rem;
   line-height: 1.4;
   font-weight: 500;
 `;
 
 const StorySummary = styled.div`
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   line-height: 1.55;
   opacity: 0.55;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 `;
 
-/* ─── Styled: Category Sections ───────────────── */
+const Divider = styled.hr`
+  border: none;
+  border-top: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  opacity: 0.4;
+  margin: 0;
+`;
 
 const CategoriesWrap = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 `;
 
 const CategoryBlock = styled.div`
@@ -324,7 +285,7 @@ const CatHeader = styled.button`
   cursor: pointer;
   color: inherit;
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: clamp(0.72rem, 1.4vw, 0.82rem);
+  font-size: clamp(0.68rem, 1.2vw, 0.78rem);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   opacity: 0.5;
@@ -344,7 +305,7 @@ const Chevron = styled.span<{ $open: boolean }>`
 `;
 
 const CatCount = styled.span`
-  font-size: 0.58rem;
+  font-size: 0.55rem;
   opacity: 0.4;
 `;
 
@@ -356,7 +317,7 @@ const CatItems = styled.div`
 const CompactRow = styled.div<{ $expandable: boolean }>`
   display: flex;
   flex-direction: column;
-  padding: 8px 10px;
+  padding: 7px 10px;
   border-radius: 8px;
   cursor: ${({ $expandable }) => ($expandable ? 'pointer' : 'default')};
   transition: background 0.12s ease;
@@ -372,7 +333,7 @@ const CompactMain = styled.div`
 const CompactTitle = styled.a`
   flex: 1;
   min-width: 0;
-  font-size: 0.84rem;
+  font-size: 0.82rem;
   line-height: 1.35;
   white-space: nowrap;
   overflow: hidden;
@@ -383,7 +344,7 @@ const CompactTitle = styled.a`
 `;
 
 const CompactSource = styled.span`
-  font-size: 0.52rem;
+  font-size: 0.5rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   opacity: 0.3;
@@ -391,69 +352,51 @@ const CompactSource = styled.span`
 `;
 
 const CompactTime = styled.span`
-  font-size: 0.5rem;
+  font-size: 0.48rem;
   letter-spacing: 0.06em;
   opacity: 0.22;
   flex-shrink: 0;
 `;
 
 const ExpandedSummary = styled.div`
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   line-height: 1.55;
   opacity: 0.5;
-  padding: 6px 0 4px 14px;
+  padding: 5px 0 3px 14px;
 `;
 
-/* ─── Styled: States ──────────────────────────── */
-
 const LoadingState = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 64px 24px;
-  font-size: 1rem;
+  padding: 32px 24px;
+  text-align: center;
   opacity: 0.4;
+  font-size: 0.9rem;
 `;
 
 const EmptyState = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  padding: 64px 24px;
+  gap: 10px;
+  padding: 32px 24px;
   text-align: center;
 `;
 
 const EmptyHeading = styled.span`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 1rem;
+  font-size: 0.9rem;
   letter-spacing: 0.15em;
   text-transform: uppercase;
   opacity: 0.5;
 `;
 
 const EmptySubtext = styled.span`
-  font-size: 0.78rem;
-  opacity: 0.32;
-  max-width: 300px;
+  font-size: 0.75rem;
+  opacity: 0.3;
 `;
 
-const Footer = styled.div`
-  font-size: 0.58rem;
-  opacity: 0.25;
-  text-align: center;
-`;
+/* ─── Component ──────────────────────────────────── */
 
-const Divider = styled.hr`
-  border: none;
-  border-top: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  opacity: 0.4;
-  margin: 0;
-`;
-
-/* ─── Page Component ──────────────────────────── */
-
-export function AIDigestPage() {
+export function AIDevSection() {
   const { digestQuery, refreshDigest: doRefresh, isRefreshing } = useAIDigest();
   const [sectionCollapsed, setSectionCollapsed] = useState<Set<string>>(loadCollapsed);
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
@@ -486,43 +429,34 @@ export function AIDigestPage() {
   }
 
   return (
-    <Page>
-      {/* ── Header ──────────────────────────── */}
-      <Header>
-        <TitleGroup>
-          <Title data-halo="heading">AI Digest</Title>
-          <DateLine>{formatDate()}</DateLine>
-        </TitleGroup>
-        <HeaderActions>
+    <Wrapper>
+      <EntryHeader>
+        <EntryLabel>AI &amp; Dev Briefing</EntryLabel>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {items.length > 0 && <CountPill>{items.length} items</CountPill>}
-          <RefreshBtn onClick={doRefresh} disabled={isRefreshing}>
-            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          <RefreshBtn onClick={doRefresh} disabled={isRefreshing || digestQuery.isLoading}>
+            {isRefreshing ? 'Refreshing…' : 'Refresh'}
           </RefreshBtn>
-        </HeaderActions>
-      </Header>
+        </div>
+      </EntryHeader>
 
-      {/* ── Loading / Empty ─────────────────── */}
       {digestQuery.isLoading ? (
-        <LoadingState>Fetching your AI briefing...</LoadingState>
+        <LoadingState>Fetching AI briefing…</LoadingState>
       ) : items.length === 0 ? (
         <EmptyState>
-          <EmptyHeading data-halo="heading">No items yet</EmptyHeading>
-          <EmptySubtext>Hit refresh to fetch your first AI digest.</EmptySubtext>
+          <EmptyHeading>No items yet</EmptyHeading>
+          <EmptySubtext>Hit refresh to fetch your AI digest.</EmptySubtext>
         </EmptyState>
       ) : (
         <>
-          {/* ── Narrative ─────────────────────── */}
           {narrative && (
             <NarrativeCard onClick={() => setNarrativeExpanded(e => !e)}>
               <NarrativeLabel>Today's Overview</NarrativeLabel>
-              <NarrativeText $expanded={narrativeExpanded}>
-                {narrative}
-              </NarrativeText>
+              <NarrativeText $expanded={narrativeExpanded}>{narrative}</NarrativeText>
               <ExpandHint>{narrativeExpanded ? 'Collapse' : 'Read more'}</ExpandHint>
             </NarrativeCard>
           )}
 
-          {/* ── Top Stories ───────────────────── */}
           {top.length > 0 && (
             <>
               <SectionLabel>Top Stories</SectionLabel>
@@ -543,7 +477,7 @@ export function AIDigestPage() {
                         <MetaText>{item.source_name}</MetaText>
                         <TimeMeta>{formatTimeAgo(item.published_at || item.fetched_at)}</TimeMeta>
                       </StoryMeta>
-                      <StoryTitle data-halo="body">{item.title}</StoryTitle>
+                      <StoryTitle>{item.title}</StoryTitle>
                       {summary && <StorySummary>{summary}</StorySummary>}
                     </StoryCard>
                   );
@@ -552,10 +486,8 @@ export function AIDigestPage() {
             </>
           )}
 
-          {/* ── Divider ───────────────────────── */}
           {grouped.length > 0 && <Divider />}
 
-          {/* ── Category Sections ─────────────── */}
           <CategoriesWrap>
             {grouped.map(([category, catItems]) => {
               const isOpen = !sectionCollapsed.has(category);
@@ -607,13 +539,8 @@ export function AIDigestPage() {
               );
             })}
           </CategoriesWrap>
-
-          {/* ── Footer ────────────────────────── */}
-          {data?.last_refreshed && (
-            <Footer>Last updated: {formatTimeAgo(data.last_refreshed)}</Footer>
-          )}
         </>
       )}
-    </Page>
+    </Wrapper>
   );
 }

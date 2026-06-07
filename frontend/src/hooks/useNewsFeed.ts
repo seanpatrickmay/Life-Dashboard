@@ -34,11 +34,12 @@ import {
   getArticleEmbeddings,
   cosineSimilarity,
 } from '../services/profileSummarizer';
+import { recordSavedToday } from '../services/savedToday';
 import { useTodos } from './useTodos';
 
 const NEWS_FEED_KEY = ['news', 'feed'];
 const NEWS_ALL_KEY = ['news', 'all'];
-const NEWS_CURATED_KEY = ['news', 'curated'];
+export const NEWS_CURATED_KEY = ['news', 'curated'];
 const NEWS_ANNOTATIONS_KEY = ['news', 'annotations'];
 const PROFILE_SUMMARY_KEY = ['news', 'profile-summary'];
 
@@ -294,6 +295,7 @@ export function useNewsFeed() {
   const saveMutation = useMutation({
     mutationFn: async (articleId: string) => {
       saveArticle(articleId);
+      recordSavedToday(articleId);
     },
     onSuccess: invalidateAll,
   });

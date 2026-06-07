@@ -1,4 +1,4 @@
-import { PropsWithChildren } from 'react';
+import { PropsWithChildren, useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { palette } from '../../theme/monetTheme';
@@ -6,11 +6,16 @@ import { CloudNavShelf } from './CloudNavShelf';
 import { MonetChatBubble } from '../dashboard/MonetChatPanel';
 import { exitGuestMode, isGuestMode } from '../../demo/guest/guestMode';
 import { clearGuestState } from '../../demo/guest/guestStore';
+import { SettingsDrawer } from './SettingsDrawer';
+import { MovedBanner } from './MovedBanner';
+import { BottomNav, BOTTOM_NAV_HEIGHT_PX } from './BottomNav';
+import { MoreSheet } from './MoreSheet';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 
 const paletteAccent = (mode: 'light' | 'dark', theme?: { colors?: { accent?: string } }) =>
   theme?.colors?.accent ?? (mode === 'dark' ? palette.bloom['300'] : palette.bloom['200']);
 
-const Frame = styled.div<{ $fullWidth?: boolean }>`
+const Frame = styled.div<{ $fullWidth?: boolean; $mobileBottomPad?: boolean }>`
   padding: clamp(20px, 3vw, 36px);
   max-width: ${({ $fullWidth }) => ($fullWidth ? '100%' : '1200px')};
   width: 100%;
@@ -19,13 +24,17 @@ const Frame = styled.div<{ $fullWidth?: boolean }>`
   flex-direction: column;
   gap: 24px;
   color: ${({ theme }) => theme.colors.textPrimary};
+  ${({ $mobileBottomPad }) =>
+    $mobileBottomPad
+      ? `padding-bottom: calc(${BOTTOM_NAV_HEIGHT_PX}px + env(safe-area-inset-bottom) + 16px);`
+      : ''}
 `;
 
 const Nav = styled.nav`
   display: flex;
-  width: min(90vw, 840px);
-  gap: clamp(12px, 3vw, 28px);
-  justify-content: space-between;
+  width: min(90vw, 560px);
+  gap: clamp(20px, 4vw, 40px);
+  justify-content: flex-start;
   padding: clamp(12px, 1.5vh, 20px) clamp(8px, 2vw, 24px);
   overflow-x: auto;
   scrollbar-width: none;
@@ -102,13 +111,61 @@ const GuestExitButton = styled.button`
   }
 `;
 
+const NavRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const GearButton = styled.button`
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: ${({ theme }) => theme.colors.textPrimary};
+  font-size: 1rem;
+  opacity: 0.6;
+  line-height: 1;
+  padding: 10px 12px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity 0.2s ease;
+  &:hover { opacity: 1; }
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+`;
+
 export function PageShell({ children }: PropsWithChildren) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const guestMode = isGuestMode();
-  const fullWidth = pathname.startsWith('/calendar') || pathname.startsWith('/projects') || pathname.startsWith('/news');
+  const fullWidth = pathname.startsWith('/calendar') || pathname.startsWith('/projects') || pathname.startsWith('/read');
+  const isMobile = useIsMobile();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  // Close drawers on route changes so they don't block the new page
+  useEffect(() => {
+    setSettingsOpen(false);
+    setMoreOpen(false);
+  }, [pathname]);
+
+  // Stable callbacks — avoids re-registering keydown effects every render
+  const handleSettingsClose = useCallback(() => setSettingsOpen(false), []);
+  const handleMoreClose = useCallback(() => setMoreOpen(false), []);
+  const handleOpenSettings = useCallback(() => {
+    setMoreOpen(false);
+    setSettingsOpen(true);
+  }, []);
+
   return (
-    <Frame $fullWidth={fullWidth}>
+    <Frame $fullWidth={fullWidth} $mobileBottomPad={isMobile}>
       {guestMode ? (
         <GuestBanner>
           <GuestBannerText>Guest mode - demo data only - sign in to save changes</GuestBannerText>
@@ -124,42 +181,44 @@ export function PageShell({ children }: PropsWithChildren) {
           </GuestExitButton>
         </GuestBanner>
       ) : null}
-      <CloudNavShelf>
-        <Nav aria-label="Main navigation">
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/" end>
-            Dashboard
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/insights">
-            Insights
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/journal">
-            Journal
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/calendar">
-            Calendar
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/projects">
-            Projects
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/news">
-            News
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/news/profile" style={{ opacity: 0.5, fontSize: '0.85em' }}>
-            Profile
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/ai-digest">
-            AI Digest
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/nutrition">
-            Nutrition
-          </NavLink>
-          <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/user">
-            User
-          </NavLink>
-        </Nav>
-      </CloudNavShelf>
+      <MovedBanner />
+      {!isMobile && (
+        <CloudNavShelf>
+          <NavRow>
+            <Nav aria-label="Main navigation">
+              <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/" end>
+                Today
+              </NavLink>
+              <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/read">
+                Read
+              </NavLink>
+              <NavLink className={({ isActive }) => isActive ? 'active' : ''} to="/reflect">
+                Reflect
+              </NavLink>
+            </Nav>
+            <GearButton
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Settings"
+              aria-haspopup="dialog"
+              aria-expanded={settingsOpen}
+            >
+              ⚙
+            </GearButton>
+          </NavRow>
+        </CloudNavShelf>
+      )}
       <main><Surface>{children}</Surface></main>
       <MonetChatBubble />
+      {isMobile && (
+        <BottomNav onMore={() => setMoreOpen(true)} moreOpen={moreOpen} />
+      )}
+      {moreOpen && (
+        <MoreSheet onClose={handleMoreClose} onOpenSettings={handleOpenSettings} />
+      )}
+      {settingsOpen && (
+        <SettingsDrawer onClose={handleSettingsClose} />
+      )}
     </Frame>
   );
 }

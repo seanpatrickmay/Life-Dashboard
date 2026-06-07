@@ -1269,11 +1269,17 @@ export type DigestRefreshResponse = {
 };
 
 export const fetchDigest = async (): Promise<DigestResponse> => {
+  if (isGuestMode()) {
+    return { items: [], last_refreshed: null, item_count: 0, is_stale: false, narrative: null };
+  }
   const { data } = await api.get('/api/ai-digest/today');
   return data;
 };
 
 export const refreshDigest = async (): Promise<DigestRefreshResponse> => {
+  if (isGuestMode()) {
+    return { started: false, message: 'Digest not available in guest mode.' };
+  }
   const { data } = await api.post('/api/ai-digest/refresh');
   return data;
 };

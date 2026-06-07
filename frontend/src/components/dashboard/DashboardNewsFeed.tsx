@@ -192,7 +192,7 @@ export function DashboardNewsFeed() {
     <Panel>
       <HeadingRow>
         <Heading data-halo="heading">Today's Briefing</Heading>
-        <ViewAllLink to="/news">View All</ViewAllLink>
+        <ViewAllLink to="/read">View All</ViewAllLink>
       </HeadingRow>
 
       {curatedQuery.isLoading ? (
