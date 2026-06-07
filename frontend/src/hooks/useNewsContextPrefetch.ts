@@ -6,21 +6,17 @@ import { fetchProjectBoard, fetchCalendarEvents } from '../services/api';
 const STALE_TIME = 15 * 60 * 1000; // 15 minutes
 
 /**
- * Prefetches projects and calendar events into the exact query-cache keys that
- * useNewsFeed reads for personalization context:
- *   ['projects']          → ProjectItem[]  (useNewsFeed maps p.name)
- *   ['calendar', 'events'] → CalendarEvent[] (useNewsFeed maps e.summary)
+ * Prefetches projects and calendar events into dedicated news-personalization
+ * context keys that no app mutation will ever invalidate:
+ *   ['news-context', 'projects']  → ProjectItem[]  (useNewsFeed maps p.name)
+ *   ['news-context', 'calendar']  → CalendarEvent[] (useNewsFeed maps e.summary)
  *
- * These keys are deliberately the ones useNewsFeed reads — do NOT rename them
- * without updating useNewsFeed's getQueryData calls, or the personalization
- * context silently goes empty again.
- *
- * The 2-element ['calendar', 'events'] key is distinct from the calendar page's
- * param-scoped ['calendar', 'events', start, end] (no write collision), but note
- * a calendar sync/update invalidates by prefix and so also marks this entry
- * stale. Since the prefetch is mount-only, the news context then keeps its
- * (retained) stale events until the next shell mount re-warms it — an accepted
- * trade-off: still strictly better than the previously-empty baseline.
+ * These keys are intentionally isolated from the calendar page's own cache
+ * hierarchy (['calendar', 'events', start, end]) and the board's hierarchy
+ * (['projects', 'board']). Because React Query prefix-matching cannot reach
+ * ['news-context', …] from invalidations on ['calendar', 'events'] or
+ * ['projects'], a calendar sync or project update will never evict this
+ * personalization snapshot — the news feed always has valid context data.
  *
  * prefetchQuery is a no-op when data is already fresh within staleTime,
  * so repeated mounts do not trigger redundant network requests.
@@ -34,13 +30,13 @@ export default function useNewsContextPrefetch(): void {
     const end = addDays(today, 7).toISOString().split('T')[0];
 
     queryClient.prefetchQuery({
-      queryKey: ['projects'],
+      queryKey: ['news-context', 'projects'],
       queryFn: async () => (await fetchProjectBoard()).projects,
       staleTime: STALE_TIME,
     });
 
     queryClient.prefetchQuery({
-      queryKey: ['calendar', 'events'],
+      queryKey: ['news-context', 'calendar'],
       queryFn: async () => (await fetchCalendarEvents(start, end)).events,
       staleTime: STALE_TIME,
     });

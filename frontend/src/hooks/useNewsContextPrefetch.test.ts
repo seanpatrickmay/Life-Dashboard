@@ -54,7 +54,7 @@ describe('useNewsContextPrefetch', () => {
     });
   });
 
-  it('calls prefetchQuery for projects key on mount', async () => {
+  it('calls prefetchQuery for news-context projects key on mount', async () => {
     const prefetchSpy = vi.spyOn(queryClient, 'prefetchQuery');
 
     const { default: useNewsContextPrefetch } = await import('./useNewsContextPrefetch');
@@ -64,12 +64,12 @@ describe('useNewsContextPrefetch', () => {
     });
 
     const projectsCall = prefetchSpy.mock.calls.find(
-      (call) => JSON.stringify((call[0] as { queryKey: unknown }).queryKey) === JSON.stringify(['projects'])
+      (call) => JSON.stringify((call[0] as { queryKey: unknown }).queryKey) === JSON.stringify(['news-context', 'projects'])
     );
     expect(projectsCall).toBeDefined();
   });
 
-  it('calls prefetchQuery for calendar events key on mount', async () => {
+  it('calls prefetchQuery for news-context calendar key on mount', async () => {
     const prefetchSpy = vi.spyOn(queryClient, 'prefetchQuery');
 
     const { default: useNewsContextPrefetch } = await import('./useNewsContextPrefetch');
@@ -79,12 +79,12 @@ describe('useNewsContextPrefetch', () => {
     });
 
     const calendarCall = prefetchSpy.mock.calls.find(
-      (call) => JSON.stringify((call[0] as { queryKey: unknown }).queryKey) === JSON.stringify(['calendar', 'events'])
+      (call) => JSON.stringify((call[0] as { queryKey: unknown }).queryKey) === JSON.stringify(['news-context', 'calendar'])
     );
     expect(calendarCall).toBeDefined();
   });
 
-  it('populates cache with ProjectItem[] at key [projects] — items have .name', async () => {
+  it('populates cache with ProjectItem[] at key [news-context, projects] — items have .name', async () => {
     const { default: useNewsContextPrefetch } = await import('./useNewsContextPrefetch');
 
     await act(async () => {
@@ -96,13 +96,13 @@ describe('useNewsContextPrefetch', () => {
       await new Promise((r) => setTimeout(r, 50));
     });
 
-    const cached = queryClient.getQueryData<{ name: string }[]>(['projects']);
+    const cached = queryClient.getQueryData<{ name: string }[]>(['news-context', 'projects']);
     expect(Array.isArray(cached)).toBe(true);
     expect(cached![0]).toHaveProperty('name');
     expect(cached![0].name).toBe('Life Dashboard');
   });
 
-  it('populates cache with CalendarEvent[] at key [calendar, events] — items have .summary', async () => {
+  it('populates cache with CalendarEvent[] at key [news-context, calendar] — items have .summary', async () => {
     const { default: useNewsContextPrefetch } = await import('./useNewsContextPrefetch');
 
     await act(async () => {
@@ -113,7 +113,7 @@ describe('useNewsContextPrefetch', () => {
       await new Promise((r) => setTimeout(r, 50));
     });
 
-    const cached = queryClient.getQueryData<{ summary?: string | null }[]>(['calendar', 'events']);
+    const cached = queryClient.getQueryData<{ summary?: string | null }[]>(['news-context', 'calendar']);
     expect(Array.isArray(cached)).toBe(true);
     expect(cached![0]).toHaveProperty('summary');
     expect(cached![0].summary).toBe('Team Standup');
@@ -156,9 +156,64 @@ describe('useNewsContextPrefetch', () => {
     });
 
     const projectsCall = prefetchSpy.mock.calls.find(
-      (call) => JSON.stringify((call[0] as { queryKey: unknown; staleTime?: number }).queryKey) === JSON.stringify(['projects'])
+      (call) => JSON.stringify((call[0] as { queryKey: unknown; staleTime?: number }).queryKey) === JSON.stringify(['news-context', 'projects'])
     );
     const staleTime = (projectsCall?.[0] as { staleTime?: number })?.staleTime;
     expect(staleTime).toBe(15 * 60 * 1000);
+  });
+
+  it('regression: calendar invalidation does NOT evict [news-context, calendar] from cache', async () => {
+    const { default: useNewsContextPrefetch } = await import('./useNewsContextPrefetch');
+
+    await act(async () => {
+      renderHook(() => useNewsContextPrefetch(), { wrapper: makeWrapper(queryClient) });
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    // Confirm news-context calendar is populated
+    const beforeInvalidation = queryClient.getQueryData<{ summary?: string | null }[]>(['news-context', 'calendar']);
+    expect(Array.isArray(beforeInvalidation)).toBe(true);
+    expect(beforeInvalidation!.length).toBeGreaterThan(0);
+
+    // Simulate the exact invalidation useCalendar's sync/update mutations fire
+    await act(async () => {
+      queryClient.invalidateQueries({ queryKey: ['calendar', 'events'] });
+    });
+
+    // The news-context entry must still be present and not stale-evicted
+    // (invalidation by prefix ['calendar','events'] cannot reach ['news-context','calendar'])
+    const afterInvalidation = queryClient.getQueryData<{ summary?: string | null }[]>(['news-context', 'calendar']);
+    expect(Array.isArray(afterInvalidation)).toBe(true);
+    expect(afterInvalidation!.length).toBeGreaterThan(0);
+    expect(afterInvalidation![0].summary).toBe('Team Standup');
+  });
+
+  it('regression: projects invalidation does NOT evict [news-context, projects] from cache', async () => {
+    const { default: useNewsContextPrefetch } = await import('./useNewsContextPrefetch');
+
+    await act(async () => {
+      renderHook(() => useNewsContextPrefetch(), { wrapper: makeWrapper(queryClient) });
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    const beforeInvalidation = queryClient.getQueryData<{ name: string }[]>(['news-context', 'projects']);
+    expect(Array.isArray(beforeInvalidation)).toBe(true);
+
+    // Simulate invalidation by ['projects'] prefix (as any board mutation would do)
+    await act(async () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    });
+
+    // ['news-context','projects'] must be untouched
+    const afterInvalidation = queryClient.getQueryData<{ name: string }[]>(['news-context', 'projects']);
+    expect(Array.isArray(afterInvalidation)).toBe(true);
+    expect(afterInvalidation!.length).toBeGreaterThan(0);
+    expect(afterInvalidation![0].name).toBe('Life Dashboard');
   });
 });
