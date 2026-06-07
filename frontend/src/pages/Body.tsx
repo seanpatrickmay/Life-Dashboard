@@ -49,9 +49,13 @@ const SubNavWrapper = styled.div`
   position: sticky;
   top: 0;
   z-index: 20;
-  background: ${({ theme }) => theme.colors.backgroundCard};
+  background: ${({ theme }) =>
+    theme.mode === 'dark'
+      ? 'rgba(20, 28, 46, 0.82)'
+      : 'rgba(255, 255, 255, 0.72)'};
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   padding: 6px 0;
   margin: 0 -4px;
 `;

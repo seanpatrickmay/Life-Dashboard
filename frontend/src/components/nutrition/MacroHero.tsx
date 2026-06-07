@@ -16,6 +16,15 @@ const OVER_COLOR = '#F59E0B';
 const getColor = (slug: string) =>
   MACRO_COLORS[slug] ?? '#aaa';
 
+/** Convert a 6-digit hex color to an rgba() string with the given alpha (0–1). */
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 /* ── Styled Components ── */
 
 const Wrapper = styled.div`
@@ -27,8 +36,8 @@ const Wrapper = styled.div`
 const CalorieCard = styled.div<{ $accent: string }>`
   border-radius: 20px;
   padding: clamp(16px, 2vw, 22px);
-  background: ${({ $accent }) => `${$accent}0A`};
-  border: 1px solid ${({ $accent }) => `${$accent}33`};
+  background: ${({ $accent }) => hexToRgba($accent, 0.04)};
+  border: 1px solid ${({ $accent }) => hexToRgba($accent, 0.2)};
 `;
 
 const CalorieRow = styled.div`
@@ -111,15 +120,15 @@ const MacroGrid = styled.div`
 const MacroCard = styled.div<{ $accent: string }>`
   border-radius: 16px;
   padding: clamp(12px, 1.5vw, 16px);
-  background: ${({ $accent }) => `${$accent}0A`};
-  border: 1px solid ${({ $accent }) => `${$accent}26`};
+  background: ${({ $accent }) => hexToRgba($accent, 0.04)};
+  border: 1px solid ${({ $accent }) => hexToRgba($accent, 0.15)};
 `;
 
 const MacroLabel = styled.div`
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  opacity: 0.5;
+  opacity: 0.6;
   margin-bottom: 4px;
 `;
 
@@ -145,8 +154,8 @@ const SmallTrack = styled.div`
 `;
 
 const Pct = styled.div`
-  font-size: 0.5rem;
-  opacity: 0.35;
+  font-size: 0.6rem;
+  opacity: 0.5;
   margin-top: 4px;
   text-align: right;
 `;

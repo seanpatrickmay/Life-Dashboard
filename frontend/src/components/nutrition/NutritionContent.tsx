@@ -12,7 +12,7 @@ import { useNutritionHistory } from '../../hooks/useNutritionIntake';
 
 const SectionCard = styled.div`
   border-radius: 16px;
-  background: ${({ theme }) => theme.colors.overlay};
+  background: ${({ theme }) => theme.colors.backgroundCard};
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   overflow: hidden;
 `;
@@ -31,10 +31,19 @@ const SectionToggle = styled.button`
   text-transform: uppercase;
   padding: clamp(12px, 1.5vw, 16px) clamp(14px, 2vw, 20px);
   cursor: pointer;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.overlayHover};
+  }
 
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};
     outline-offset: -2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.01ms;
   }
 `;
 
@@ -85,6 +94,15 @@ const MACRO_COLORS: Record<string, string> = {
   fiber: '#82dcb8',
 };
 
+/** Convert a 6-digit hex color to an rgba() string with the given alpha (0–1). */
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 const AvgGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -102,15 +120,15 @@ const AvgGrid = styled.div`
 const AvgCard = styled.div<{ $accent: string }>`
   border-radius: 14px;
   padding: clamp(10px, 1.5vw, 14px);
-  background: ${({ $accent }) => `${$accent}0A`};
-  border: 1px solid ${({ $accent }) => `${$accent}26`};
+  background: ${({ $accent }) => hexToRgba($accent, 0.04)};
+  border: 1px solid ${({ $accent }) => hexToRgba($accent, 0.15)};
 `;
 
 const AvgLabel = styled.div`
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  opacity: 0.5;
+  opacity: 0.6;
   margin-bottom: 4px;
 `;
 
@@ -128,8 +146,8 @@ const AvgGoal = styled.span`
 `;
 
 const AvgPct = styled.div`
-  font-size: 0.5rem;
-  opacity: 0.35;
+  font-size: 0.6rem;
+  opacity: 0.5;
   margin-top: 6px;
   text-align: right;
 `;
