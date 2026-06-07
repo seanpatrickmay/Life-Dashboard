@@ -28,8 +28,8 @@ const BookShell = styled.div`
   max-width: 100%;
   overflow-x: hidden;
   padding: clamp(16px, 3vw, 28px);
-  border-radius: 36px;
-  background: ${({ theme }) => theme.colors.surfaceRaised};
+  border-radius: ${({ theme }) => theme.radii.shell};
+  background: ${({ theme }) => theme.colors.backgroundCard};
   box-shadow: 0 30px 60px ${({ theme }) => theme.colors.overlay}, 0 10px 22px ${({ theme }) => theme.colors.overlay};
   isolation: isolate;
   animation: ${bookFloat} 0.5s ease-out;
@@ -197,11 +197,13 @@ const SectionHeaderRow = styled.div`
 
 const SectionTitle = styled.div`
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.78rem;
+  font-size: 0.88rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  opacity: 0.76;
+  opacity: 1;
   color: var(--page-ink);
+  border-left: 2px solid var(--page-ink-muted);
+  padding-left: 8px;
 `;
 
 const CountPill = styled.span`

@@ -30,6 +30,10 @@ import { JournalBook } from './JournalBook';
 const theme = {
   fonts: { heading: 'sans-serif', body: 'sans-serif' },
   mode: 'dark',
+  radii: {
+    card: '22px',
+    shell: '26px'
+  },
   palette: {
     neutral: {
       '50': '#fafafa',
@@ -39,6 +43,7 @@ const theme = {
     }
   },
   colors: {
+    backgroundCard: 'rgba(20, 28, 46, 0.94)',
     surfaceRaised: '#1e1e2e',
     overlay: 'rgba(0,0,0,0.3)',
     overlayHover: 'rgba(0,0,0,0.1)',

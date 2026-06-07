@@ -13,6 +13,10 @@ export const testTheme: DefaultTheme = {
   fonts: { heading: 'sans-serif', body: 'sans-serif' },
   mode: 'dark',
   intensity: 'rich',
+  radii: {
+    card: '22px',
+    shell: '26px',
+  },
   shadows: {
     soft: '0 2px 8px rgba(0,0,0,0.3)',
     hard: '0 4px 16px rgba(0,0,0,0.5)',
