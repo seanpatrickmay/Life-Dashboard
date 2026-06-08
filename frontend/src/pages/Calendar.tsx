@@ -6,6 +6,7 @@ import { useCalendarEvents, useCalendarStatus, useCalendars } from '../hooks/use
 import { useTodos } from '../hooks/useTodos';
 import { Card } from '../components/common/Card';
 import { fadeUp, reducedMotion } from '../styles/animations';
+import { pixelPanel } from '../theme/surfaces';
 import type { CalendarEvent, TodoItem } from '../services/api';
 
 const Layout = styled.div`
@@ -173,11 +174,8 @@ const CalendarBadge = styled.span`
 `;
 
 const CalendarSurface = styled.div`
-  border-radius: 30px;
+  ${pixelPanel}
   padding: 18px;
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  box-shadow: ${({ theme }) => theme.shadows.soft};
   display: flex;
   flex-direction: column;
   width: 100%;

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { Location } from 'react-router-dom';
 import styled from 'styled-components';
+import { pixelPanel } from '../theme/surfaces';
 
 import { enterGuestMode, exitGuestMode, isGuestDemoEnabled } from '../demo/guest/guestMode';
 import { getApiBaseUrl } from '../services/api';
@@ -15,12 +16,9 @@ const Wrap = styled.div`
 `;
 
 const Card = styled.div`
+  ${pixelPanel}
   width: min(520px, 92vw);
-  border-radius: 28px;
   padding: clamp(24px, 3vw, 36px);
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  box-shadow: ${({ theme }) => theme.shadows.soft};
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
