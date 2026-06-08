@@ -52,6 +52,7 @@ export const testTheme: DefaultTheme = {
     textPrimary: '#fff',
     textSecondary: '#aaa',
     borderStrong: '#E7E0F0',
+    borderSoft: '#2F3A5C',
     borderSubtle: '#333',
     focusRing: '#7ED7C4',
     scrollThumb: '#555',

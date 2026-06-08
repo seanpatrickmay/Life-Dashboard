@@ -2,14 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useTodos } from '../../hooks/useTodos';
 import type { TodoItem, TimeHorizon } from '../../services/api';
+import { pixelPanel, pixelWell } from '../../theme/surfaces';
 
 const ScrollShell = styled.div`
+  ${pixelPanel}
   position: relative;
   padding: 10px 14px 12px;
-  border-radius: ${({ theme }) => theme.radii?.card ?? '22px'};
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  box-shadow: ${({ theme }) => theme.shadows?.soft ?? '0 18px 34px rgba(28, 41, 64, 0.18)'};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   color: ${({ theme }) => theme.colors.textPrimary};
   overflow: visible;
 `;
@@ -51,21 +49,16 @@ const List = styled.ul`
 `;
 
 const Row = styled.li<{ $completed: boolean; $overdue: boolean }>`
+  ${pixelWell}
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 4px;
   align-items: start;
   padding: 6px 8px;
-  border-radius: 8px;
-  background: ${({ $overdue, $completed, theme }) =>
-    $completed
-      ? theme.colors.surfaceInset
-      : $overdue
-        ? theme.colors.dangerSubtle
-        : theme.colors.surfaceInset};
-  border: 1px solid
-    ${({ $overdue, $completed, theme }) =>
-      $completed ? theme.colors.borderSubtle : $overdue ? theme.colors.danger : theme.colors.borderSubtle};
+  background: ${({ $overdue, theme }) =>
+    $overdue ? theme.colors.dangerSubtle : theme.colors.surfaceInset};
+  border-color: ${({ $overdue, theme }) =>
+    $overdue ? theme.colors.danger : theme.colors.borderSoft};
   opacity: ${({ $completed }) => ($completed ? 0.7 : 1)};
 `;
 
