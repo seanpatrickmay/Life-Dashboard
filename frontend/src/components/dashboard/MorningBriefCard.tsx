@@ -23,19 +23,6 @@ const HeroCard = styled(Card)`
   min-height: 150px;
 `;
 
-// Decorative pixel corner-frame — the 12×12 sprite contains one dot per corner;
-// stretched to fill the card at pixelated rendering so dots land exactly at corners.
-const CornerFrame = styled.span`
-  position: absolute;
-  inset: 0;
-  background-image: url(${({ theme }) => theme.pixels.frame[theme.mode as 'light' | 'dark']});
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  image-rendering: pixelated;
-  pointer-events: none;
-  border-radius: inherit;
-`;
-
 const MetaRow = styled.div`
   display: flex;
   align-items: center;
@@ -152,8 +139,7 @@ export function MorningBriefCard() {
   if (isLoading) {
     return (
       <HeroCard>
-        <CornerFrame aria-hidden="true" />
-        <MetaRow>
+          <MetaRow>
           <DateLabel>{today}</DateLabel>
         </MetaRow>
         <BriefSkeleton />
@@ -163,7 +149,6 @@ export function MorningBriefCard() {
 
   return (
     <HeroCard aria-label="Morning brief">
-      <CornerFrame aria-hidden="true" />
       <MetaRow>
         <DateLabel>{today}</DateLabel>
         {!isReady && (
