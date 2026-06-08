@@ -1,5 +1,6 @@
 import styled from 'styled-components';
 import { focusRing } from '../../styles/animations';
+import { pixelWell } from '../../theme/surfaces';
 
 export const GROUP_ORDER = ['macro', 'vitamin', 'mineral'] as const;
 export type GroupKey = (typeof GROUP_ORDER)[number];
@@ -11,9 +12,7 @@ export const GROUP_LABELS: Record<GroupKey, string> = {
 };
 
 export const GroupSection = styled.div`
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  border-radius: 18px;
-  background: ${({ theme }) => theme.colors.surfaceRaised};
+  ${pixelWell}
   overflow: hidden;
 `;
 

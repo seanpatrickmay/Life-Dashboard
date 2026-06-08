@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import styled from 'styled-components';
-import { focusRing } from '../../styles/animations';
 import { Card } from '../common/Card';
+import { PixelField } from '../common/PixelField';
 import { useNutritionGoals } from '../../hooks/useNutritionGoals';
+import { pixelWell } from '../../theme/surfaces';
 import {
   GROUP_LABELS,
   GROUP_ORDER,
@@ -21,20 +22,8 @@ const Grid = styled.div`
 `;
 
 const GoalCard = styled.div`
+  ${pixelWell}
   padding: 12px 14px;
-  background: ${({ theme }) => theme.colors.surfaceRaised};
-  border-radius: 16px;
-`;
-
-const Input = styled.input`
-  width: 100%;
-  padding: 8px;
-  margin-top: 6px;
-  border-radius: 10px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => theme.colors.surfaceInset};
-  ${focusRing}
-  color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
 export function GoalsPanel() {
@@ -90,18 +79,19 @@ export function GoalsPanel() {
                     <div>
                       {goal.goal} {goal.unit}
                     </div>
-                    <Input
+                    <PixelField
                       type="number"
                       step="0.1"
                       placeholder={String(goal.default_goal)}
                       value={drafts[goal.slug] ?? goal.goal}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setDrafts((prev) => ({
                           ...prev,
                           [goal.slug]: Number(e.target.value)
                         }))
                       }
                       onBlur={() => onBlur(goal.slug)}
+                      style={{ marginTop: 6 }}
                     />
                   </GoalCard>
                 ))}

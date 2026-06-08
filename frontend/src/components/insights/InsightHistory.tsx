@@ -7,6 +7,7 @@ import { HRVChart } from '../charts/HRVChart';
 import { RHRChart } from '../charts/RHRChart';
 import { SleepChart } from '../charts/SleepChart';
 import { LoadChart } from '../charts/LoadChart';
+import { pixelPanel, pixelWell } from '../../theme/surfaces';
 
 const Section = styled.div`
   display: flex;
@@ -21,23 +22,29 @@ const MetricStrip = styled.button<{ $expanded: boolean }>`
   gap: clamp(10px, 1.5vw, 16px);
   padding: clamp(10px, 1.5vw, 14px) clamp(14px, 2vw, 20px);
   background: ${({ theme, $expanded }) =>
-    $expanded ? theme.colors.overlayHover : 'transparent'};
-  border: none;
-  border-radius: 12px;
+    $expanded ? theme.colors.surfaceInset : 'transparent'};
+  border: 1px solid ${({ theme, $expanded }) =>
+    $expanded ? theme.colors.borderSoft : 'transparent'};
+  border-radius: ${({ theme }) => theme.radii.pixel};
   color: inherit;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
   text-align: left;
   width: 100%;
 
   &:hover {
-    background: ${({ theme }) => theme.colors.overlay};
+    background: ${({ theme }) => theme.colors.surfaceInset};
+    border-color: ${({ theme }) => theme.colors.borderSoft};
   }
 
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};
     outline-offset: -2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.01ms;
   }
 `;
 
@@ -144,6 +151,11 @@ const NoteCardWide = styled(Card)`
   white-space: pre-line;
 `;
 
+const PanelWrapper = styled.div`
+  ${pixelPanel}
+  padding: clamp(14px, 2vw, 22px);
+`;
+
 const GreetingSection = styled(Card)`
   padding: clamp(16px, 2vw, 24px);
   display: flex;
@@ -168,10 +180,8 @@ const GreetingDate = styled.span`
 `;
 
 const Warning = styled.div`
+  ${pixelWell}
   padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid ${({ theme }) => theme.palette?.ember?.['200'] ?? theme.colors.borderSubtle};
-  background: ${({ theme }) => theme.colors.accentSubtle};
   font-size: 0.85rem;
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
@@ -231,7 +241,7 @@ export function InsightHistory() {
   const toggle = (key: string) => setExpanded(prev => prev === key ? null : key);
 
   return (
-    <div>
+    <PanelWrapper>
       {data?.greeting && (
         <GreetingSection>
           <GreetingDate data-halo="heading">{formattedDate}</GreetingDate>
@@ -274,6 +284,6 @@ export function InsightHistory() {
           </div>
         ))}
       </Section>
-    </div>
+    </PanelWrapper>
   );
 }
