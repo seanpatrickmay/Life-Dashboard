@@ -74,7 +74,7 @@ const Narrative = styled.p`
 const Notice = styled.p`
   margin: 0;
   font-size: 0.82rem;
-  color: ${({ theme }) => theme.palette?.ember?.['300'] ?? theme.colors.textSecondary};
+  color: ${({ theme }) => theme.colors.textSecondary};
 `;
 
 const fallbackNarrative: Record<Moment, string> = {

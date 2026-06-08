@@ -34,11 +34,12 @@ import {
   getArticleEmbeddings,
   cosineSimilarity,
 } from '../services/profileSummarizer';
+import { recordSavedToday } from '../services/savedToday';
 import { useTodos } from './useTodos';
 
 const NEWS_FEED_KEY = ['news', 'feed'];
 const NEWS_ALL_KEY = ['news', 'all'];
-const NEWS_CURATED_KEY = ['news', 'curated'];
+export const NEWS_CURATED_KEY = ['news', 'curated'];
 const NEWS_ANNOTATIONS_KEY = ['news', 'annotations'];
 const PROFILE_SUMMARY_KEY = ['news', 'profile-summary'];
 
@@ -73,10 +74,10 @@ export function useNewsFeed() {
       .filter(t => !t.completed)
       .map(t => t.text);
 
-    const projectsData = queryClient.getQueryData?.<any[]>(['projects']) || [];
+    const projectsData = queryClient.getQueryData?.<any[]>(['news-context', 'projects']) || [];
     const projectNames = projectsData.map((p: any) => p.name || '').filter(Boolean);
 
-    const calendarData = queryClient.getQueryData?.<any[]>(['calendar', 'events']) || [];
+    const calendarData = queryClient.getQueryData?.<any[]>(['news-context', 'calendar']) || [];
     const calendarTitles = calendarData.map((e: any) => e.summary || '').filter(Boolean);
 
     return extractKeywordsFromContext(todos, projectNames, calendarTitles);
@@ -89,7 +90,7 @@ export function useNewsFeed() {
       const cached = loadCachedProfile();
       if (cached) return cached;
 
-      const projectsData = queryClient.getQueryData?.<any[]>(['projects']) || [];
+      const projectsData = queryClient.getQueryData?.<any[]>(['news-context', 'projects']) || [];
       const projectNames = projectsData.map((p: any) => p.name || '').filter(Boolean);
 
       const todos = (todosQuery.data || [])
@@ -97,7 +98,7 @@ export function useNewsFeed() {
         .map(t => t.text)
         .slice(0, 20);
 
-      const calendarData = queryClient.getQueryData?.<any[]>(['calendar', 'events']) || [];
+      const calendarData = queryClient.getQueryData?.<any[]>(['news-context', 'calendar']) || [];
       const calendarTitles = calendarData.map((e: any) => e.summary || '').filter(Boolean).slice(0, 10);
 
       const dist = getCategoryDistribution();
@@ -294,6 +295,7 @@ export function useNewsFeed() {
   const saveMutation = useMutation({
     mutationFn: async (articleId: string) => {
       saveArticle(articleId);
+      recordSavedToday(articleId);
     },
     onSuccess: invalidateAll,
   });

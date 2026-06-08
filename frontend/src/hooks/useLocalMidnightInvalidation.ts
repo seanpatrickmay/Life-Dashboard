@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-const DAY_SCOPED_KEYS: Array<readonly unknown[]> = [
+export const DAY_SCOPED_KEYS: Array<readonly unknown[]> = [
   ['todos'],
   ['journal'],
   ['insight'],
@@ -9,7 +9,9 @@ const DAY_SCOPED_KEYS: Array<readonly unknown[]> = [
   ['metrics-overview'],
   ['nutrition', 'summary'],
   ['nutrition', 'history'],
-  ['nutrition', 'menu']
+  ['nutrition', 'menu'],
+  ['news', 'curated'],
+  ['news', 'annotations'],
 ];
 
 export function useLocalMidnightInvalidation() {

@@ -1,9 +1,11 @@
 import { useMemo, useState, useCallback, useRef } from 'react';
 import styled, { keyframes, useTheme } from 'styled-components';
-import { Link } from 'react-router-dom';
 
 import { Card } from '../components/common/Card';
 import { QualityFeedback, shouldShowFeedback, recordFeedbackRead } from '../components/news/QualityFeedback';
+import { CategoryStrip, type CategoryFilter } from '../components/news/CategoryStrip';
+import { AIDevSection } from '../components/news/AIDevSection';
+import { TuneDrawer } from '../components/news/TuneDrawer';
 import { useSkipTracking } from '../hooks/useSkipTracking';
 import { useNewsFeed } from '../hooks/useNewsFeed';
 import {
@@ -13,8 +15,8 @@ import {
   type Category,
   type NewsArticle,
 } from '../services/newsFeedService';
-import { getSavedArticleIds } from '../services/interestProfile';
 import { fadeUp, reducedMotion } from '../styles/animations';
+import { formatTimeAgo, formatDate } from '../utils/dateFormat';
 
 /* ─── Category colors ─────────────────────────── */
 
@@ -171,13 +173,11 @@ const HeroCard = styled(Card)`
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   text-decoration: none;
   color: inherit;
-  ${({ theme }) => (theme as any).mode === 'dark' ? `
-    background: rgba(246, 240, 232, 0.08);
-    border-color: rgba(246, 240, 232, 0.12);
-  ` : ''}
+  ${reducedMotion}
 
   &:hover {
     transform: translateY(-2px);
+    box-shadow: ${({ theme }) => theme.shadows?.soft};
   }
 `;
 
@@ -245,8 +245,9 @@ const PickCard = styled.a<{ $borderColor: string; $dismissing?: boolean }>`
   gap: 6px;
   padding: clamp(12px, 1.5vw, 16px);
   border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
-  background: ${({ theme }) => theme.colors.surfaceRaised};
+  background: ${({ theme }) => theme.colors.backgroundCard};
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  box-shadow: ${({ theme }) => theme.shadows?.soft};
   transition: border-color 0.15s ease, transform 0.15s ease;
   text-decoration: none;
   color: inherit;
@@ -458,6 +459,49 @@ const DiscoveryLabel = styled.span`
   white-space: nowrap;
 `;
 
+/* ─── AI & Dev Entry Card ─────────────────────── */
+
+const AIDevEntryCard = styled(Card).attrs({ as: 'button' })`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  border: none;
+  color: inherit;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  ${reducedMotion}
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: ${({ theme }) => theme.shadows?.soft};
+  }
+  &:focus-visible {
+    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+    outline-offset: 2px;
+  }
+`;
+
+const AIDevEntryLabel = styled.span`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  font-size: clamp(0.82rem, 1.6vw, 0.95rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+`;
+
+const AIDevDot = styled.span`
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: ${({ theme }) => theme.palette?.lilac?.['200'] ?? '#B1A7FF'};
+  flex-shrink: 0;
+`;
+
 /* ─── Saved section ────────────────────────────── */
 
 const SavedList = styled.div`
@@ -500,30 +544,9 @@ const EmptySubtext = styled.span`
   max-width: 300px;
 `;
 
-/* ─── Helpers ──────────────────────────────────── */
-
-function formatTimeAgo(dateStr: string | null): string {
-  if (!dateStr) return '';
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  if (hours < 1) return 'just now';
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'yesterday';
-  return `${days}d ago`;
-}
-
-function formatDate(): string {
-  return new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
-}
-
 /* ─── Page component ──────────────────────────── */
 
-export function NewsPage() {
+export function ReadPage() {
   const {
     curatedQuery,
     annotationsQuery,
@@ -537,7 +560,7 @@ export function NewsPage() {
 
   const annotations = annotationsQuery.data ?? {};
   const theme = useTheme();
-  const catColors = (theme as any).mode === 'dark' ? CATEGORY_COLORS_DARK : CATEGORY_COLORS;
+  const catColors = theme.mode === 'dark' ? CATEGORY_COLORS_DARK : CATEGORY_COLORS;
 
   const [moreOpen, setMoreOpen] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
@@ -545,6 +568,9 @@ export function NewsPage() {
   const [feedbackArticle, setFeedbackArticle] = useState<NewsArticle | null>(null);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [dismissingId, setDismissingId] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<CategoryFilter>('all');
+  const [showAIDev, setShowAIDev] = useState(false);
+  const [tuneOpen, setTuneOpen] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
 
   const curated = curatedQuery.data;
@@ -555,8 +581,24 @@ export function NewsPage() {
   // Track which articles are visible for skip signal detection
   useSkipTracking(picks, pageRef);
 
-  const hero = picks[0] ?? null;
-  const restPicks = picks.slice(1);
+  const filteredPicks = activeCategory === 'all'
+    ? picks
+    : picks.filter(a => a.category === activeCategory);
+  const filteredMore = activeCategory === 'all'
+    ? more
+    : more.filter(a => a.category === activeCategory);
+
+  const hero = filteredPicks[0] ?? null;
+  const restPicks = filteredPicks.slice(1);
+
+  // Category counts for the strip
+  const categoryCounts = useMemo(() => {
+    const counts: Partial<Record<Category, number>> = {};
+    for (const a of [...picks, ...more]) {
+      counts[a.category] = (counts[a.category] ?? 0) + 1;
+    }
+    return counts;
+  }, [picks, more]);
 
   // Derive saved set from query data for reactive UI updates
   const savedSet = useMemo(
@@ -624,11 +666,44 @@ export function NewsPage() {
           <RefreshButton onClick={refreshFeed} disabled={isRefreshing}>
             {isRefreshing ? 'Refreshing...' : 'Refresh'}
           </RefreshButton>
-          <Link to="/news/profile" style={{ textDecoration: 'none', color: 'inherit', opacity: 0.4, fontSize: '0.68rem', letterSpacing: '0.1em', textTransform: 'uppercase' as const }}>
-            Profile
-          </Link>
+          <RefreshButton onClick={() => setTuneOpen(true)} aria-label="Tune feed">
+            ⚙ Tune
+          </RefreshButton>
         </ActionGroup>
       </TopBar>
+
+      {/* ─── Category Strip (pure filters — AI&Dev is a separate entry card) ── */}
+      <CategoryStrip
+        active={activeCategory}
+        counts={categoryCounts}
+        onChange={cat => { setActiveCategory(cat); setShowAIDev(false); }}
+      />
+
+      {/* ─── AI & Dev Entry Card ─────────────────── */}
+      <AIDevEntryCard
+        onClick={() => setShowAIDev(v => !v)}
+        aria-expanded={showAIDev}
+        aria-controls="ai-dev-panel"
+        aria-label="Toggle AI & Dev Briefing"
+      >
+        <AIDevEntryLabel>
+          <AIDevDot />
+          AI &amp; Dev Briefing — today's digest
+        </AIDevEntryLabel>
+        <Chevron $open={showAIDev}>›</Chevron>
+      </AIDevEntryCard>
+
+      {/* ─── AI & Dev Section (expanded) ─────────── */}
+      {showAIDev && (
+        <Card id="ai-dev-panel">
+          <AIDevSection />
+        </Card>
+      )}
+
+      {/* ─── Tune Drawer ─────────────────────────── */}
+      {tuneOpen && (
+        <TuneDrawer onClose={() => setTuneOpen(false)} />
+      )}
 
       {/* Quality Feedback */}
       {showFeedback && feedbackArticle && (
@@ -743,7 +818,7 @@ export function NewsPage() {
           )}
 
           {/* ─── More Stories ───────────────────── */}
-          {more.length > 0 && (
+          {filteredMore.length > 0 && (
             <div>
               <SectionHeader
                 onClick={() => setMoreOpen(o => !o)}
@@ -752,14 +827,14 @@ export function NewsPage() {
                 <Chevron $open={moreOpen}>›</Chevron>
                 More Stories
                 <span style={{ fontSize: '0.6rem', opacity: 0.4 }}>
-                  {more.length}
+                  {filteredMore.length}
                 </span>
               </SectionHeader>
 
               <CollapsibleSection $open={moreOpen}>
                 <CollapsibleInner>
                   <MoreList>
-                    {more.map(article => {
+                    {filteredMore.map(article => {
                       const color = catColors[article.category];
                       return (
                         <MoreRow
@@ -822,6 +897,7 @@ export function NewsPage() {
                             $active
                             onClick={(e) => handleSaveToggle(e, article.id)}
                             title="Unsave"
+                            aria-label="Unsave"
                           >
                             ★
                           </IconButton>

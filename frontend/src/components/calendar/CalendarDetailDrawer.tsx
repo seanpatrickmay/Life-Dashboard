@@ -3,6 +3,7 @@ import styled, { css } from 'styled-components';
 import { composeLayers, getCardLayers } from '../../theme/monetTheme';
 import type { CalendarEvent, TodoItem } from '../../services/api';
 import type { CalendarItem } from './CalendarWeekView';
+import { RescheduleForm } from './RescheduleForm';
 
 type RecurrenceScope = 'occurrence' | 'future' | 'series';
 
@@ -12,6 +13,7 @@ type Props = {
   onClose: () => void;
   recurrenceScope: RecurrenceScope;
   onChangeScope?: (scope: RecurrenceScope) => void;
+  onReschedule?: (item: CalendarItem, start: Date, end: Date, isAllDay: boolean) => Promise<void> | void;
 };
 
 const Panel = styled.div<{ $open: boolean }>`
@@ -226,12 +228,14 @@ const MeetingLink = styled.a`
   }
 `;
 
+
 export function CalendarDetailDrawer({
   open,
   item,
   onClose,
   recurrenceScope,
-  onChangeScope
+  onChangeScope,
+  onReschedule
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -378,6 +382,10 @@ export function CalendarDetailDrawer({
                       <DescriptionText>{event.description}</DescriptionText>
                     </ScrollSection>
                   </FullWidthSection>
+                ) : null}
+
+                {onReschedule && item ? (
+                  <RescheduleForm item={item} onReschedule={onReschedule} />
                 ) : null}
               </>
             ) : (

@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react';
 import styled from 'styled-components';
-import { format, parseISO, isSameDay, addDays } from 'date-fns';
+import { format, parseISO, addDays } from 'date-fns';
 
 import { Card } from '../common/Card';
 import { useCalendarEvents } from '../../hooks/useCalendar';
@@ -124,39 +124,69 @@ export function DashboardUpcomingEvents() {
   const groupedEvents = useMemo(() => {
     if (!eventsQuery.data?.events) return [];
 
-    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const endStr = addDays(today, 7).toISOString().split('T')[0];
+
+    // getLocalDateStr returns YYYY-MM-DD for placing an event into a date bucket:
+    // - all-day events: use the UTC date of start_time (canonical date per backend)
+    // - timed events: use local date of start_time
+    const getLocalDateStr = (event: typeof eventsQuery.data.events[0]): string => {
+      if (!event.start_time) return '';
+      if (event.is_all_day) {
+        return new Date(event.start_time).toISOString().slice(0, 10);
+      }
+      const d = new Date(event.start_time);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
     const sortedEvents = [...eventsQuery.data.events]
-      .filter(event => event.start_time && event.summary)
+      .filter(event => event.summary)
       .filter(event => {
-        if (!event.end_time) return true;
-        return new Date(event.end_time).getTime() > startOfToday.getTime();
+        if (!event.start_time) return false;
+        const dateStr = getLocalDateStr(event);
+        if (!dateStr) return false;
+        // For all-day events with exclusive end, also check end_time
+        if (event.is_all_day && event.end_time) {
+          const endDateStr = new Date(event.end_time).toISOString().slice(0, 10);
+          // Exclude if end is on or before today (event fully in the past)
+          if (endDateStr <= todayStr) return false;
+        }
+        return dateStr <= endStr;
       })
       .sort((a, b) => {
-        const timeA = new Date(a.start_time!).getTime();
-        const timeB = new Date(b.start_time!).getTime();
-        return timeA - timeB;
+        const strA = getLocalDateStr(a);
+        const strB = getLocalDateStr(b);
+        if (strA !== strB) return strA < strB ? -1 : 1;
+        // Within the same day, all-day events sort first
+        if (a.is_all_day && !b.is_all_day) return -1;
+        if (!a.is_all_day && b.is_all_day) return 1;
+        return new Date(a.start_time!).getTime() - new Date(b.start_time!).getTime();
       });
 
-    const grouped: Array<{ date: Date; events: typeof sortedEvents }> = [];
-    let currentDate: Date | null = null;
+    const grouped: Array<{ dateStr: string; date: Date; events: typeof sortedEvents }> = [];
+    let currentDateStr = '';
     let currentGroup: typeof sortedEvents = [];
 
     sortedEvents.forEach(event => {
-      const eventDate = parseISO(event.start_time!);
+      const eventDateStr = getLocalDateStr(event);
 
-      if (!currentDate || !isSameDay(currentDate, eventDate)) {
+      if (eventDateStr !== currentDateStr) {
         if (currentGroup.length > 0) {
-          grouped.push({ date: currentDate!, events: currentGroup });
+          // Build a local noon Date for the previous date string to avoid
+          // midnight boundary issues in formatDateHeader comparisons.
+          const [y, mo, d] = currentDateStr.split('-').map(Number);
+          grouped.push({ dateStr: currentDateStr, date: new Date(y, mo - 1, d, 12, 0, 0), events: currentGroup });
         }
-        currentDate = eventDate;
+        currentDateStr = eventDateStr;
         currentGroup = [event];
       } else {
         currentGroup.push(event);
       }
     });
 
-    if (currentGroup.length > 0 && currentDate) {
-      grouped.push({ date: currentDate, events: currentGroup });
+    if (currentGroup.length > 0 && currentDateStr) {
+      const [y, mo, d] = currentDateStr.split('-').map(Number);
+      grouped.push({ dateStr: currentDateStr, date: new Date(y, mo - 1, d, 12, 0, 0), events: currentGroup });
     }
 
     return grouped;
@@ -175,9 +205,12 @@ export function DashboardUpcomingEvents() {
     return `${startFormatted}–${format(end, 'h:mm a')}`;
   }, []);
 
-  const formatDateHeader = useCallback((date: Date) => {
-    if (isSameDay(date, today)) return 'Today';
-    if (isSameDay(date, addDays(today, 1))) return 'Tomorrow';
+  const formatDateHeader = useCallback((date: Date, dateStr: string) => {
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const tmrw = addDays(today, 1);
+    const tomorrowStr = `${tmrw.getFullYear()}-${String(tmrw.getMonth() + 1).padStart(2, '0')}-${String(tmrw.getDate()).padStart(2, '0')}`;
+    if (dateStr === todayStr) return 'Today';
+    if (dateStr === tomorrowStr) return 'Tomorrow';
     return format(date, 'EEE, MMM d');
   }, [today]);
 
@@ -191,10 +224,10 @@ export function DashboardUpcomingEvents() {
         <EmptyState>No events in the next 7 days</EmptyState>
       ) : (
         <EventsList>
-          {groupedEvents.map(({ date, events }) => (
-            <div key={date.toISOString()}>
+          {groupedEvents.map(({ dateStr, date, events }) => (
+            <div key={dateStr}>
               <DateDivider data-halo="body">
-                {formatDateHeader(date)}
+                {formatDateHeader(date, dateStr)}
               </DateDivider>
               {events.map(event => (
                 <EventRow key={event.id}>

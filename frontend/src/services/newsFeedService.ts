@@ -1,4 +1,4 @@
-import { getAffinityScore, getCategoryDistribution, getDismissPenalty, getSkipPenalty, getTopCategories, isDismissed } from './interestProfile';
+import { getAffinityScore, getBoostedTopics, getCategoryDistribution, getDismissPenalty, getMutedTopics, getSkipPenalty, getTopCategories, isDismissed } from './interestProfile';
 
 const STORAGE_KEY = 'ld_news_feed';
 const SOURCES_KEY = 'ld_news_sources';
@@ -414,18 +414,47 @@ function titleSimilarity(a: string, b: string): number {
   return overlap / union;
 }
 
+/** Two titles with Jaccard similarity above this are treated as duplicates. */
+const DEDUP_SIMILARITY_THRESHOLD = 0.5;
+
 /** Remove articles whose titles are too similar, keeping the highest-scored one. */
 function deduplicateByTopic(articles: NewsArticle[]): NewsArticle[] {
   const kept: NewsArticle[] = [];
 
   for (const article of articles) {
-    const isDuplicate = kept.some(k => titleSimilarity(k.title, article.title) > 0.5);
+    const isDuplicate = kept.some(k => titleSimilarity(k.title, article.title) > DEDUP_SIMILARITY_THRESHOLD);
     if (!isDuplicate) {
       kept.push(article);
     }
   }
 
   return kept;
+}
+
+/* ─── Boost / Mute Effective Score ─────────────── */
+
+const BOOST_MULTIPLIER = 1.5;
+const MUTE_MULTIPLIER = 0.1;
+const SCORE_CEILING = 1.0;
+const SCORE_FLOOR = 0.05;
+
+/**
+ * Apply boost/mute multiplier to an article's stored relevanceScore.
+ * Multipliers: BOOST_MULTIPLIER if a boosted topic is a case-insensitive substring of
+ * title+summary, MUTE_MULTIPLIER if a muted topic matches, else 1×.
+ * Boost takes precedence over mute when both match.
+ * Result is clamped to [SCORE_FLOOR, SCORE_CEILING].
+ */
+function effectiveScore(article: NewsArticle, boosted: string[], muted: string[]): number {
+  const text = `${article.title} ${article.summary ?? ''}`.toLowerCase();
+
+  if (boosted.some(t => text.includes(t.toLowerCase()))) {
+    return Math.min(article.relevanceScore * BOOST_MULTIPLIER, SCORE_CEILING);
+  }
+  if (muted.some(t => text.includes(t.toLowerCase()))) {
+    return Math.max(article.relevanceScore * MUTE_MULTIPLIER, SCORE_FLOOR);
+  }
+  return article.relevanceScore;
 }
 
 /* ─── Public API ───────────────────────────────── */
@@ -530,9 +559,15 @@ export function getCuratedFeed(savedIds: string[], explorationSlots = 4): Curate
   const savedSet = new Set(savedIds);
   const saved = state.articles.filter(a => savedSet.has(a.id));
 
+  const boosted = getBoostedTopics();
+  const muted = getMutedTopics();
+
   const candidates = state.articles
     .filter(a => !a.readAt && !isDismissed(a.id))
-    .sort((a, b) => b.relevanceScore - a.relevanceScore || b.fetchedAt.localeCompare(a.fetchedAt));
+    .sort((a, b) =>
+      effectiveScore(b, boosted, muted) - effectiveScore(a, boosted, muted) ||
+      b.fetchedAt.localeCompare(a.fetchedAt)
+    );
 
   const deduped = deduplicateByTopic(candidates);
 

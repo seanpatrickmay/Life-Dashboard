@@ -3,6 +3,7 @@ import styled, { keyframes, css } from 'styled-components';
 
 import { useMonetChat } from '../../hooks/useMonetChat';
 import { Z_LAYERS } from '../../styles/zLayers';
+import { BOTTOM_NAV_HEIGHT_PX } from '../layout/BottomNav';
 
 /* ── Animations ─────────────────────────────────────────────── */
 
@@ -29,6 +30,10 @@ const BubbleButton = styled.button`
   bottom: 28px;
   right: 28px;
   z-index: ${Z_LAYERS.chatBubble};
+
+  @media (max-width: 640px) {
+    bottom: calc(${BOTTOM_NAV_HEIGHT_PX}px + env(safe-area-inset-bottom) + 12px);
+  }
   width: 58px;
   height: 58px;
   border-radius: 999px;
@@ -84,6 +89,10 @@ const Drawer = styled.div<{ $open: boolean }>`
   bottom: 96px;
   right: 28px;
   z-index: ${Z_LAYERS.chatBubble};
+
+  @media (max-width: 640px) {
+    bottom: calc(${BOTTOM_NAV_HEIGHT_PX}px + env(safe-area-inset-bottom) + 72px);
+  }
   width: min(420px, calc(100vw - 40px));
   max-height: min(560px, calc(100vh - 140px));
   display: flex;

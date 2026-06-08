@@ -32,6 +32,7 @@ from app.routers import (
   insights,
   journal,
   metrics,
+  morning_brief,
   news,
   nutrition,
   projects,
@@ -77,6 +78,7 @@ app.include_router(calendar.router, prefix=settings.api_prefix)
 app.include_router(assistant.router, prefix=settings.api_prefix)
 app.include_router(journal.router, prefix=settings.api_prefix)
 app.include_router(ai_digest.router, prefix=settings.api_prefix)
+app.include_router(morning_brief.router, prefix=settings.api_prefix)
 
 
 @app.on_event("startup")

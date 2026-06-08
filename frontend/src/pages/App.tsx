@@ -1,23 +1,21 @@
 import { lazy, Suspense } from 'react';
-import { Outlet, Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 
 // Lazy load all page components for code splitting
-const DashboardPage = lazy(() => import('./Dashboard').then(m => ({ default: m.DashboardPage })));
-const InsightsPage = lazy(() => import('./Insights').then(m => ({ default: m.InsightsPage })));
-const JournalPage = lazy(() => import('./Journal').then(m => ({ default: m.JournalPage })));
+const TodayPage = lazy(() => import('./Today').then(m => ({ default: m.TodayPage })));
+const BodyPage = lazy(() => import('./Body').then(m => ({ default: m.BodyPage })));
+const ReflectPage = lazy(() => import('./Reflect').then(m => ({ default: m.ReflectPage })));
 const CalendarPage = lazy(() => import('./Calendar').then(m => ({ default: m.CalendarPage })));
-const NutritionPage = lazy(() => import('./Nutrition').then(m => ({ default: m.NutritionPage })));
 const ProjectsPage = lazy(() => import('./Projects').then(m => ({ default: m.ProjectsPage })));
-const NewsPage = lazy(() => import('./News').then(m => ({ default: m.NewsPage })));
-const InterestProfilePage = lazy(() => import('./InterestProfile').then(m => ({ default: m.InterestProfilePage })));
-const AIDigestPage = lazy(() => import('./AIDigest').then(m => ({ default: m.AIDigestPage })));
-const UserPage = lazy(() => import('./User').then(m => ({ default: m.UserPage })));
+const ReadPage = lazy(() => import('./Read').then(m => ({ default: m.ReadPage })));
+const FoodManagerPage = lazy(() => import('./FoodManagerPage').then(m => ({ default: m.FoodManagerPage })));
 const LoginPage = lazy(() => import('./Login').then(m => ({ default: m.LoginPage })));
 
 import { PageShell } from '../components/layout/PageShell';
 import { PageBackground } from '../components/layout/PageBackground';
 import { useVisitRefresh } from '../hooks/useVisitRefresh';
 import { useLocalMidnightInvalidation } from '../hooks/useLocalMidnightInvalidation';
+import useNewsContextPrefetch from '../hooks/useNewsContextPrefetch';
 import { RequireAuth } from '../components/auth/RequireAuth';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { ToastProvider } from '../components/common/Toast';
@@ -36,21 +34,26 @@ const PageLoader = () => (
 );
 
 const routes = [
-  { path: '/', element: <DashboardPage /> },
-  { path: '/insights', element: <InsightsPage /> },
-  { path: '/journal', element: <JournalPage /> },
+  { path: '/', element: <TodayPage /> },
+  { path: '/body', element: <BodyPage /> },
+  { path: '/insights', element: <Navigate to="/body" replace /> },
+  { path: '/nutrition', element: <Navigate to="/body?tab=nutrition" replace /> },
+  { path: '/reflect', element: <ReflectPage /> },
+  { path: '/journal', element: <Navigate to="/reflect" replace /> },
   { path: '/calendar', element: <CalendarPage /> },
   { path: '/projects/*', element: <ProjectsPage /> },
-  { path: '/news', element: <NewsPage /> },
-  { path: '/news/profile', element: <InterestProfilePage /> },
-  { path: '/ai-digest', element: <AIDigestPage /> },
-  { path: '/nutrition', element: <NutritionPage /> },
-  { path: '/user', element: <UserPage /> }
+  { path: '/read', element: <ReadPage /> },
+  { path: '/news', element: <Navigate to="/read" replace /> },
+  { path: '/news/profile', element: <Navigate to="/read" replace /> },
+  { path: '/ai-digest', element: <Navigate to="/read" replace /> },
+  { path: '/user', element: <Navigate to="/" replace /> },
+  { path: '/settings/food-db', element: <FoodManagerPage /> },
 ];
 
 function ShellLayout() {
   useVisitRefresh();
   useLocalMidnightInvalidation();
+  useNewsContextPrefetch();
   return (
     <PageShell>
       <ErrorBoundary>

@@ -1,39 +1,28 @@
 import { useState, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
 
-import { MacroHero } from '../components/nutrition/MacroHero';
-import { MicronutrientPanel } from '../components/nutrition/MicronutrientPanel';
-import { MenuPanel } from '../components/nutrition/MenuPanel';
-import { GoalsPanel } from '../components/nutrition/GoalsPanel';
-import { FoodManager } from '../components/nutrition/FoodManager';
-import { QuickLogPanel } from '../components/nutrition/QuickLogPanel';
-import { useNutritionHistory } from '../hooks/useNutritionIntake';
-import { fadeUp, reducedMotion } from '../styles/animations';
+import { MacroHero } from './MacroHero';
+import { hexToRgba } from '../../utils/color';
+import { MicronutrientPanel } from './MicronutrientPanel';
+import { MenuPanel } from './MenuPanel';
+import { GoalsPanel } from './GoalsPanel';
+import { QuickLogPanel } from './QuickLogPanel';
+import { useNutritionDailySummary, useNutritionHistory } from '../../hooks/useNutritionIntake';
 
-/* ── Layout ── */
+/* ── Error notice ── */
 
-const Page = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: clamp(14px, 2.5vw, 22px);
-  margin-top: clamp(16px, 4vh, 48px);
-  animation: ${fadeUp} 0.5s ease-out both;
-  ${reducedMotion}
-`;
-
-const Title = styled.h1`
+const ErrorNotice = styled.p`
   margin: 0;
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 1rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  font-size: 0.82rem;
+  color: ${({ theme }) => theme.colors.textSecondary};
+  padding: clamp(12px, 1.5vw, 16px) 0;
 `;
 
 /* ── Collapsible section ── */
 
 const SectionCard = styled.div`
-  border-radius: 16px;
-  background: ${({ theme }) => theme.colors.overlay};
+  border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
+  background: ${({ theme }) => theme.colors.backgroundCard};
   border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   overflow: hidden;
 `;
@@ -52,10 +41,19 @@ const SectionToggle = styled.button`
   text-transform: uppercase;
   padding: clamp(12px, 1.5vw, 16px) clamp(14px, 2vw, 20px);
   cursor: pointer;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.overlayHover};
+  }
 
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};
     outline-offset: -2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0.01ms;
   }
 `;
 
@@ -63,15 +61,6 @@ const ToggleLeft = styled.div`
   display: flex;
   align-items: center;
   gap: 10px;
-`;
-
-const ItemBadge = styled.span`
-  font-size: 0.55rem;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: ${({ theme }) => `${theme.colors.accent}26`};
-  color: ${({ theme }) => theme.colors.accent};
-  letter-spacing: 0.06em;
 `;
 
 const Chevron = styled.span<{ $open: boolean }>`
@@ -132,15 +121,15 @@ const AvgGrid = styled.div`
 const AvgCard = styled.div<{ $accent: string }>`
   border-radius: 14px;
   padding: clamp(10px, 1.5vw, 14px);
-  background: ${({ $accent }) => `${$accent}0A`};
-  border: 1px solid ${({ $accent }) => `${$accent}26`};
+  background: ${({ $accent }) => hexToRgba($accent, 0.04)};
+  border: 1px solid ${({ $accent }) => hexToRgba($accent, 0.15)};
 `;
 
 const AvgLabel = styled.div`
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  opacity: 0.5;
+  opacity: 0.6;
   margin-bottom: 4px;
 `;
 
@@ -158,8 +147,8 @@ const AvgGoal = styled.span`
 `;
 
 const AvgPct = styled.div`
-  font-size: 0.5rem;
-  opacity: 0.35;
+  font-size: 0.6rem;
+  opacity: 0.5;
   margin-top: 6px;
   text-align: right;
 `;
@@ -185,45 +174,6 @@ const AvgEmpty = styled.p`
   color: ${({ theme }) => theme.colors.textSecondary};
   margin: 0;
 `;
-
-/* ── State persistence ── */
-
-const STORAGE_KEY = 'nutrition-sections';
-
-type SectionState = {
-  meals: boolean;
-  micro: boolean;
-  averages: boolean;
-  goals: boolean;
-  foods: boolean;
-  quicklog: boolean;
-};
-
-const DEFAULTS: SectionState = {
-  meals: true,
-  micro: false,
-  averages: false,
-  goals: false,
-  foods: false,
-  quicklog: true,
-};
-
-function readPersistedSections(): SectionState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return { ...DEFAULTS, ...parsed };
-    }
-  } catch { /* ignore */ }
-  return DEFAULTS;
-}
-
-function persistSections(state: SectionState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-/* ── Averages sub-component ── */
 
 function AveragesContent() {
   const { data } = useNutritionHistory();
@@ -270,9 +220,45 @@ function AveragesContent() {
   );
 }
 
-/* ── Page ── */
+/* ── State persistence ── */
 
-export function NutritionPage() {
+const STORAGE_KEY = 'nutrition-sections';
+
+type SectionState = {
+  meals: boolean;
+  micro: boolean;
+  averages: boolean;
+  goals: boolean;
+  quicklog: boolean;
+};
+
+const DEFAULTS: SectionState = {
+  meals: true,
+  micro: false,
+  averages: false,
+  goals: false,
+  quicklog: true,
+};
+
+function readPersistedSections(): SectionState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULTS, ...parsed };
+    }
+  } catch { /* ignore */ }
+  return DEFAULTS;
+}
+
+function persistSections(state: SectionState) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+/* ── NutritionContent ── */
+
+export function NutritionContent() {
+  const { isError: summaryError } = useNutritionDailySummary();
   const [sections, setSections] = useState<SectionState>(readPersistedSections);
 
   const toggle = useCallback((key: keyof SectionState) => {
@@ -284,10 +270,12 @@ export function NutritionPage() {
   }, []);
 
   return (
-    <Page>
-      <Title data-halo="heading">Nutrition</Title>
-
-      <MacroHero />
+    <>
+      {summaryError ? (
+        <ErrorNotice>Couldn&apos;t load nutrition data — try again later.</ErrorNotice>
+      ) : (
+        <MacroHero />
+      )}
 
       {/* Quick Log */}
       <SectionCard>
@@ -391,25 +379,6 @@ export function NutritionPage() {
           </CollapsibleInner>
         </CollapsibleWrapper>
       </SectionCard>
-
-      {/* Food Manager */}
-      <SectionCard>
-        <SectionToggle
-          type="button"
-          onClick={() => toggle('foods')}
-          aria-expanded={sections.foods}
-        >
-          <ToggleLeft>
-            <span>Food Manager</span>
-          </ToggleLeft>
-          <Chevron $open={sections.foods}>▶</Chevron>
-        </SectionToggle>
-        <CollapsibleWrapper $open={sections.foods}>
-          <CollapsibleInner>
-            <FoodManager />
-          </CollapsibleInner>
-        </CollapsibleWrapper>
-      </SectionCard>
-    </Page>
+    </>
   );
 }
