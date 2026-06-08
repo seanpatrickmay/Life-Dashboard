@@ -3,43 +3,31 @@ import styled from 'styled-components';
 import { useSceneForeground } from '../scene/SceneForegroundContext';
 import { Z_LAYERS } from '../../styles/zLayers';
 
-const defaultHeadingHalo = '0 0 2px rgba(65,201,211,0.80), 0 0 8px rgba(125,215,196,0.45), 0 10px 24px rgba(17,122,158,0.20)';
-const defaultBodyHalo = '0 0 2px rgba(201,243,246,0.75), 0 0 6px rgba(126,215,196,0.28)';
-
 const CardShell = styled.div`
   position: relative;
   z-index: ${Z_LAYERS.uiCards};
-  background: ${({ theme }) => theme.colors.backgroundCard};
+  background: ${({ theme }) => theme.colors.surface ?? theme.colors.backgroundCard};
   color: ${({ theme }) => theme.colors.textPrimary};
   padding: clamp(18px, 2vw, 26px);
   image-rendering: pixelated;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
+  border: 2px solid ${({ theme }) => theme.colors.borderStrong ?? theme.colors.borderSubtle};
+  border-radius: ${({ theme }) => theme.radii?.pixel ?? theme.radii?.card ?? '6px'};
   pointer-events: auto;
-  box-shadow: ${({ theme }) => theme.shadows?.soft ?? '0 16px 36px rgba(8, 14, 28, 0.35)'};
+  box-shadow: ${({ theme }) =>
+    theme.mode === 'dark'
+      ? (theme.shadows?.pixelDark ?? '4px 4px 0 0 rgba(0,0,0,0.55)')
+      : (theme.shadows?.pixel ?? '4px 4px 0 0 rgba(23,20,33,0.85)')};
 
-  &, p, span, label, small, li, strong, em, div {
-    text-shadow: ${({ theme }) => theme.tokens?.halo?.body ?? defaultBodyHalo};
-  }
+  @media (prefers-reduced-motion: no-preference) {
+    transition: transform 120ms ease, box-shadow 120ms ease;
 
-  h1, h2, h3, h4, h5, h6, [data-halo='heading'] {
-    text-shadow: ${({ theme }) => theme.tokens?.halo?.heading ?? defaultHeadingHalo};
-  }
-
-  [data-halo='body'] {
-    text-shadow: ${({ theme }) => theme.tokens?.halo?.body ?? defaultBodyHalo};
-  }
-
-  &::before {
-    content: '';
-    position: absolute;
-    left: 15%;
-    right: 15%;
-    bottom: -18px;
-    height: 36px;
-    background: radial-gradient(ellipse, rgba(15, 30, 69, 0.22) 0%, transparent 70%);
-    opacity: 0.4;
-    z-index: ${Z_LAYERS.gradient};
+    &:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: ${({ theme }) =>
+        theme.mode === 'dark'
+          ? '6px 6px 0 0 rgba(0,0,0,0.55)'
+          : '6px 6px 0 0 rgba(23,20,33,0.85)'};
+    }
   }
 `;
 
