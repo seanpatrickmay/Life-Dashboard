@@ -2,12 +2,14 @@ import { useMemo, useState, useCallback, useRef } from 'react';
 import styled, { keyframes, useTheme } from 'styled-components';
 
 import { Card } from '../components/common/Card';
+import { PixelButton } from '../components/common/PixelButton';
 import { QualityFeedback, shouldShowFeedback, recordFeedbackRead } from '../components/news/QualityFeedback';
 import { CategoryStrip, type CategoryFilter } from '../components/news/CategoryStrip';
 import { AIDevSection } from '../components/news/AIDevSection';
 import { TuneDrawer } from '../components/news/TuneDrawer';
 import { useSkipTracking } from '../hooks/useSkipTracking';
 import { useNewsFeed } from '../hooks/useNewsFeed';
+import { pixelWell } from '../theme/surfaces';
 import {
   CATEGORY_LABELS,
   getLastRefresh,
@@ -136,31 +138,11 @@ const ReadingPill = styled.span`
   white-space: nowrap;
 `;
 
-const RefreshButton = styled.button`
-  background: ${({ theme }) => theme.colors.overlay};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  border-radius: 8px;
-  color: inherit;
-  font-family: ${({ theme }) => theme.fonts.heading};
+const RefreshButton = styled(PixelButton).attrs({ variant: 'secondary' })`
   font-size: 0.68rem;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
   padding: 6px 12px;
-  cursor: pointer;
-  transition: background 0.15s ease;
   flex-shrink: 0;
-
-  &:hover:not(:disabled) {
-    background: ${({ theme }) => theme.colors.overlayActive};
-  }
-  &:focus-visible {
-    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
-    outline-offset: 2px;
-  }
-  &:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
 `;
 
 /* ─── Hero Card ────────────────────────────────── */
@@ -170,15 +152,9 @@ const HeroCard = styled(Card)`
   flex-direction: column;
   gap: 8px;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
   text-decoration: none;
   color: inherit;
   ${reducedMotion}
-
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: ${({ theme }) => theme.shadows?.soft};
-  }
 `;
 
 const HeroMeta = styled.div`
@@ -240,15 +216,12 @@ const PicksGrid = styled.div`
 `;
 
 const PickCard = styled.a<{ $borderColor: string; $dismissing?: boolean }>`
+  ${pixelWell}
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: clamp(12px, 1.5vw, 16px);
-  border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  box-shadow: ${({ theme }) => theme.shadows?.soft};
-  transition: border-color 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.15s ease;
   text-decoration: none;
   color: inherit;
   cursor: pointer;
@@ -257,7 +230,6 @@ const PickCard = styled.a<{ $borderColor: string; $dismissing?: boolean }>`
 
   &:hover {
     border-color: ${({ $borderColor }) => $borderColor};
-    transform: translateY(-1px);
   }
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};
@@ -471,13 +443,8 @@ const AIDevEntryCard = styled(Card).attrs({ as: 'button' })`
   cursor: pointer;
   border: none;
   color: inherit;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
   ${reducedMotion}
 
-  &:hover {
-    transform: translateY(-2px);
-    box-shadow: ${({ theme }) => theme.shadows?.soft};
-  }
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};
     outline-offset: 2px;
