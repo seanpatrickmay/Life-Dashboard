@@ -51,43 +51,54 @@ const SubNavWrapper = styled.div`
   z-index: 20;
   background: ${({ theme }) =>
     theme.mode === 'dark'
-      ? 'rgba(20, 28, 46, 0.82)'
-      : 'rgba(255, 255, 255, 0.72)'};
+      ? 'rgba(20, 28, 46, 0.92)'
+      : 'rgba(255, 255, 255, 0.92)'};
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  padding: 6px 0;
+  padding: 6px 0 0;
   margin: 0 -4px;
 `;
 
 const TabList = styled.div`
   display: flex;
-  gap: 4px;
-  background: ${({ theme }) => theme.colors.overlay};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  border-radius: 12px;
-  padding: 4px;
+  gap: 0;
+  padding: 0;
+  border-bottom: 2px solid ${({ theme }) => theme.colors.borderStrong};
 `;
 
 const Tab = styled.button<{ $active: boolean }>`
   flex: 1;
-  background: ${({ $active, theme }) =>
-    $active ? theme.colors.accentSubtle : 'transparent'};
-  border: none;
-  border-bottom: ${({ $active, theme }) =>
-    $active ? `2px solid ${theme.colors.accent}` : '2px solid transparent'};
-  border-radius: 9px;
-  color: ${({ $active, theme }) =>
-    $active ? theme.colors.accent : theme.colors.textSecondary};
   font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.68rem;
-  font-weight: ${({ $active }) => ($active ? 600 : 400)};
+  font-size: 0.75rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  padding: 8px 16px;
+  padding: 10px 16px;
   min-height: 44px;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  image-rendering: pixelated;
+
+  /* Pixel-shelf active treatment */
+  background: ${({ $active, theme }) =>
+    $active ? theme.colors.surface : 'transparent'};
+  border: 2px solid ${({ $active, theme }) =>
+    $active ? theme.colors.borderStrong : 'transparent'};
+  border-bottom: ${({ $active, theme }) =>
+    $active ? `2px solid ${theme.colors.accentStrong}` : '2px solid transparent'};
+  border-radius: ${({ theme }) =>
+    `${theme.radii.pixel} ${theme.radii.pixel} 0 0`};
+  box-shadow: ${({ $active, theme }) =>
+    $active ? `2px 2px 0 0 ${theme.colors.borderStrong}` : 'none'};
+  /* Pull active tab down to sit on the border baseline */
+  margin-bottom: ${({ $active }) => ($active ? '-2px' : '0')};
+
+  color: ${({ $active, theme }) =>
+    $active ? theme.colors.textPrimary : theme.colors.textSecondary};
+
+  transition: color 0.15s ease;
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.textPrimary};
+  }
 
   &:focus-visible {
     outline: 2px solid ${({ theme }) => theme.colors.focusRing};

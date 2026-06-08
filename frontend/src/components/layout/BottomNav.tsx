@@ -8,16 +8,12 @@
 import styled from 'styled-components';
 import { NavLink } from 'react-router-dom';
 import { Z_LAYERS } from '../../styles/zLayers';
-import { palette } from '../../theme/monetTheme';
 import { reducedMotion } from '../../styles/animations';
 
 const BOTTOM_NAV_HEIGHT = 56;
 
 /** Exported so PageShell + MonetChatBubble can offset by this value on mobile */
 export const BOTTOM_NAV_HEIGHT_PX = BOTTOM_NAV_HEIGHT;
-
-const paletteAccent = (mode: 'light' | 'dark', theme?: { colors?: { accent?: string } }) =>
-  theme?.colors?.accent ?? (mode === 'dark' ? palette.bloom['300'] : palette.bloom['200']);
 
 const Bar = styled.nav`
   position: fixed;
@@ -37,7 +33,7 @@ const Bar = styled.nav`
 const TabItem = styled.div`
   flex: 1;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
 
   a, button {
@@ -53,15 +49,15 @@ const TabItem = styled.div`
     padding: 6px 4px;
     background: none;
     border: none;
+    border-top: 2px solid transparent;
     cursor: pointer;
-    color: ${({ theme }) => theme.colors.textPrimary};
+    color: ${({ theme }) => theme.colors.textSecondary};
     text-decoration: none;
-    opacity: 0.55;
-    transition: opacity 0.15s ease;
+    transition: color 0.15s ease;
     ${reducedMotion}
 
     &:hover {
-      opacity: 0.85;
+      color: ${({ theme }) => theme.colors.textPrimary};
     }
 
     &:focus-visible {
@@ -70,9 +66,10 @@ const TabItem = styled.div`
       border-radius: 6px;
     }
 
+    /* Active: accent color + pixel top-border indicator */
     &.active {
-      opacity: 1;
-      color: ${({ theme }) => paletteAccent(theme.mode ?? 'dark', theme)};
+      color: ${({ theme }) => theme.colors.accentStrong};
+      border-top: 2px solid ${({ theme }) => theme.colors.accentStrong};
     }
   }
 `;

@@ -16,10 +16,13 @@ export const testTheme: DefaultTheme = {
   radii: {
     card: '22px',
     shell: '26px',
+    pixel: '6px',
   },
   shadows: {
     soft: '0 2px 8px rgba(0,0,0,0.3)',
     hard: '0 4px 16px rgba(0,0,0,0.5)',
+    pixel: '4px 4px 0 0 rgba(0,0,0,0.85)',
+    pixelDark: '4px 4px 0 0 rgba(0,0,0,0.55)',
   },
   palette: {
     neutral: {
@@ -29,7 +32,10 @@ export const testTheme: DefaultTheme = {
       '900': '#171717',
     },
     pond: {
+      '100': '#B8F0DF',
       '200': '#7ED7C4',
+      '300': '#3F9B8A',
+      '400': '#2E7568',
     },
     bloom: {
       '200': '#f9a8d4',
@@ -37,19 +43,24 @@ export const testTheme: DefaultTheme = {
     },
   },
   colors: {
-    surfaceRaised: '#1e1e2e',
+    surface: '#18213A',
+    surfaceRaised: '#222C49',
+    surfaceInset: 'rgba(0,0,0,0.12)',
     overlay: 'rgba(0,0,0,0.3)',
     overlayHover: 'rgba(0,0,0,0.1)',
     overlayActive: 'rgba(0,0,0,0.2)',
     textPrimary: '#fff',
     textSecondary: '#aaa',
+    borderStrong: '#E7E0F0',
     borderSubtle: '#333',
     focusRing: '#7ED7C4',
     scrollThumb: '#555',
     scrollTrack: '#222',
     accent: '#7ED7C4',
+    accentText: '#0F1424',
+    accentStrong: '#B8F0DF',
+    accentSubtle: '#1C3A39',
     backgroundCard: 'rgba(20,28,46,0.94)',
-    surfaceInset: 'rgba(0,0,0,0.12)',
   },
 } as unknown as DefaultTheme;
 
