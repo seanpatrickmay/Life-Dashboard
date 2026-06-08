@@ -63,6 +63,9 @@ export const testTheme: DefaultTheme = {
     accentSubtle: '#1C3A39',
     backgroundCard: 'rgba(20,28,46,0.94)',
   },
+  pixels: {
+    frame: { light: '', dark: '' },
+  },
 } as unknown as DefaultTheme;
 
 export function renderWithProviders(

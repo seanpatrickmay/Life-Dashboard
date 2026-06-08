@@ -16,10 +16,24 @@ const shimmer = keyframes`
 // Hero: inherits full pixelPanel treatment from Card; accent-coloured border
 // gives it a slightly stronger identity vs supporting cards without visual noise.
 const HeroCard = styled(Card)`
+  position: relative;
   border-color: ${({ theme }) => theme.colors.accentStrong};
   margin-bottom: clamp(10px, 1.5vh, 20px);
   padding: clamp(20px, 3vw, 32px);
   min-height: 150px;
+`;
+
+// Decorative pixel corner-frame — the 12×12 sprite contains one dot per corner;
+// stretched to fill the card at pixelated rendering so dots land exactly at corners.
+const CornerFrame = styled.span`
+  position: absolute;
+  inset: 0;
+  background-image: url(${({ theme }) => theme.pixels.frame[theme.mode as 'light' | 'dark']});
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+  pointer-events: none;
+  border-radius: inherit;
 `;
 
 const MetaRow = styled.div`
@@ -138,6 +152,7 @@ export function MorningBriefCard() {
   if (isLoading) {
     return (
       <HeroCard>
+        <CornerFrame aria-hidden="true" />
         <MetaRow>
           <DateLabel>{today}</DateLabel>
         </MetaRow>
@@ -148,6 +163,7 @@ export function MorningBriefCard() {
 
   return (
     <HeroCard aria-label="Morning brief">
+      <CornerFrame aria-hidden="true" />
       <MetaRow>
         <DateLabel>{today}</DateLabel>
         {!isReady && (
