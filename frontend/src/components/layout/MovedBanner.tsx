@@ -1,18 +1,17 @@
 import { useState } from 'react';
 import styled from 'styled-components';
 import { reducedMotion } from '../../styles/animations';
+import { pixelWell } from '../../theme/surfaces';
 
 const DISMISSED_FLAG = 'ld_nav_moved_dismissed';
 
 const Banner = styled.div`
+  ${pixelWell}
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
-  border-radius: 16px;
-  background: ${({ theme }) => theme.colors.overlay};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   font-size: 0.8rem;
   letter-spacing: 0.04em;
 `;
@@ -30,7 +29,7 @@ const DismissButton = styled.button`
   min-width: 44px;
   border-radius: 999px;
   padding: 6px 10px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  border: 1px solid ${({ theme }) => theme.colors.borderSoft};
   background: transparent;
   color: ${({ theme }) => theme.colors.textPrimary};
   font-family: ${({ theme }) => theme.fonts.heading};
