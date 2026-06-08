@@ -8,6 +8,7 @@ import paperFiberLight from '../../assets/textures/paper_fiber_light.png';
 import { useCalendarEvents } from '../../hooks/useCalendar';
 import { useJournal } from '../../hooks/useJournal';
 import { fetchJournalDay } from '../../services/api';
+import { PixelButton } from '../common/PixelButton';
 
 const bookFloat = keyframes`
   0% { transform: translateY(8px); opacity: 0; }
@@ -437,18 +438,11 @@ const JournalTextarea = styled.textarea`
   }
 `;
 
-const SubmitButton = styled.button`
+const SubmitButton = styled(PixelButton).attrs({ variant: 'primary' })`
   align-self: flex-end;
-  border: none;
-  border-radius: 14px;
-  padding: 10px 16px;
-  font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 0.75rem;
   letter-spacing: 0.16em;
-  text-transform: uppercase;
-  cursor: pointer;
-  background: ${({ theme }) => theme.colors.accent};
-  color: ${({ theme }) => theme.mode === 'dark' ? theme.colors.textPrimary : '#2a1d15'};
+  padding: 10px 16px;
 `;
 
 const GroupList = styled.div`
