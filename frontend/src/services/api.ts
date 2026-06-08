@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { isGuestMode } from '../demo/guest/guestMode';
+import { shouldRedirectOn401 } from './authRedirect';
 import {
   clearGuestState,
   createGuestJournalEntry,
@@ -77,11 +78,11 @@ export const api = axios.create({
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
-      const path = window.location.pathname;
-      if (path !== '/login') {
-        window.location.href = '/login';
-      }
+    if (
+      typeof window !== 'undefined' &&
+      shouldRedirectOn401(error.response?.status, window.location.pathname, isGuestMode())
+    ) {
+      window.location.href = '/login';
     }
     return Promise.reject(error);
   }
@@ -382,6 +383,7 @@ export type NutritionChatResponse = {
 };
 
 export const fetchNutritionNutrients = async (): Promise<NutritionNutrient[]> => {
+  if (isGuestMode()) return [];
   const { data } = await api.get('/api/nutrition/nutrients');
   return data;
 };
@@ -442,6 +444,7 @@ export const deleteNutritionIntake = async (intakeId: number) => {
 };
 
 export const fetchNutritionIngredients = async (): Promise<NutritionIngredient[]> => {
+  if (isGuestMode()) return [];
   const { data } = await api.get('/api/nutrition/ingredients');
   return data;
 };
@@ -457,11 +460,15 @@ export const updateNutritionIngredient = async (id: number, payload: Partial<Nut
 };
 
 export const fetchNutritionRecipes = async (): Promise<NutritionRecipe[]> => {
+  if (isGuestMode()) return [];
   const { data } = await api.get('/api/nutrition/recipes');
   return data;
 };
 
 export const fetchNutritionRecipe = async (id: number): Promise<NutritionRecipe> => {
+  if (isGuestMode()) {
+    throw new Error('Recipe details are not available in demo mode.');
+  }
   const { data } = await api.get(`/api/nutrition/recipes/${id}`);
   return data;
 };
@@ -759,6 +766,7 @@ export const fetchProjectActivities = async (
   projectId: number,
   params?: { since?: string; until?: string; page?: number; per_page?: number }
 ): Promise<ProjectActivity[]> => {
+  if (isGuestMode()) return [];
   const { data } = await api.get(`/api/projects/${projectId}/activities`, { params });
   return data as ProjectActivity[];
 };
@@ -766,6 +774,7 @@ export const fetchProjectActivities = async (
 export const fetchAllActivities = async (
   params?: { since?: string; until?: string; page?: number; per_page?: number }
 ): Promise<ProjectActivity[]> => {
+  if (isGuestMode()) return [];
   const { data } = await api.get('/api/projects/activities/all', { params });
   return data as ProjectActivity[];
 };
@@ -1278,7 +1287,7 @@ export const fetchDigest = async (): Promise<DigestResponse> => {
 
 export const refreshDigest = async (): Promise<DigestRefreshResponse> => {
   if (isGuestMode()) {
-    return { started: false, message: 'Digest not available in guest mode.' };
+    return { started: false, message: 'Refreshing the digest is disabled in demo mode.' };
   }
   const { data } = await api.post('/api/ai-digest/refresh');
   return data;

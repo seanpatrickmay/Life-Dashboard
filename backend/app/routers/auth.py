@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import secrets
-import time
-from collections import defaultdict
 from typing import Any
 from urllib.parse import urlencode
 
@@ -21,50 +19,47 @@ from app.core.auth import (
     _hash_token,
     clear_session_cookie,
     create_user_session,
-    get_current_user,
     get_optional_current_user,
     set_session_cookie,
 )
 from app.core.config import settings
 from app.db.models.entities import User, UserRole, UserSession
 from app.db.session import get_session
+from app.kv.kv_store import get_kv_store
 from app.schemas.auth import AuthMeResponse, AuthUserResponse
 from app.utils.timezone import eastern_now
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 # ---------------------------------------------------------------------------
-# Simple in-memory rate limiter for auth endpoints.
-# NOTE: This is per-process only. Multiple uvicorn workers each maintain
-# their own store, so effective limits scale with worker count.
+# KVStore-backed rate limiter for auth endpoints (stateless-safe under Lambda).
 # ---------------------------------------------------------------------------
 _AUTH_RATE_LIMIT = 10  # max attempts per window
 _AUTH_RATE_WINDOW = 60  # window in seconds
 
-_rate_limit_store: dict[str, list[float]] = defaultdict(list)
 
-
-def _check_rate_limit(client_ip: str) -> None:
+async def _check_rate_limit(client_ip: str) -> None:
     """Raise 429 if *client_ip* has exceeded the auth rate limit."""
-    now = time.monotonic()
-    window_start = now - _AUTH_RATE_WINDOW
-    # Prune old entries and evict empty keys to prevent unbounded growth
-    entries = _rate_limit_store[client_ip]
-    pruned = [t for t in entries if t > window_start]
-    if not pruned:
-        _rate_limit_store.pop(client_ip, None)
-        return
-    _rate_limit_store[client_ip] = pruned
-    if len(pruned) >= _AUTH_RATE_LIMIT:
+    store = get_kv_store()
+    count = await store.incr(f"ratelimit:auth:{client_ip}", ttl_seconds=_AUTH_RATE_WINDOW)
+    if count > _AUTH_RATE_LIMIT:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many authentication attempts. Please try again later.",
         )
-    _rate_limit_store[client_ip].append(now)
 
 OAUTH_STATE_COOKIE = "ld_oauth_state"
 OAUTH_REDIRECT_COOKIE = "ld_oauth_redirect"
 OAUTH_REMEMBER_COOKIE = "ld_oauth_remember"
+
+
+def _client_ip(request: Request) -> str:
+    # Behind API Gateway/CloudFront the viewer IP is in X-Forwarded-For (set by the edge).
+    # Leftmost is the original client. Best-effort for a single-user app; not a security boundary.
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 def _safe_redirect(target: str | None) -> str:
@@ -104,7 +99,7 @@ async def google_login(
     redirect: str | None = Query(None),
     remember_me: bool = Query(False),
 ) -> Response:
-    _check_rate_limit(request.client.host if request.client else "unknown")
+    await _check_rate_limit(_client_ip(request))
     state = secrets.token_urlsafe(24)
     redirect_url = _safe_redirect(redirect)
     response = RedirectResponse(url=_google_auth_url(state))
@@ -222,7 +217,7 @@ async def google_callback(
     stored_redirect: str | None = Cookie(None, alias=OAUTH_REDIRECT_COOKIE),
     stored_remember: str | None = Cookie(None, alias=OAUTH_REMEMBER_COOKIE),
 ) -> Response:
-    _check_rate_limit(request.client.host if request.client else "unknown")
+    await _check_rate_limit(_client_ip(request))
     redirect_url = _safe_redirect(stored_redirect)
     if error:
         return RedirectResponse(url=f"{redirect_url}?auth_error={error}")

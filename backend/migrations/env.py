@@ -48,7 +48,12 @@ def _build_candidates(url: str) -> list[str]:
 target_metadata = Base.metadata
 
 def _ensure_version_table_supports_long_ids(connection) -> None:
-    """Bump alembic_version.version_num length so long revision IDs do not fail."""
+    """Ensure alembic_version.version_num is VARCHAR(64) on PostgreSQL.
+
+    Alembic creates alembic_version lazily inside the first migration
+    transaction, so we pre-create it here (with VARCHAR(64)) if it doesn't
+    exist, and ALTER it if it does exist but is too narrow.
+    """
     if connection.dialect.name != "postgresql":
         return
     result = connection.execute(
@@ -63,7 +68,14 @@ def _ensure_version_table_supports_long_ids(connection) -> None:
         ),
         {"table_name": "alembic_version"},
     ).scalar()
-    if result is not None and result < 64:
+    if result is None:
+        # Table does not exist yet — pre-create it with a wide column so that
+        # Alembic's lazy creation is skipped and long revision IDs fit.
+        connection.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS alembic_version "
+            "(version_num VARCHAR(64) NOT NULL)"
+        ))
+    elif result < 64:
         connection.execute(
             sa.text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)")
         )
@@ -92,6 +104,8 @@ def run_migrations_online() -> None:
                     connection=connection,
                     target_metadata=target_metadata,
                     version_table_schema="public",
+                    # Ensure the version_num column is wide enough for long revision IDs.
+                    version_num_type=sa.String(64),
                 )
 
                 with context.begin_transaction():

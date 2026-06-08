@@ -1,0 +1,38 @@
+# CloudFront-parity reverse proxy for local development
+#
+# Mirrors the two EdgeStack CloudFront behaviors:
+#   1. Default behavior  → S3 origin (static SPA)
+#   2. /api/*  behavior  → API Gateway origin (Lambda)
+#
+# In production (EdgeStack), CloudFront performs this routing at the edge.
+# Here, Caddy running on :8090 acts as the stand-in.
+#
+# Usage (see infra/local/README.md):
+#   docker run --rm -p 8090:8090 \
+#     -v $(pwd)/infra/local/Caddyfile.local:/etc/caddy/Caddyfile:ro \
+#     --network life-dashboard-local_default \
+#     caddy:2
+
+:8090 {
+    # Behavior 2: /api/* → API Gateway (Lambda handler)
+    # In prod: CloudFront forwards /api/* to the API GW execute-api endpoint.
+    # Locally: forwards to LocalStack API Gateway on port 4566.
+    # The APIGW_URL env var is set when the proxy is started after `local-deploy`.
+    handle /api/* {
+        reverse_proxy {$APIGW_URL:http://localhost:4566}
+    }
+
+    # Behavior 1 (default): all other requests → S3 website origin (SPA)
+    # In prod: CloudFront forwards to the S3 website endpoint with custom error
+    # responses sending /* back to index.html (SPA client-side routing).
+    # Locally: forwards to LocalStack S3 using path-style URL (the s3-website
+    # subdomain hostname resolves to 127.0.0.1 inside Docker, so we use the
+    # service hostname + Host header override instead).
+    # S3_BACKEND is set to http://localstack:4566 when running inside the
+    # life-dashboard-local_default Docker network (the default).
+    handle {
+        reverse_proxy {$S3_BACKEND:http://localstack:4566} {
+            header_up Host ld-frontend-test.s3-website.localhost.localstack.cloud
+        }
+    }
+}

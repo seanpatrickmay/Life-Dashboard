@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { useTodos } from '../../hooks/useTodos';
+import { partitionByCompletion } from './todoOrdering';
 import type { TodoItem, TimeHorizon } from '../../services/api';
 import { pixelPanel, pixelWell } from '../../theme/surfaces';
 
@@ -190,6 +191,61 @@ const ErrorText = styled.p`
   margin: 4px 0 0;
   font-size: 0.75rem;
   color: ${({ theme }) => theme.colors.danger};
+`;
+
+const fadeInDone = keyframes`
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 0.7; transform: none; }
+`;
+
+/* Subtle divider that introduces the collapsed "done" group within a section */
+const DoneDivider = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 2px 2px;
+  font-family: ${({ theme }) => theme.fonts.heading};
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.6rem;
+  opacity: 0.45;
+  color: ${({ theme }) => theme.colors.textSecondary};
+
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: ${({ theme }) => theme.colors.borderSubtle};
+  }
+`;
+
+/* Compact, single-line row for a completed task */
+const CompletedRow = styled.li`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: ${({ theme }) => theme.colors.surfaceInset};
+  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  opacity: 0.7;
+  animation: ${fadeInDone} 180ms ease;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+`;
+
+const CompletedText = styled.span`
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.8rem;
+  font-family: ${({ theme }) => theme.fonts.body};
+  color: ${({ theme }) => theme.colors.textSecondary};
+  text-decoration: line-through;
 `;
 
 type Props = {
@@ -418,6 +474,28 @@ export function TodoScrollPad(_props: Props) {
     );
   };
 
+  const renderCompletedItem = (item: TodoItem) => (
+    <CompletedRow key={item.id}>
+      <Checkbox
+        type="button"
+        aria-label="Mark as not done"
+        $checked
+        onClick={() => handleToggle(item)}
+      >
+        ✓
+      </Checkbox>
+      <CompletedText title={item.text}>{item.text}</CompletedText>
+      <SmallAction
+        type="button"
+        aria-label="Delete to-do"
+        title="Delete"
+        onClick={() => handleDelete(item.id)}
+      >
+        ✕
+      </SmallAction>
+    </CompletedRow>
+  );
+
   return (
     <ScrollShell>
       <ScrollHeading>
@@ -433,12 +511,17 @@ export function TodoScrollPad(_props: Props) {
       {HORIZON_ORDER.map((horizon) => {
         const sectionItems = grouped[horizon];
         if (sectionItems.length === 0) return null;
+        const { active, done } = partitionByCompletion(sectionItems);
         return (
           <div key={horizon}>
             <SectionLabel>{HORIZON_LABELS[horizon]}</SectionLabel>
-            <List>
-              {sectionItems.map(renderItem)}
-            </List>
+            {active.length > 0 && <List>{active.map(renderItem)}</List>}
+            {done.length > 0 && (
+              <>
+                <DoneDivider>done</DoneDivider>
+                <List>{done.map(renderCompletedItem)}</List>
+              </>
+            )}
           </div>
         );
       })}

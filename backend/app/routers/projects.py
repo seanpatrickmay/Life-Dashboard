@@ -3,7 +3,7 @@ from __future__ import annotations
 import zoneinfo
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +19,8 @@ from app.db.repositories.todo_repository import TodoRepository
 from app.db.session import get_session
 from app.db.models.claude_code import ProjectActivity
 from app.db.models.project import Project
-from app.routers._shared import build_todo_response, run_project_suggestions
+from app.jobs.queue import get_job_queue
+from app.routers._shared import build_todo_response
 from app.schemas.projects import (
   ProjectActivityResponse,
   ProjectBoardResponse,
@@ -270,7 +271,6 @@ async def delete_project(
 @router.post("/suggestions/recompute", status_code=202)
 async def recompute_suggestions(
   payload: SuggestionRecomputeRequest,
-  background_tasks: BackgroundTasks,
   current_user: User = Depends(get_current_user),
   session: AsyncSession = Depends(get_session),
 ) -> dict[str, int]:
@@ -292,7 +292,7 @@ async def recompute_suggestions(
     todo_ids = [row[0] for row in result.all()]
 
   if todo_ids:
-    background_tasks.add_task(run_project_suggestions, current_user.id, todo_ids)
+    await get_job_queue().enqueue("project_suggestions", {"user_id": current_user.id, "todo_ids": todo_ids})
   return {"scheduled_count": len(todo_ids)}
 
 
