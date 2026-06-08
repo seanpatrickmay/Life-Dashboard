@@ -13,12 +13,11 @@ const shimmer = keyframes`
 
 // ── Shell ────────────────────────────────────────────────────────────────────
 
+// Hero: inherits full pixelPanel treatment from Card; accent-coloured border
+// gives it a slightly stronger identity vs supporting cards without visual noise.
 const HeroCard = styled(Card)`
-  background: ${({ theme }) =>
-    theme.mode === 'dark'
-      ? 'rgba(30, 42, 68, 0.98)'
-      : 'rgba(240, 248, 255, 0.97)'};
-  border-color: ${({ theme }) => theme.colors.accent}44;
+  position: relative;
+  border-color: ${({ theme }) => theme.colors.accentStrong};
   margin-bottom: clamp(10px, 1.5vh, 20px);
   padding: clamp(20px, 3vw, 32px);
   min-height: 150px;
@@ -140,7 +139,7 @@ export function MorningBriefCard() {
   if (isLoading) {
     return (
       <HeroCard>
-        <MetaRow>
+          <MetaRow>
           <DateLabel>{today}</DateLabel>
         </MetaRow>
         <BriefSkeleton />

@@ -3,18 +3,16 @@ import styled from 'styled-components';
 import { reducedMotion } from '../../styles/animations';
 import { useProjectBoard } from '../../hooks/useProjectBoard';
 import { useTodos } from '../../hooks/useTodos';
+import { pixelPanel } from '../../theme/surfaces';
 
 // ── Styled components ─────────────────────────────────────────────────────────
 
 const Row = styled.div`
+  ${pixelPanel}
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: ${({ theme }) => theme.radii?.card ?? '22px'};
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  box-shadow: ${({ theme }) => theme.shadows?.soft ?? '0 18px 34px rgba(28, 41, 64, 0.18)'};
 `;
 
 const TaskInput = styled.input`

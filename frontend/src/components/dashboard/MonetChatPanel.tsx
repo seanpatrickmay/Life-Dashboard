@@ -4,6 +4,9 @@ import styled, { keyframes, css } from 'styled-components';
 import { useMonetChat } from '../../hooks/useMonetChat';
 import { Z_LAYERS } from '../../styles/zLayers';
 import { BOTTOM_NAV_HEIGHT_PX } from '../layout/BottomNav';
+import { pixelPanel } from '../../theme/surfaces';
+import { PixelButton } from '../common/PixelButton';
+import { PixelField } from '../common/PixelField';
 
 /* ── Animations ─────────────────────────────────────────────── */
 
@@ -36,24 +39,23 @@ const BubbleButton = styled.button`
   }
   width: 58px;
   height: 58px;
-  border-radius: 999px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  box-shadow: ${({ theme }) => theme.shadows.soft};
+  border-radius: ${({ theme }) => theme.radii.pixel};
+  border: 2px solid ${({ theme }) => theme.colors.borderStrong};
+  background: ${({ theme }) => theme.colors.surface};
+  box-shadow: ${({ theme }) => theme.mode === 'dark' ? theme.shadows.pixelDark : theme.shadows.pixel};
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
   animation: ${bubblePop} 0.4s ease-out both;
+  image-rendering: pixelated;
 
-  &:hover {
-    transform: scale(1.08);
-    box-shadow: ${({ theme }) => theme.shadows.soft};
-  }
-
-  &:active {
-    transform: scale(0.96);
+  @media (prefers-reduced-motion: no-preference) {
+    transition: transform 80ms ease-out, box-shadow 80ms ease-out;
+    &:not(:disabled):active {
+      transform: translate(3px, 3px);
+      box-shadow: 0 0 0 0 transparent;
+    }
   }
 
   &:focus-visible {
@@ -85,6 +87,7 @@ const Overlay = styled.div<{ $open: boolean }>`
 `;
 
 const Drawer = styled.div<{ $open: boolean }>`
+  ${pixelPanel}
   position: fixed;
   bottom: 96px;
   right: 28px;
@@ -97,12 +100,6 @@ const Drawer = styled.div<{ $open: boolean }>`
   max-height: min(560px, calc(100vh - 140px));
   display: flex;
   flex-direction: column;
-  border-radius: 22px;
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  box-shadow: ${({ theme }) => theme.shadows.soft};
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   color: ${({ theme }) => theme.colors.textPrimary};
   overflow: hidden;
   animation: ${slideUp} 0.25s ease-out both;
@@ -120,7 +117,7 @@ const DrawerHeader = styled.div`
   justify-content: space-between;
   padding: 14px 18px 10px;
   flex-shrink: 0;
-  border-bottom: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  border-bottom: 1px solid ${({ theme }) => theme.colors.borderSoft};
 `;
 
 const DrawerTitle = styled.span`
@@ -224,50 +221,20 @@ const Form = styled.form`
   gap: 10px;
   align-items: flex-end;
   padding: 10px 14px 14px;
-  border-top: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  border-top: 1px solid ${({ theme }) => theme.colors.borderSoft};
 `;
 
-const Input = styled.textarea`
+const ChatInput = styled(PixelField).attrs({ as: 'textarea' })`
   flex: 1;
   min-height: 42px;
   max-height: 100px;
   resize: none;
-  border-radius: 12px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => theme.colors.surfaceInset};
-  padding: 9px 11px;
-  color: ${({ theme }) => theme.colors.textPrimary};
-  font-family: ${({ theme }) => theme.fonts.body};
-  font-size: 0.85rem;
   line-height: 1.4;
+  font-size: 0.85rem;
+  padding: 9px 11px;
 
   &::placeholder {
     opacity: 0.4;
-  }
-
-  &:focus-visible {
-    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
-    outline-offset: 2px;
-  }
-`;
-
-const SendButton = styled.button`
-  border: none;
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  cursor: pointer;
-  background: ${({ theme }) => theme.palette?.ember?.['200'] ?? theme.colors.accent};
-  color: ${({ theme }) => theme.colors.backgroundPage};
-  flex-shrink: 0;
-  transition: opacity 0.15s ease;
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
 `;
 
@@ -385,21 +352,21 @@ export function MonetChatBubble() {
         </History>
 
         <Form onSubmit={handleSubmit}>
-          <Input
+          <ChatInput
             ref={inputRef}
             placeholder="Ask Monet anything..."
             value={text}
-            onChange={(event) => setText(event.target.value)}
-            onKeyDown={async (event) => {
+            onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setText(event.target.value)}
+            onKeyDown={async (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 await submit();
               }
             }}
           />
-          <SendButton type="submit" disabled={isSending}>
+          <PixelButton type="submit" variant="primary" disabled={isSending} style={{ fontSize: '0.72rem', padding: '10px 14px', flexShrink: 0 }}>
             {isSending ? '...' : 'Send'}
-          </SendButton>
+          </PixelButton>
         </Form>
       </Drawer>
 

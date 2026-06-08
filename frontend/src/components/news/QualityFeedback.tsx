@@ -4,6 +4,8 @@ import styled, { keyframes } from 'styled-components';
 import { recordRead } from '../../services/interestProfile';
 import { reducedMotion } from '../../styles/animations';
 import { type NewsArticle } from '../../services/newsFeedService';
+import { pixelWell } from '../../theme/surfaces';
+import { PixelButton } from '../common/PixelButton';
 
 interface QualityFeedbackProps {
   article: NewsArticle;
@@ -21,13 +23,11 @@ const slideOut = keyframes`
 `;
 
 const Container = styled.div<{ $exiting: boolean }>`
+  ${pixelWell}
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  border-radius: 12px;
-  background: ${({ theme }) => theme.colors.surfaceRaised};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   animation: ${({ $exiting }) => $exiting ? slideOut : slideUp} 0.25s ease-out both;
   ${reducedMotion}
 `;
@@ -38,39 +38,14 @@ const Prompt = styled.span`
   flex: 1;
 `;
 
-const FeedbackButton = styled.button<{ $variant: 'more' | 'less' }>`
-  font-family: ${({ theme }) => theme.fonts.heading};
+const FeedbackButton = styled(PixelButton).attrs<{ $variant: 'more' | 'less' }>(({ $variant }) => ({
+  variant: $variant === 'more' ? 'primary' : 'secondary',
+}))<{ $variant: 'more' | 'less' }>`
   font-size: 0.68rem;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
   padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme, $variant }) =>
-    $variant === 'more'
-      ? (theme.palette?.pond?.['200'] ?? '#7ED7C4') + '18'
-      : 'transparent'};
-  color: ${({ theme, $variant }) =>
-    $variant === 'more'
-      ? (theme.palette?.pond?.['200'] ?? '#7ED7C4')
-      : 'inherit'};
-  cursor: pointer;
-  transition: all 0.15s ease;
-  opacity: 0.7;
   min-width: 44px;
   min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  &:hover {
-    opacity: 1;
-    transform: scale(1.05);
-  }
-  &:focus-visible {
-    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
-    outline-offset: 2px;
-  }
 `;
 
 const FEEDBACK_KEY = 'ld_feedback_state';

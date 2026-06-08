@@ -149,9 +149,15 @@ import { useMorningBrief } from './useMorningBrief';
 
 describe('useMorningBrief – session lock', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-07T08:00:00'));
     sessionStorage.clear();
     localStorage.clear();
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('computes a paragraph when all data is ready', () => {
@@ -262,6 +268,8 @@ describe('useMorningBrief – session lock', () => {
 
 describe('useMorningBrief – LLM layer', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-06-07T08:00:00'));
     sessionStorage.clear();
     localStorage.clear();
     vi.clearAllMocks();
@@ -270,6 +278,7 @@ describe('useMorningBrief – LLM layer', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     // Reset guest-mode mock to the default factory value so describe blocks don't bleed.
     vi.mocked(isGuestMode).mockReturnValue(false);
   });

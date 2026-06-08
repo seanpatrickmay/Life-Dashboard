@@ -2,12 +2,13 @@ import { useState, useCallback, useMemo } from 'react';
 import styled from 'styled-components';
 
 import { MacroHero } from './MacroHero';
-import { hexToRgba } from '../../utils/color';
 import { MicronutrientPanel } from './MicronutrientPanel';
+
 import { MenuPanel } from './MenuPanel';
 import { GoalsPanel } from './GoalsPanel';
 import { QuickLogPanel } from './QuickLogPanel';
 import { useNutritionDailySummary, useNutritionHistory } from '../../hooks/useNutritionIntake';
+import { pixelPanel, pixelWell } from '../../theme/surfaces';
 
 /* ── Error notice ── */
 
@@ -21,9 +22,7 @@ const ErrorNotice = styled.p`
 /* ── Collapsible section ── */
 
 const SectionCard = styled.div`
-  border-radius: ${({ theme }) => theme.radii?.card ?? '16px'};
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  ${pixelPanel}
   overflow: hidden;
 `;
 
@@ -118,11 +117,9 @@ const AvgGrid = styled.div`
   }
 `;
 
-const AvgCard = styled.div<{ $accent: string }>`
-  border-radius: 14px;
+const AvgCard = styled.div`
+  ${pixelWell}
   padding: clamp(10px, 1.5vw, 14px);
-  background: ${({ $accent }) => hexToRgba($accent, 0.04)};
-  border: 1px solid ${({ $accent }) => hexToRgba($accent, 0.15)};
 `;
 
 const AvgLabel = styled.div`
@@ -198,7 +195,7 @@ function AveragesContent() {
         const accent = MACRO_COLORS[n.slug] ?? '#aaa';
         const pct = n.goal ? ((n.average_amount ?? 0) / n.goal) * 100 : 0;
         return (
-          <AvgCard key={n.slug} $accent={accent}>
+          <AvgCard key={n.slug}>
             <AvgLabel>{n.display_name}</AvgLabel>
             <AvgValue $accent={accent}>
               {fmt(n.average_amount ?? 0)}

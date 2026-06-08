@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import styled from 'styled-components';
 import { Card } from '../common/Card';
+import { PixelButton } from '../common/PixelButton';
 import { useAIDigest } from '../../hooks/useAIDigest';
 import type { DigestItem } from '../../services/api';
 import { formatTimeAgo } from '../../utils/dateFormat';
@@ -135,20 +136,10 @@ const CountPill = styled.span`
   white-space: nowrap;
 `;
 
-const RefreshBtn = styled.button`
-  background: ${({ theme }) => theme.colors.overlay};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  border-radius: 8px;
-  color: inherit;
-  font-family: ${({ theme }) => theme.fonts.heading};
+const RefreshBtn = styled(PixelButton).attrs({ variant: 'secondary' })`
   font-size: 0.62rem;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
   padding: 4px 10px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-  &:hover:not(:disabled) { background: ${({ theme }) => theme.colors.overlayActive}; }
-  &:disabled { opacity: 0.4; cursor: default; }
 `;
 
 const NarrativeCard = styled(Card)`

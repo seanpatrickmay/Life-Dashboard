@@ -3,6 +3,8 @@ import styled from 'styled-components';
 import { reducedMotion } from '../styles/animations';
 import { JournalBook } from '../components/journal/JournalBook';
 import { getSavedTodayCount, getTodayLocalDate } from '../services/savedToday';
+import { pixelWell } from '../theme/surfaces';
+import { PixelButton } from '../components/common/PixelButton';
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -27,15 +29,13 @@ function setDismissedToday(): void {
 // ── Styled components ────────────────────────────────────────────────────
 
 const NudgeBanner = styled.div`
+  ${pixelWell}
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
   margin-bottom: 12px;
-  border-radius: 16px;
-  background: ${({ theme }) => theme.colors.overlay};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
   font-size: 0.8rem;
   letter-spacing: 0.04em;
 
@@ -54,30 +54,13 @@ const NudgeText = styled.span`
   line-height: 1.5;
 `;
 
-const DismissButton = styled.button`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+const DismissButton = styled(PixelButton).attrs({ variant: 'ghost' })`
   min-height: 44px;
   min-width: 44px;
-  border-radius: 999px;
   padding: 6px 10px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: transparent;
-  color: ${({ theme }) => theme.colors.textPrimary};
-  font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 0.75rem;
-  cursor: pointer;
   flex-shrink: 0;
-  opacity: 0.7;
-  transition: opacity 0.2s ease;
   ${reducedMotion}
-
-  &:hover { opacity: 1; }
-  &:focus-visible {
-    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
-    outline-offset: 2px;
-  }
 `;
 
 // ── Component ────────────────────────────────────────────────────────────

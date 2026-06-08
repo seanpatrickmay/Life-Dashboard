@@ -10,6 +10,9 @@ import { reducedMotion } from '../../styles/animations';
 import { useNavigate } from 'react-router-dom';
 import { useThemeMode } from '../../theme/ThemeProvider';
 import { UserProfileScene } from '../user/UserProfileScene';
+import { pixelPanel, pixelWell } from '../../theme/surfaces';
+import { PixelChip } from '../common/PixelChip';
+import { PixelButton } from '../common/PixelButton';
 
 /* ─── Animations ──────────────────────────────────── */
 
@@ -40,9 +43,11 @@ const Backdrop = styled.div`
 `;
 
 const Panel = styled.div`
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border-top-left-radius: 20px;
-  border-top-right-radius: 20px;
+  ${pixelPanel}
+  border-top-left-radius: ${({ theme }) => theme.radii.pixel};
+  border-top-right-radius: ${({ theme }) => theme.radii.pixel};
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
   padding: 20px 20px 32px;
   width: 100%;
   max-height: 90vh;
@@ -55,8 +60,8 @@ const Panel = styled.div`
   @media (min-width: 700px) {
     width: 420px;
     max-height: 100vh;
-    border-radius: 0;
-    border-left: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+    border-radius: ${({ theme }) => theme.radii.pixel};
+    border-right: none;
     animation: ${slideIn} 0.25s ease-out both;
   }
 
@@ -97,13 +102,20 @@ const CloseBtn = styled.button`
   }
 `;
 
+const SectionWell = styled.div`
+  ${pixelWell}
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+`;
+
 const SectionTitle = styled.div`
   font-family: ${({ theme }) => theme.fonts.heading};
   font-size: 0.7rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   opacity: 0.5;
-  margin-bottom: 10px;
 `;
 
 const ThemeRow = styled.div`
@@ -111,60 +123,9 @@ const ThemeRow = styled.div`
   gap: 8px;
 `;
 
-const ThemeBtn = styled.button<{ $active: boolean }>`
-  flex: 1;
-  padding: 8px 0;
-  border-radius: 8px;
-  border: 1px solid ${({ theme, $active }) =>
-    $active ? theme.colors.accent : theme.colors.borderSubtle};
-  background: ${({ theme, $active }) =>
-    $active ? theme.colors.overlay : 'transparent'};
-  color: ${({ theme, $active }) =>
-    $active ? theme.colors.accent : 'inherit'};
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-  opacity: ${({ $active }) => ($active ? 1 : 0.55)};
-  transition: all 0.15s ease;
-  ${reducedMotion}
-  &:hover { opacity: 1; }
-  &:focus-visible {
-    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
-    outline-offset: 2px;
-  }
-`;
-
-const FoodDbBtn = styled.button`
-  width: 100%;
-  text-align: left;
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => theme.colors.overlay};
-  color: inherit;
-  font-family: ${({ theme }) => theme.fonts.heading};
-  font-size: 0.75rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  opacity: 0.85;
-  transition: opacity 0.15s ease;
-  ${reducedMotion}
-  &:hover { opacity: 1; }
-  &:focus-visible {
-    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
-    outline-offset: 2px;
-  }
-`;
-
 const Divider = styled.hr`
   border: none;
-  border-top: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  border-top: 1px solid ${({ theme }) => theme.colors.borderSoft};
   margin: 0;
   opacity: 0.4;
 `;
@@ -272,41 +233,46 @@ export function SettingsDrawer({ onClose }: SettingsDrawerProps) {
         </Header>
 
         {/* Theme control */}
-        <section>
+        <SectionWell>
           <SectionTitle>Theme</SectionTitle>
           <ThemeRow>
-            <ThemeBtn
-              $active={mode === 'light'}
+            <PixelChip
+              active={mode === 'light'}
               onClick={() => setMode('light')}
-              aria-pressed={mode === 'light'}
+              style={{ flex: 1 }}
             >
               Light
-            </ThemeBtn>
-            <ThemeBtn
-              $active={mode === 'dark'}
+            </PixelChip>
+            <PixelChip
+              active={mode === 'dark'}
               onClick={() => setMode('dark')}
-              aria-pressed={mode === 'dark'}
+              style={{ flex: 1 }}
             >
               Dark
-            </ThemeBtn>
-            <ThemeBtn
-              $active={mode === 'system'}
+            </PixelChip>
+            <PixelChip
+              active={mode === 'system'}
               onClick={() => setMode('system')}
-              aria-pressed={mode === 'system'}
+              style={{ flex: 1 }}
             >
               System
-            </ThemeBtn>
+            </PixelChip>
           </ThemeRow>
-        </section>
+        </SectionWell>
 
         {/* Food database link */}
-        <section>
+        <SectionWell>
           <SectionTitle>Nutrition</SectionTitle>
-          <FoodDbBtn onClick={handleFoodDb} aria-label="Manage food database">
+          <PixelButton
+            variant="secondary"
+            onClick={handleFoodDb}
+            aria-label="Manage food database"
+            style={{ width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}
+          >
             <span>Manage food database</span>
             <span aria-hidden="true">→</span>
-          </FoodDbBtn>
-        </section>
+          </PixelButton>
+        </SectionWell>
 
         <Divider />
 

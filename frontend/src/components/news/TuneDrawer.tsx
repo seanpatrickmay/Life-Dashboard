@@ -9,6 +9,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { reducedMotion } from '../../styles/animations';
+import { pixelPanel } from '../../theme/surfaces';
+import { PixelButton } from '../common/PixelButton';
+import { PixelField } from '../common/PixelField';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   getBoostedTopics,
@@ -49,9 +52,11 @@ const Backdrop = styled.div`
 `;
 
 const Panel = styled.div`
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border-top-left-radius: 20px;
-  border-top-right-radius: 20px;
+  ${pixelPanel}
+  border-top-left-radius: ${({ theme }) => theme.radii.pixel};
+  border-top-right-radius: ${({ theme }) => theme.radii.pixel};
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
   padding: 20px 20px 32px;
   width: 100%;
   max-height: 90vh;
@@ -64,8 +69,8 @@ const Panel = styled.div`
   @media (min-width: 700px) {
     width: 380px;
     max-height: 100vh;
-    border-radius: 0;
-    border-left: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+    border-radius: ${({ theme }) => theme.radii.pixel};
+    border-right: none;
     animation: ${slideIn} 0.25s ease-out both;
   }
 
@@ -172,30 +177,16 @@ const AddRow = styled.div`
   gap: 8px;
 `;
 
-const AddInput = styled.input`
+const AddInput = styled(PixelField)`
   flex: 1;
   font-size: 0.8rem;
   padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => theme.colors.overlay};
-  color: inherit;
-  font-family: inherit;
-  &:focus { outline: 2px solid ${({ theme }) => theme.colors.focusRing}; outline-offset: 2px; }
 `;
 
-const AddBtn = styled.button`
-  font-family: ${({ theme }) => theme.fonts.heading};
+const AddBtn = styled(PixelButton).attrs({ variant: 'secondary' })`
   font-size: 0.68rem;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
   padding: 6px 14px;
-  border-radius: 8px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => theme.colors.overlay};
-  color: inherit;
-  cursor: pointer;
-  &:hover { background: ${({ theme }) => theme.colors.overlayActive}; }
 `;
 
 const SliderRow = styled.div`
@@ -273,20 +264,13 @@ const ReadCount = styled.span`
   text-align: right;
 `;
 
-const ClearBtn = styled.button`
-  background: none;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  border-radius: 8px;
-  color: inherit;
-  font-family: ${({ theme }) => theme.fonts.heading};
+const ClearBtn = styled(PixelButton).attrs({ variant: 'ghost' })`
   font-size: 0.65rem;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
   padding: 6px 14px;
-  cursor: pointer;
-  opacity: 0.45;
   align-self: flex-start;
-  &:hover { opacity: 0.85; }
+  opacity: 0.55;
+  &:hover:not(:disabled) { opacity: 1; }
 `;
 
 const CATEGORY_COLORS: Record<string, string> = {

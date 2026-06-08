@@ -60,7 +60,7 @@ export function RHRChart({ variant = 'card' }: ChartProps) {
       {variant === 'card' ? <ChartTitle data-halo="heading">Resting Heart Rate (bpm)</ChartTitle> : null}
       <ResponsiveContainer width="100%" height={240}>
         <LineChart data={points} margin={{ top: 12, right: 12, left: 16, bottom: 22 }}>
-          <CartesianGrid stroke={chart.grid.stroke} strokeDasharray="2 6" opacity={0.35} />
+          <CartesianGrid stroke={appTheme.colors.grid} strokeDasharray="2 6" opacity={0.35} />
           <XAxis
             dataKey="timestamp"
             axisLine={false}
@@ -68,7 +68,7 @@ export function RHRChart({ variant = 'card' }: ChartProps) {
             ticks={dayTicks}
             tickFormatter={labelForTick}
             stroke={axisLabelColor}
-            tick={{ fill: axisLabelColor, fontSize: 12, fontWeight: 600 }}
+            tick={{ fill: appTheme.colors.textSecondary, fontSize: 11, fontFamily: appTheme.fonts.heading }}
             interval={0}
             height={28}
             tickMargin={10}
@@ -79,7 +79,7 @@ export function RHRChart({ variant = 'card' }: ChartProps) {
             tickLine={false}
             width={40}
             stroke={axisLabelColor}
-            tick={{ fill: axisLabelColor, fontSize: 12, fontWeight: 600 }}
+            tick={{ fill: appTheme.colors.textSecondary, fontSize: 11, fontFamily: appTheme.fonts.heading }}
             domain={['auto', 'auto']}
           />
           <Tooltip cursor={false} content={tooltipRenderer} wrapperStyle={{ outline: 'none' }} />
@@ -87,10 +87,10 @@ export function RHRChart({ variant = 'card' }: ChartProps) {
             type="monotone"
             dataKey="value"
             stroke={chart.RHR.stroke}
-            strokeWidth={2.5}
+            strokeWidth={2}
             dot={false}
             strokeDasharray="4 4"
-            strokeLinecap="round"
+            strokeLinecap="square"
           />
         </LineChart>
       </ResponsiveContainer>

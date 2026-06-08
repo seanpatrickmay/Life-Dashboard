@@ -1,6 +1,6 @@
 import styled from 'styled-components';
 import { useNutritionDailySummary } from '../../hooks/useNutritionIntake';
-import { hexToRgba } from '../../utils/color';
+import { pixelPanel, pixelWell } from '../../theme/surfaces';
 
 const CALORIE_SLUG = 'calories';
 
@@ -20,16 +20,16 @@ const getColor = (slug: string) =>
 /* ── Styled Components ── */
 
 const Wrapper = styled.div`
+  ${pixelPanel}
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: clamp(14px, 2vw, 20px);
 `;
 
-const CalorieCard = styled.div<{ $accent: string }>`
-  border-radius: 20px;
+const CalorieCard = styled.div`
+  ${pixelWell}
   padding: clamp(16px, 2vw, 22px);
-  background: ${({ $accent }) => hexToRgba($accent, 0.04)};
-  border: 1px solid ${({ $accent }) => hexToRgba($accent, 0.2)};
 `;
 
 const CalorieRow = styled.div`
@@ -109,11 +109,9 @@ const MacroGrid = styled.div`
   }
 `;
 
-const MacroCard = styled.div<{ $accent: string }>`
-  border-radius: 16px;
+const MacroCard = styled.div`
+  ${pixelWell}
   padding: clamp(12px, 1.5vw, 16px);
-  background: ${({ $accent }) => hexToRgba($accent, 0.04)};
-  border: 1px solid ${({ $accent }) => hexToRgba($accent, 0.15)};
 `;
 
 const MacroLabel = styled.div`
@@ -160,13 +158,19 @@ const EmptyMessage = styled.p`
 `;
 
 const SkeletonBlock = styled.div`
-  border-radius: 16px;
-  background: ${({ theme }) => theme.colors.overlay};
+  border-radius: ${({ theme }) => theme.radii.pixel};
+  background: ${({ theme }) => theme.colors.surfaceInset};
+  border: 1px solid ${({ theme }) => theme.colors.borderSoft};
   animation: pulse 1.5s ease-in-out infinite;
 
   @keyframes pulse {
-    0%, 100% { opacity: 0.4; }
-    50% { opacity: 0.15; }
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 0.25; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    opacity: 0.4;
   }
 `;
 
@@ -208,7 +212,7 @@ export function MacroHero() {
   return (
     <Wrapper>
       {calorieEntry ? (
-        <CalorieCard $accent={getColor(CALORIE_SLUG)}>
+        <CalorieCard>
           <CalorieRow>
             <div>
               <CalorieLabel>Calories</CalorieLabel>
@@ -258,7 +262,7 @@ export function MacroHero() {
             const pct = nutrient.percent_of_goal ?? 0;
             const over = pct > 100;
             return (
-              <MacroCard key={nutrient.slug} $accent={accent}>
+              <MacroCard key={nutrient.slug}>
                 <MacroLabel>{nutrient.display_name}</MacroLabel>
                 <MacroValue $accent={accent}>
                   {formatNum(nutrient.amount ?? 0)}

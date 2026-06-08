@@ -13,6 +13,7 @@ import { useEffect, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { Link } from 'react-router-dom';
 import { reducedMotion } from '../../styles/animations';
+import { pixelPanel } from '../../theme/surfaces';
 
 /* ─── Animations ──────────────────────────────────────────────── */
 
@@ -33,9 +34,11 @@ const Backdrop = styled.div`
 `;
 
 const Panel = styled.div`
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border-top-left-radius: 20px;
-  border-top-right-radius: 20px;
+  ${pixelPanel}
+  border-top-left-radius: ${({ theme }) => theme.radii.pixel};
+  border-top-right-radius: ${({ theme }) => theme.radii.pixel};
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
   padding: 20px 20px calc(env(safe-area-inset-bottom) + 24px);
   width: 100%;
   display: flex;
@@ -130,7 +133,7 @@ const ItemIcon = styled.span`
 
 const Divider = styled.hr`
   border: none;
-  border-top: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  border-top: 1px solid ${({ theme }) => theme.colors.borderSoft};
   margin: 8px 0;
   opacity: 0.4;
 `;

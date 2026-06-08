@@ -1,7 +1,6 @@
 import { PropsWithChildren, useState, useEffect, useCallback } from 'react';
 import styled from 'styled-components';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { palette } from '../../theme/monetTheme';
 import { CloudNavShelf } from './CloudNavShelf';
 import { MonetChatBubble } from '../dashboard/MonetChatPanel';
 import { exitGuestMode, isGuestMode } from '../../demo/guest/guestMode';
@@ -11,9 +10,6 @@ import { MovedBanner } from './MovedBanner';
 import { BottomNav, BOTTOM_NAV_HEIGHT_PX } from './BottomNav';
 import { MoreSheet } from './MoreSheet';
 import { useIsMobile } from '../../hooks/useMediaQuery';
-
-const paletteAccent = (mode: 'light' | 'dark', theme?: { colors?: { accent?: string } }) =>
-  theme?.colors?.accent ?? (mode === 'dark' ? palette.bloom['300'] : palette.bloom['200']);
 
 const Frame = styled.div<{ $fullWidth?: boolean; $mobileBottomPad?: boolean }>`
   padding: clamp(20px, 3vw, 36px);
@@ -49,21 +45,22 @@ const Nav = styled.nav`
     letter-spacing: 0.16em;
     text-transform: uppercase;
     text-decoration: none;
-    color: ${({ theme }) => theme.colors.textPrimary};
-    opacity: 0.86;
-    text-shadow: 0 2px 10px rgba(10, 18, 40, 0.55);
-    transition: opacity 0.2s ease, color 0.2s ease, transform 0.2s ease, text-shadow 0.2s ease;
+    color: ${({ theme }) => theme.colors.textSecondary};
+    transition: color 0.15s ease;
+    /* Pixel-shelf baseline indicator */
     border-bottom: 2px solid transparent;
     padding-bottom: 4px;
     &:hover {
-      opacity: 1;
-      text-shadow: 0 2px 12px rgba(10, 18, 40, 0.7);
+      color: ${({ theme }) => theme.colors.textPrimary};
     }
     &.active {
-      opacity: 1;
-      color: ${({ theme }) => theme.colors.textPrimary};
-      border-bottom: 2px solid ${({ theme }) => paletteAccent(theme.mode ?? 'light', theme)};
-      text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+      color: ${({ theme }) => theme.colors.accentStrong};
+      border-bottom: 2px solid ${({ theme }) => theme.colors.accentStrong};
+    }
+    &:focus-visible {
+      outline: 2px solid ${({ theme }) => theme.colors.focusRing};
+      outline-offset: 2px;
+      border-radius: 3px;
     }
   }
 `;

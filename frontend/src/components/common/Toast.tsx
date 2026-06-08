@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import styled, { keyframes, css } from 'styled-components';
+import { pixelPanel } from '../../theme/surfaces';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -181,44 +182,26 @@ const ToastContainer = styled.div`
   max-width: min(400px, calc(100vw - 48px));
 `;
 
-function accentColor(type: ToastType): string {
+// Solid accent strip colours (per toast type) — not glassmorphism, just the indicator bar
+function accentStrip(type: ToastType): string {
   switch (type) {
     case 'error':
-      return 'rgba(242, 140, 60, 0.85)';
+      return 'rgb(242, 140, 60)';
     case 'success':
-      return 'rgba(63, 155, 138, 0.85)';
+      return 'rgb(63, 155, 138)';
     case 'info':
-      return 'rgba(126, 215, 196, 0.85)';
-  }
-}
-
-function borderColor(type: ToastType): string {
-  switch (type) {
-    case 'error':
-      return 'rgba(242, 140, 60, 0.35)';
-    case 'success':
-      return 'rgba(63, 155, 138, 0.30)';
-    case 'info':
-      return 'rgba(126, 215, 196, 0.30)';
+      return 'rgb(126, 215, 196)';
   }
 }
 
 const ToastItem = styled.div<{ $type: ToastType; $exiting: boolean }>`
+  ${pixelPanel}
   padding: 12px 18px;
-  border-radius: ${({ theme }) => theme.radii.card};
   font-family: ${({ theme }) => theme.fonts.body};
   font-size: 0.85rem;
   line-height: 1.45;
   color: ${({ theme }) => theme.colors.textPrimary};
-  background: ${({ theme }) =>
-    theme.mode === 'dark'
-      ? 'rgba(20, 28, 46, 0.82)'
-      : 'rgba(255, 255, 255, 0.82)'};
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid ${({ $type }) => borderColor($type)};
-  border-left: 3px solid ${({ $type }) => accentColor($type)};
-  box-shadow: ${({ theme }) => theme.shadows.soft};
+  border-left: 4px solid ${({ $type }) => accentStrip($type)};
   pointer-events: auto;
 
   ${({ $exiting }) =>

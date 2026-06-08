@@ -1,9 +1,10 @@
 import { useEffect, useMemo } from 'react';
-import styled, { css } from 'styled-components';
-import { composeLayers, getCardLayers } from '../../theme/monetTheme';
+import styled from 'styled-components';
 import type { CalendarEvent, TodoItem } from '../../services/api';
 import type { CalendarItem } from './CalendarWeekView';
 import { RescheduleForm } from './RescheduleForm';
+import { pixelPanel } from '../../theme/surfaces';
+import { PixelChip } from '../common/PixelChip';
 
 type RecurrenceScope = 'occurrence' | 'future' | 'series';
 
@@ -31,34 +32,11 @@ const PanelInner = styled.div`
 `;
 
 const PanelCard = styled.div`
-  position: relative;
-  border-radius: 24px;
+  ${pixelPanel}
   padding: clamp(18px, 2vw, 28px);
-  background: ${({ theme }) => theme.colors.backgroundCard};
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  box-shadow: ${({ theme }) => theme.shadows.soft};
   display: flex;
   flex-direction: column;
   gap: 18px;
-
-  &::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: 24px;
-    pointer-events: none;
-    opacity: 0.5;
-    ${({ theme }) => {
-      const layers = composeLayers(getCardLayers(theme.mode ?? 'light', theme.intensity ?? 'rich'));
-      return css`
-        background-image: ${layers.image};
-        background-size: ${layers.size};
-        background-repeat: ${layers.repeat};
-        background-position: ${layers.position};
-        mix-blend-mode: ${layers.blend ?? 'normal'};
-      `;
-    }}
-  }
 `;
 
 const PanelContent = styled.div`
@@ -90,10 +68,10 @@ const Title = styled.h2`
 `;
 
 const CloseButton = styled.button`
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  border: 1px solid ${({ theme }) => theme.colors.borderSoft};
   background: transparent;
   color: ${({ theme }) => theme.colors.textPrimary};
-  border-radius: 999px;
+  border-radius: ${({ theme }) => theme.radii.pixel};
   padding: 6px 12px;
   font-family: ${({ theme }) => theme.fonts.heading};
   letter-spacing: 0.14em;
@@ -137,11 +115,11 @@ const BadgeRow = styled.div`
 `;
 
 const Badge = styled.span`
-  border-radius: 999px;
+  border-radius: ${({ theme }) => theme.radii.pixel};
   padding: 4px 10px;
   font-size: 0.7rem;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme }) => theme.colors.overlay};
+  border: 1px solid ${({ theme }) => theme.colors.borderSoft};
+  background: ${({ theme }) => theme.colors.surfaceInset};
   color: ${({ theme }) => theme.colors.textPrimary};
 `;
 
@@ -149,8 +127,8 @@ const ScrollSection = styled.div`
   padding-right: 4px;
   overflow: auto;
   max-height: 180px;
-  border-radius: 12px;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
+  border-radius: ${({ theme }) => theme.radii.pixel};
+  border: 1px solid ${({ theme }) => theme.colors.borderSoft};
   background: ${({ theme }) => theme.colors.surfaceInset};
 `;
 
@@ -192,24 +170,6 @@ const ScopeRow = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-`;
-
-const ScopeButton = styled.button<{ $active: boolean }>`
-  border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  cursor: pointer;
-  border: 1px solid ${({ theme }) => theme.colors.borderSubtle};
-  background: ${({ theme, $active }) =>
-    $active ? theme.colors.overlayActive : 'transparent'};
-  color: ${({ theme }) => theme.colors.textPrimary};
-
-  &:focus-visible {
-    outline: 2px solid ${({ theme }) => theme.colors.focusRing};
-    outline-offset: 2px;
-  }
 `;
 
 const MeetingLink = styled.a`
@@ -324,9 +284,9 @@ export function CalendarDetailDrawer({
                     <Label>Edit scope</Label>
                     <ScopeRow>
                       {(['occurrence', 'future', 'series'] as RecurrenceScope[]).map((scope) => (
-                        <ScopeButton
+                        <PixelChip
                           key={scope}
-                          $active={recurrenceScope === scope}
+                          active={recurrenceScope === scope}
                           type="button"
                           onClick={() => onChangeScope(scope)}
                         >
@@ -335,7 +295,7 @@ export function CalendarDetailDrawer({
                             : scope === 'future'
                               ? 'This & future'
                               : 'Entire series'}
-                        </ScopeButton>
+                        </PixelChip>
                       ))}
                     </ScopeRow>
                   </Section>

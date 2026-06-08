@@ -60,7 +60,7 @@ export function LoadChart({ variant = 'card' }: ChartProps) {
       {variant === 'card' ? <ChartTitle data-halo="heading">Training Load</ChartTitle> : null}
       <ResponsiveContainer width="100%" height={240}>
         <LineChart data={points} margin={{ top: 12, right: 12, left: 16, bottom: 22 }}>
-          <CartesianGrid stroke={chart.grid.stroke} strokeDasharray="6 4" opacity={0.35} />
+          <CartesianGrid stroke={appTheme.colors.grid} strokeDasharray="6 4" opacity={0.35} />
           <XAxis
             dataKey="timestamp"
             axisLine={false}
@@ -68,7 +68,7 @@ export function LoadChart({ variant = 'card' }: ChartProps) {
             ticks={dayTicks}
             tickFormatter={labelForTick}
             stroke={axisLabelColor}
-            tick={{ fill: axisLabelColor, fontSize: 12, fontWeight: 600 }}
+            tick={{ fill: appTheme.colors.textSecondary, fontSize: 11, fontFamily: appTheme.fonts.heading }}
             interval={0}
             height={28}
             tickMargin={10}
@@ -79,7 +79,7 @@ export function LoadChart({ variant = 'card' }: ChartProps) {
             tickLine={false}
             width={40}
             stroke={axisLabelColor}
-            tick={{ fill: axisLabelColor, fontSize: 12, fontWeight: 600 }}
+            tick={{ fill: appTheme.colors.textSecondary, fontSize: 11, fontFamily: appTheme.fonts.heading }}
             domain={['auto', 'auto']}
           />
           <Tooltip cursor={false} content={tooltipRenderer} wrapperStyle={{ outline: 'none' }} />
@@ -87,10 +87,10 @@ export function LoadChart({ variant = 'card' }: ChartProps) {
             type="monotone"
             dataKey="value"
             stroke={chart.Load.stroke}
-            strokeWidth={2.4}
+            strokeWidth={2}
             dot={false}
             strokeDasharray="6 2 2 2"
-            strokeLinecap="round"
+            strokeLinecap="square"
           />
         </LineChart>
       </ResponsiveContainer>
